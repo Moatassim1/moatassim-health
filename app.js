@@ -144,7 +144,7 @@
     const active = S.activeProfile;
     S = msg.state; REV = msg.rev;
     if (S.profiles[active]) S.activeProfile = active;
-    if (modal.hidden) render(); else pendingRender = true;
+    if (modal.hidden) softRender(render); else pendingRender = true;
   });
   api.sync.onStatus(st => { SYNC = st; renderSideFoot(); if (UI.view === 'settings' && modal.hidden) renderSettings(); });
 
@@ -186,7 +186,18 @@
   }
 
   // ---------------------------------------------------------------- shell
-  const main = $('#main');
+  let main = $('#main');
+  // Re-render without stealing focus: if you've already moved on to another box
+  // (e.g. tapped the next field in Settings), wait until you leave the boxes.
+  let softPending = null;
+  const editingBox = el => el && main.contains(el) && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes(el.type)));
+  function softRender(fn) {
+    setTimeout(() => { if (editingBox(document.activeElement)) { softPending = fn; return; } softPending = null; fn(); }, 0);
+  }
+  document.addEventListener('focusout', () => setTimeout(() => {
+    if (!softPending || editingBox(document.activeElement)) return;
+    const fn = softPending; softPending = null; fn();
+  }, 0));
   function nav(view) {
     UI.view = view;
     document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
@@ -614,8 +625,8 @@
     renderResults();
   }
 
-  function renderRight() {
-    const box = $('#mright');
+  function renderRight(target) {
+    const box = target || $('#mright');
     if (!box) return;
     const f = M.sel;
     if (!f) { box.innerHTML = `<div class="muted" style="padding-top:8px"><h2>Pick a food</h2><p>Choose a food or drink on the left, then type how much you had: grams for food, ml for drinks.</p></div>`; return; }
@@ -651,19 +662,40 @@
         <button class="btn primary" data-m="commit" ${g > 0 ? '' : 'disabled'}>${M.entry ? 'Save changes' : `Add ${counting ? esc(countLabel(Number(M.count) || 0, f.each)) : fmtAmt(g, u)} to ${M.meal.toLowerCase()}`}</button>
         ${M.entry ? '<button class="btn danger" data-m="remove">Remove</button>' : ''}
       </div>`;
+    if (!target) bindRight();
+  }
+  function bindRight() {
     const gi = $('#mg');
-    gi.addEventListener('input', () => { if (counting) M.count = gi.value; else M.grams = gi.value; updatePreview(); });
-    gi.addEventListener('keydown', e => { if (e.key === 'Enter' && Number(gi.value) > 0) commit(); });
-    $('#mmeal').addEventListener('change', e => { M.meal = e.target.value; updatePreview(); });
+    if (gi && !gi._mhBound) {
+      gi._mhBound = true;
+      gi.addEventListener('input', () => { const f = M.sel; if (M.mode === 'count' && f && f.each) M.count = gi.value; else M.grams = gi.value; updatePreview(); });
+      gi.addEventListener('keydown', e => { if (e.key === 'Enter' && Number(gi.value) > 0) commit(); });
+    }
+    const mm = $('#mmeal');
+    if (mm && !mm._mhBound) { mm._mhBound = true; mm.addEventListener('change', e => { M.meal = e.target.value; updatePreview(); }); }
   }
 
   function updatePreview() {
-    // Re-render the right side but keep the cursor in the grams box.
-    const gi = $('#mg');
-    const pos = gi ? gi.selectionStart : null;
-    renderRight();
-    const ng = $('#mg');
-    if (ng && pos != null) { ng.focus(); try { ng.setSelectionRange(pos, pos); } catch (_) {} }
+    // Refresh the numbers on the right WITHOUT rebuilding the amount box, so the
+    // box keeps focus (and the phone keyboard stays up) while you type.
+    const box = $('#mright'); if (!box) return;
+    const old = $('#mg');
+    const tmp = document.createElement('div');
+    renderRight(tmp);
+    const oldKids = Array.from(box.children), newKids = Array.from(tmp.children);
+    const same = old && tmp.querySelector('#mg') && oldKids.length === newKids.length && oldKids.every((o, i) => o.className === newKids[i].className && o.tagName === newKids[i].tagName);
+    if (!same) {
+      const hadFocus = old && document.activeElement === old;
+      box.innerHTML = ''; newKids.forEach(n => box.appendChild(n)); bindRight();
+      if (hadFocus) { const ng = $('#mg'); if (ng) ng.focus(); }
+      return;
+    }
+    newKids.forEach((n, i) => {
+      const o = oldKids[i];
+      if (o.contains(old)) { const s = o.querySelector('span'), ns = n.querySelector('span'); if (s && ns && s.textContent !== ns.textContent) s.textContent = ns.textContent; }
+      else if (!o.isEqualNode(n)) o.replaceWith(n);
+    });
+    bindRight();
   }
 
   function commit() {
@@ -872,7 +904,7 @@
     try { F.list = await social.friends(); F.err = ''; }
     catch (e) { F.err = e.offline ? 'You\'re offline. Friends will load when you\'re back online.' : 'Could not load friends: ' + e.message; }
     F.loading = false;
-    if (UI.view === 'friends' && modal.hidden) render();
+    if (UI.view === 'friends' && modal.hidden) softRender(render);
     renderMe();
   }
   function myPoints() { return social.pointsFor(S); }
@@ -1503,8 +1535,15 @@
         ${list.slice(0, 400).map(f => `<tr class="clickable" data-action="food" data-id="${esc(f.id)}"><td>${esc(f.name)}${f.source !== 'Built-in' ? ` <span class="pill">${f.source === 'Mine' ? 'Mine' : esc(f.source)}</span>` : ''}</td><td class="muted">${f.portion ? `${esc(f.portionLabel || '')} · ${fmtAmt(f.portion, unitOf(f))}` : ''}${unitOf(f) === 'ml' ? ' <span class="pill">per 100 ml</span>' : ''}</td><td class="n">${fmt(f.n.kcal)}</td><td class="n">${fmt(f.n.p, 1)}</td><td class="n">${fmt(f.n.c, 1)}</td><td class="n">${fmt(f.n.f, 1)}</td><td class="n">${fmt(f.n.fib, 1)}</td></tr>`).join('')}
         </tbody></table>` : `<p class="muted" style="padding:14px 6px">${UI.foodCat === 'My foods' ? 'Foods you create, or add from an online search, are saved here.' : 'No foods match.'}</p>`}
       </div></div>`;
-    const fq = $('#fq');
-    fq.addEventListener('input', () => { UI.foodQ = fq.value; const pos = fq.selectionStart; renderFoods(); const n = $('#fq'); n.focus(); n.setSelectionRange(pos, pos); });
+    const fq = main.querySelector('#fq');
+    fq.addEventListener('input', () => {
+      // Only swap the list, so the filter box keeps focus while typing.
+      UI.foodQ = fq.value;
+      const keep = main; const tmp = document.createElement('div');
+      main = tmp; try { renderFoods(); } finally { main = keep; }
+      const np = tmp.querySelector('.panel'), op = main.querySelector('.panel');
+      if (np && op) op.replaceWith(np);
+    });
   }
 
   function foodDetail(f) {
@@ -1672,29 +1711,29 @@
 
     main.querySelectorAll('[data-p]').forEach(el => el.addEventListener('change', () => {
       const k = el.dataset.p; let v = el.value;
-      if (k === 'goalWeightKg' && v === '') { P().profile.goalWeightKg = null; save(); renderSettings(); return; }
+      if (k === 'goalWeightKg' && v === '') { P().profile.goalWeightKg = null; save(); softRender(renderSettings); return; }
       if (!['sex', 'goal'].includes(k)) v = Number(v);
       if (typeof v === 'number' && !(v > 0)) return;
       const goalChange = (k === 'goal' && v !== P().profile.goal) || (k === 'goalWeightKg' && v !== P().profile.goalWeightKg);
       P().profile[k] = v; P().setupDone = true;
       if (k === 'weightKg') P().weights[todayKey()] = Math.round(v * 10) / 10;
       if (goalChange || (!P().profile.goalStart && (k === 'goal' || k === 'goalWeightKg'))) P().profile.goalStart = { date: todayKey(), kg: currentWeight() };
-      save(); renderSettings();
+      save(); softRender(renderSettings);
     }));
-    main.querySelectorAll('[data-t]').forEach(el => el.addEventListener('change', () => { const v = Number(el.value); if (v >= 0) { P().targets[el.dataset.t] = v; save(); renderSettings(); } }));
+    main.querySelectorAll('[data-t]').forEach(el => el.addEventListener('change', () => { const v = Number(el.value); if (v >= 0) { P().targets[el.dataset.t] = v; save(); softRender(renderSettings); } }));
     $('#ownTargets').addEventListener('change', e => {
       if (e.target.checked) { const a = autoTargets(P().profile); P().targets = { auto: false, kcal: a.kcal, p: a.p, c: a.c, f: a.f }; }
       else P().targets.auto = true;
-      save(); renderSettings();
+      save(); softRender(renderSettings);
     });
-    $('#pName').addEventListener('change', e => { const v = e.target.value.trim(); if (v) { P().name = v; save(); render(); } });
+    $('#pName').addEventListener('change', e => { const v = e.target.value.trim(); if (v) { P().name = v; save(); softRender(render); } });
     main.querySelectorAll('[data-rem]').forEach(el => el.addEventListener('change', () => { P().reminderOn = el.checked; save(); }));
     main.querySelectorAll('[data-s]').forEach(el => el.addEventListener('change', () => {
       const k = el.dataset.s;
       S.settings[k] = el.type === 'checkbox' ? el.checked : el.value.trim();
       if (k === 'theme') { applyTheme(); }
       if (k === 'startWithWindows' && window.desktop && window.desktop.setStartup) window.desktop.setStartup(el.checked);
-      save(); renderSettings();
+      save(); softRender(renderSettings);
     }));
   }
 

@@ -514,11 +514,16 @@ body.loading .boot-loading { display: grid; place-items: center; position: fixed
   .targets-out { grid-template-columns: repeat(2, 1fr); }
   table.t { display: block; overflow-x: auto; }
   .modal { padding: 0; align-items: flex-end; }
-  .modal-card { width: 100%; max-height: calc(100vh - env(safe-area-inset-top) - 10px); border-radius: 18px 18px 0 0; }
+  .modal-card { width: 100%; max-height: calc(100vh - env(safe-area-inset-top) - 10px); max-height: calc(100dvh - env(safe-area-inset-top) - 10px); border-radius: 18px 18px 0 0; }
+  .modal-head { flex: none; }
+  .modal-body { flex: 1 1 auto; min-height: 0; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   .modal-card.narrow { width: 100%; }
   .modal-body, .modal-head { padding-left: 16px; padding-right: 16px; }
   .modal-body { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
-  .picker { grid-template-columns: 1fr; min-height: 0; height: calc(100vh - env(safe-area-inset-top) - 70px); }
+  .picker { grid-template-columns: 1fr; min-height: 0; height: auto; flex: 1 1 auto; }
+  .modal-card:has(.picker) { height: calc(100vh - env(safe-area-inset-top) - 10px); height: calc(100dvh - env(safe-area-inset-top) - 10px); }
+  .picker-left { min-height: 0; overflow: hidden; }
+  .results, .picker-right { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   .picker-left { border-right: 0; }
   .picker-right { display: none; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
   .picker.show-right .picker-left { display: none; }
@@ -535,3 +540,13 @@ body.loading .boot-loading { display: grid; place-items: center; position: fixed
 }
 .field input, .field select { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .scan-type[hidden] { display: none; }
+
+/* While a window is open, the page behind it doesn't scroll (so its header can't scroll away). */
+body:has(.modal:not([hidden])) { overflow: hidden; }
+html:has(.modal:not([hidden])) { overflow: hidden; }
+.scanner .scan-cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+.scan-guide i { position: relative; width: min(84vw, 380px); height: min(40vw, 180px); }
+.scan-guide i b { position: absolute; left: 6%; right: 6%; top: 50%; height: 2px; background: #ff4d4d; box-shadow: 0 0 8px #ff4d4d; animation: scanline 1.6s ease-in-out infinite; }
+@keyframes scanline { 0%, 100% { transform: translateY(-34px); } 50% { transform: translateY(34px); } }
+.scanner.hit .scan-guide i { border-color: #4ee08a; box-shadow: 0 0 0 9999px rgba(0,0,0,.35), 0 0 24px #4ee08a; }
+.scan-top button.on { background: #ffd54a; color: #111; }

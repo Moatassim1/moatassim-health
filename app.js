@@ -154,13 +154,13 @@
 
   // ---------------------------------------------------------------- login
   function renderLogin(err) {
-    const needCfg = !(CFG.url && CFG.key);
+    const needUrl = !CFG.url, needKey = !CFG.key;
     app.innerHTML = `<div class="login">
       <img class="logo" src="icons/icon-180.png" alt="">
       <h1>Moatassim Health</h1>
       <p class="muted">Sign in with the app login you made in Supabase. It's the same one the PC app uses.</p>
-      ${needCfg ? `<label class="f">Supabase Project URL<input type="text" id="lUrl" placeholder="https://xxxx.supabase.co" autocapitalize="off" autocorrect="off"></label>
-      <label class="f">Publishable key<input type="text" id="lKey" placeholder="sb_publishable_…" autocapitalize="off" autocorrect="off"></label>` : ''}
+      ${needUrl ? `<label class="f">Supabase Project URL<input type="text" id="lUrl" placeholder="https://xxxx.supabase.co" autocapitalize="off" autocorrect="off"></label>` : ''}
+      ${needKey ? `<label class="f">Publishable key<input type="text" id="lKey" placeholder="sb_publishable_…" autocapitalize="off" autocorrect="off"></label>` : ''}
       <label class="f">Email<input type="email" id="lEmail" autocomplete="username" autocapitalize="off"></label>
       <label class="f">Password<input type="password" id="lPass" autocomplete="current-password"></label>
       <button class="btn primary block" style="margin-top:18px" data-act="login">Sign in</button>

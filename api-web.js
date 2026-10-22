@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.5';
+  const APP_VERSION = '2.0.6';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -20,7 +20,7 @@
     return {
       version: 3, activeProfile: 'me',
       profiles: { me: {
-        id: 'me', name: name || 'Me', color: '#1E7656', setupDone: false,
+        id: 'me', name: name || 'Me', color: '#E0263A', setupDone: false,
         profile: { sex: 'male', age: 30, heightCm: 175, weightKg: 75, activity: 1.55, goal: 'maintain', proteinPerKg: 1.6, fatPct: 30, goalWeightKg: null, goalStart: null, planKcal: null },
         targets: { auto: true, kcal: 2200, p: 120, c: 260, f: 75 },
         diary: {}, dayMeta: {}, weights: {}, recent: [],
@@ -115,22 +115,34 @@
   }
 
   // Ranking: % of the way from the start weight to the goal weight.
+  // The start weight is always a real weigh-in: the one on the day the goal was set,
+  // or the first one after it. (Never the default weight in Settings.)
+  function startOf(st) {
+    const p = st.profiles.me, gs = p.profile.goalStart;
+    if (!gs || !gs.date) return null;
+    const w = p.weights || {}, ws = Object.keys(w).filter(k => w[k] != null).sort();
+    if (gs.real && gs.kg != null) return { date: gs.date, kg: gs.kg };
+    const on = ws.find(k => k >= gs.date) || [...ws].reverse().find(k => k < gs.date);
+    if (on) return { date: on, kg: w[on] };
+    return null;
+  }
   function pointsFor(st) {
     const p = st.profiles.me, pr = p.profile;
-    const ws = Object.keys(p.weights || {}).sort();
+    const ws = Object.keys(p.weights || {}).filter(k => p.weights[k] != null).sort();
     const cur = ws.length ? p.weights[ws[ws.length - 1]] : null;
-    if (cur == null || !pr.goalStart || pr.goalStart.kg == null) return null;
-    const start = pr.goalStart.kg, goal = pr.goalWeightKg, g = pr.goal;
+    const s0 = startOf(st);
+    if (cur == null || !s0) return null;
+    const start = s0.kg, goal = pr.goalWeightKg, g = pr.goal;
     if (g === 'maintain' || goal == null || Math.abs(goal - start) < 0.1) {
       return Math.round(Math.max(0, 100 - Math.abs(cur - start) * 25) * 10) / 10; // 100 = right on your weight; -25 per kg off
     }
-    return Math.round((start - cur) / (start - goal) * 1000) / 10;
+    return Math.round((start - cur) / (start - goal) * 1000) / 10 + 0;
   }
   let lastProfilePush = '';
   async function pushProfile() {
     const p = S.profiles.me, pts = pointsFor(S);
     const goal = p.profile.goal === 'lose-slow' ? 'lose' : (['lose', 'gain', 'maintain'].includes(p.profile.goal) ? p.profile.goal : 'maintain');
-    const row = { name: (p.name || 'Me').slice(0, 40), color: p.color || '#1E7656', goal, points: pts, points_updated: new Date().toISOString() };
+    const row = { name: (p.name || 'Me').slice(0, 40), color: p.color || '#E0263A', goal, points: pts, points_updated: new Date().toISOString() };
     const sig = JSON.stringify({ ...row, points_updated: 0 });
     if (sig === lastProfilePush) return;
     try { await req(`/rest/v1/profiles?id=eq.${uid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) }); lastProfilePush = sig; } catch (_) {}
@@ -350,6 +362,7 @@
     },
     async testPush() { return callFn('push', { kind: 'test' }); },
     pointsFor: (st) => pointsFor(st || S),
+    startOf: (st) => startOf(st || S),
     lookupBarcode,
     signOut() { LS.del('mh2.session'); location.reload(); }
   };
@@ -490,6 +503,11 @@
       if (prof) { if (!newName && prof.name && (S.profiles.me.name === 'Me' || !S.profiles.me.setupDone)) S.profiles.me.name = prof.name; window.MH_ME = prof; }
     } catch (_) {}
     await importLegacyDesktop();
+    { // A start weight that was never actually weighed (e.g. the 75 kg default) is dropped; the first real weigh-in takes its place.
+      const p = S.profiles.me, gs = p.profile.goalStart;
+      if (gs && !gs.real) { const w = p.weights || {}; if (gs.kg != null && !Object.values(w).some(v => Math.abs(v - gs.kg) < 0.01)) { gs.kg = null; } }
+    }
+    if (S.profiles.me.color === '#1E7656') S.profiles.me.color = '#E0263A'; // old default green -> new theme red
     knownEntryIds = null; noteNewEntries(S);
     persist();
     if (!document.querySelector('script[data-mh-app]')) {

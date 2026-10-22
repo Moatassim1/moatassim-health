@@ -8,7 +8,7 @@
   const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
   const COLORS = () => {
     const cs = getComputedStyle(document.documentElement);
-    return { pro: cs.getPropertyValue('--pro').trim(), carb: cs.getPropertyValue('--carb').trim(), fat: cs.getPropertyValue('--fat').trim(), leaf: cs.getPropertyValue('--leaf').trim(), low: cs.getPropertyValue('--low').trim(), muted: cs.getPropertyValue('--faint').trim(), ink: cs.getPropertyValue('--ink').trim() };
+    return { pro: cs.getPropertyValue('--pro').trim(), carb: cs.getPropertyValue('--carb').trim(), fat: cs.getPropertyValue('--fat').trim(), leaf: cs.getPropertyValue('--leaf').trim(), ok: cs.getPropertyValue('--ok').trim(), low: cs.getPropertyValue('--low').trim(), muted: cs.getPropertyValue('--faint').trim(), ink: cs.getPropertyValue('--ink').trim() };
   };
 
   // ---------------------------------------------------------------- dates + numbers
@@ -971,7 +971,7 @@
       let pill = '';
       if (m.limit) pill = pct > 100 ? '<span class="pill low">Above limit</span>' : '<span class="pill ok">Within limit</span>';
       else pill = pct < 70 ? '<span class="pill low">Low</span>' : pct < 100 ? '<span class="pill">Close</span>' : '<span class="pill ok">Met</span>';
-      return `<tr><td>${m.name}</td><td class="n">${fmtSmart(v)} ${m.unit}</td><td class="n faint">${m.limit ? 'max ' : ''}${fmtSmart(mt[m.k])} ${m.unit}</td><td style="width:32%"><div class="bar ${!m.limit && pct < 70 ? '' : ''}" style="height:6px"><i style="width:${Math.min(100, pct)}%;background:${(m.limit ? pct > 100 : pct < 70) ? C.low : m.limit ? C.muted : C.leaf}"></i></div></td><td class="n">${fmt(pct)}%</td><td>${pill}</td></tr>`;
+      return `<tr><td>${m.name}</td><td class="n">${fmtSmart(v)} ${m.unit}</td><td class="n faint">${m.limit ? 'max ' : ''}${fmtSmart(mt[m.k])} ${m.unit}</td><td style="width:32%"><div class="bar ${!m.limit && pct < 70 ? '' : ''}" style="height:6px"><i style="width:${Math.min(100, pct)}%;background:${(m.limit ? pct > 100 : pct < 70) ? C.low : m.limit ? C.muted : C.ok}"></i></div></td><td class="n">${fmt(pct)}%</td><td>${pill}</td></tr>`;
     }).join('');
 
     main.innerHTML = `<div class="page">
@@ -1062,7 +1062,7 @@
           <h2>Ranking</h2>
           <p class="muted small" style="margin-top:-6px">Points are how far each person is from their start weight to their goal weight: 100% means goal reached. If you're maintaining, staying on your weight scores 100%.</p>
           ${rows.length > 1 || !F.loading ? `<ol class="rank">${rows.map((r, i) => `<li class="${r.me ? 'me' : ''}" ${r.friend ? `data-action="f-view" data-id="${esc(r.id)}"` : ''}>
-            <span class="rk-pos num">${i + 1}</span><span class="avatar" style="background:${esc(r.color || '#1E7656')}">${esc((r.name || '?').charAt(0).toUpperCase())}</span>
+            <span class="rk-pos num">${i + 1}</span><span class="avatar" style="background:${esc(r.color || '#E0263A')}">${esc((r.name || '?').charAt(0).toUpperCase())}</span>
             <span class="rk-name">${esc(r.name)}${r.me ? ' <span class="faint">(you)</span>' : ''}<small>${goalText(r.goal)}</small></span>
             <span class="rk-pts num">${pointsText(r.points)}</span>
             <span class="rk-bar"><i style="width:${r.points == null ? 0 : Math.max(0, Math.min(100, r.points))}%"></i></span></li>`).join('')}</ol>` : '<p class="muted">Loading…</p>'}
@@ -1593,7 +1593,7 @@
     else if (act === 'f-day') { F.day = addDays(F.day, Number(a.dataset.d)); if (F.day > todayKey()) F.day = todayKey(); F.data = null; render(); }
     else if (act === 'copy-code') { const c = window.MH_ME && window.MH_ME.friend_code; if (c) { try { await navigator.clipboard.writeText(c); toast('Friend ID copied: ' + c); } catch (_) { toast('Your friend ID is ' + c); } } }
     else if (act === 'set-color') { P().color = a.dataset.c; save(); render(); }
-    else if (act === 'goal-restart') { P().profile.goalStart = { date: todayKey(), kg: currentWeight() }; save(); render(); toast('Ranking restarted from today\'s weight.'); }
+    else if (act === 'goal-restart') { const l = latestWeight(); P().profile.goalStart = l && l.date === todayKey() ? { date: todayKey(), kg: l.kg, real: true } : { date: todayKey(), kg: null }; save(); render(); toast(l && l.date === todayKey() ? 'Ranking restarted from today\'s weight.' : 'Ranking restarts from your next weigh-in.'); }
     else if (act === 'signout') { if (confirm('Sign out on this device? Your data stays in your account.')) social.signOut(); }
     else if (act === 'push-enable') { const r = await social.enablePush(); if (r.ok) { toast('Notifications are on.'); render(); } else { const m = $('#pushMsg'); if (m) { m.textContent = r.error; m.className = 'small err'; } } }
     else if (act === 'push-test') { const r = await social.testPush(); toast(r.ok ? (r.sent ? 'Test sent. It should pop up in a moment.' : 'No device is set up for notifications yet.') : (r.error || 'Could not send.')); }
@@ -1764,8 +1764,8 @@
   function renderSettings() {
     const p = P().profile, at = autoTargets(p), tg = targets(), st = S.settings, me = window.MH_ME || {};
     const act = [[1.2, 'Mostly sitting (desk job, little exercise)'], [1.375, 'Lightly active (exercise 1–3 days a week)'], [1.55, 'Active (exercise 3–5 days a week)'], [1.725, 'Very active (hard exercise 6–7 days)'], [1.9, 'Extremely active (physical job + training)']];
-    const colors = ['#1E7656', '#2D5FC0', '#B23B61', '#C4851A', '#7B4BC9', '#1B8A9A', '#C2452F', '#4A4F57'];
-    const pts = myPoints(), gs = p.goalStart;
+    const colors = ['#E0263A', '#FF8A1F', '#2D5FC0', '#8B55E6', '#D63384', '#1B8A9A', '#1E7656', '#4A4F57'];
+    const pts = myPoints(), gs = social.startOf(S), gsSet = !!p.goalStart;
     const pushState = social.pushState();
     main.innerHTML = `<div class="page">
       <div class="page-head"><div><h1>Settings</h1><p class="sub">Changes save automatically and sync to your other devices.</p></div></div>
@@ -1786,9 +1786,9 @@
             <label class="field"><span>Goal</span><select data-p="goal">${[['lose', 'Lose weight (~0.5 kg/week)'], ['lose-slow', 'Lose slowly (~0.25 kg/week)'], ['maintain', 'Maintain'], ['gain', 'Gain weight (small surplus)']].map(([v, l]) => `<option value="${v}" ${p.goal === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
             <label class="field"><span>Goal weight (kg)</span><input type="number" data-p="goalWeightKg" value="${p.goalWeightKg ?? ''}" min="30" max="250" step="0.1" ${p.goal === 'maintain' ? 'placeholder="not needed"' : ''}></label>
           </div>
-          <div class="kv" style="margin-top:14px"><span>Start weight</span><span>${gs ? `${fmt(gs.kg, 1)} kg on ${esc(shortDate(gs.date))}` : 'set when you choose a goal'}</span><span>Now</span><span>${fmt(currentWeight(), 1)} kg</span><span>Ranking points</span><span><b>${pts == null ? '–' : fmt(pts, 1) + '%'}</b></span></div>
+          <div class="kv" style="margin-top:14px"><span>Start weight</span><span>${gs ? `${fmt(gs.kg, 1)} kg on ${esc(shortDate(gs.date))}` : gsSet ? 'your next weigh-in' : 'set when you choose a goal'}</span><span>Now</span><span>${latestWeight() ? fmt(latestWeight().kg, 1) + ' kg' : 'no weigh-in yet'}</span><span>Ranking points</span><span><b>${pts == null ? '–' : fmt(pts, 1) + '%'}</b></span></div>
           <p class="muted small">Points = how far you are from your start weight to your goal weight. Friends always see your points; your actual weight is only shown to friends you allow.</p>
-          ${gs ? '<button class="btn ghost" data-action="goal-restart">Restart from today\'s weight</button>' : ''}
+          ${gsSet ? '<button class="btn ghost" data-action="goal-restart">Restart from today\'s weight</button>' : ''}
         </div>
         <div class="panel">
           <h2>Your details and targets</h2>
@@ -1863,7 +1863,7 @@
       const goalChange = (k === 'goal' && v !== P().profile.goal) || (k === 'goalWeightKg' && v !== P().profile.goalWeightKg);
       P().profile[k] = v; P().setupDone = true;
       if (k === 'weightKg') P().weights[todayKey()] = Math.round(v * 10) / 10;
-      if (goalChange || (!P().profile.goalStart && (k === 'goal' || k === 'goalWeightKg'))) P().profile.goalStart = { date: todayKey(), kg: currentWeight() };
+      if (goalChange || (!P().profile.goalStart && (k === 'goal' || k === 'goalWeightKg'))) { const l = latestWeight(); P().profile.goalStart = l && l.date >= addDays(todayKey(), -3) ? { date: l.date, kg: l.kg, real: true } : { date: todayKey(), kg: null }; }
       save(); softRender(renderSettings);
     }));
     main.querySelectorAll('[data-t]').forEach(el => el.addEventListener('change', () => { const v = Number(el.value); if (v >= 0) { P().targets[el.dataset.t] = v; save(); softRender(renderSettings); } }));

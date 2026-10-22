@@ -170,5 +170,8 @@ create index if not exists items_owner_kind_day on public.items (owner, kind, da
 -- ------------------------------------------------------------------ move the old shared data
 -- Everything logged as "Moatassim" becomes your own log; the old "Waifu" log is removed.
 delete from public.items where profile = 'waifu' or id = 'p:waifu' or id like '%:waifu:%';
+-- If the new app already saved a blank "me" copy before this ran, the real data wins.
+delete from public.items m where (m.profile = 'me' or m.id = 'p:me') and exists (
+  select 1 from public.items o where o.owner = m.owner and o.id = replace(m.id, ':me', ':moatassim'));
 update public.items set id = replace(id, ':moatassim', ':me'), profile = 'me'
   where profile = 'moatassim' or id = 'p:moatassim';

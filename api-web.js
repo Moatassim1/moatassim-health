@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.4';
+  const APP_VERSION = '2.0.5';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -169,7 +169,16 @@
     try { const r = await fetch(url, { ...(opts || {}), signal: ctrl.signal }); if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; } return await r.json(); }
     finally { clearTimeout(t); }
   }
+  const recentAnswers = new Map();
   async function viaServer(url, ms) {
+    const mem = recentAnswers.get(url);
+    if (mem && Date.now() - mem.at < 30 * 60000) return mem.j;
+    const j = await viaServerFetch(url, ms);
+    recentAnswers.set(url, { j, at: Date.now() });
+    if (recentAnswers.size > 60) recentAnswers.delete(recentAnswers.keys().next().value);
+    return j;
+  }
+  async function viaServerFetch(url, ms) {
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), ms);
     try {
       const token = await supa.token();
@@ -214,8 +223,8 @@
   async function searchShop(shopId, q, page) {
     const shop = SHOPS[shopId]; if (!shop) return { results: [], errors: ['Unknown shop'] };
     const base = 'https://uk.openfoodfacts.org/cgi/search.pl?action=process&json=1&page_size=40&sort_by=unique_scans_n' + `&page=${Math.max(1, page || 1)}&fields=${OFF_FIELDS}` + (q ? `&search_terms=${encodeURIComponent(q)}` : '') + '&tagtype_1=countries&tag_contains_1=contains&tag_1=united-kingdom';
-    const urls = [];
-    for (const kind of ['stores', 'brands']) for (const t of shop.tags.slice(0, kind === 'brands' ? 1 : 2)) urls.push(`${base}&tagtype_0=${kind}&tag_contains_0=contains&tag_0=${encodeURIComponent(t)}`);
+    // One request per search (Open Food Facts allows ~10 searches a minute).
+    const urls = [`${base}&tagtype_0=stores&tag_contains_0=contains&tag_0=${encodeURIComponent(shop.tags[0])}`];
     const out = { results: [], errors: [], more: false }, seen = new Set();
     const settled = await Promise.allSettled(urls.map(u => getJson(u, {}, 20000)));
     let any = false;

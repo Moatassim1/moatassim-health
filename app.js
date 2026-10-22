@@ -506,7 +506,7 @@
     q.addEventListener('input', () => {
       M.q = q.value;
       if (M.tab === 'recent' && M.q) setTab('all');
-      else if (M.tab === 'shop') { clearTimeout(M.shopTimer); M.shopTimer = setTimeout(() => runShop(1), 600); }
+      else if (M.tab === 'shop') { clearTimeout(M.shopTimer); const t = M.q.trim(); if (!t || t.length >= 3) M.shopTimer = setTimeout(() => runShop(1), 1200); }
       else if (M.tab !== 'online') renderResults();
     });
     $('#mshops').addEventListener('click', e => {

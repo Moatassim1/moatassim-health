@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -13,23 +13,58 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <title>Moatassim Health</title>
-  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="styles.css?v=2.0.0">
 </head>
 <body>
-  <div id="app"></div>
-  <nav class="tabbar" id="tabbar" hidden>
-    <button data-tab="today" class="on"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Today</span></button>
-    <button data-tab="compare"><svg viewBox="0 0 24 24"><path d="M8 4v16M16 8v12M4 20h16"/></svg><span>Compare</span></button>
-    <button data-tab="scan" class="scan-btn" aria-label="Scan a barcode"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 9v6M10 9v6M13 9v6M17 9v6"/></svg></button>
-    <button data-tab="weight"><svg viewBox="0 0 24 24"><path d="M5 20h14l-2-12H7L5 20zM9 8a3 3 0 0 1 6 0"/></svg><span>Weight</span></button>
-    <button data-tab="more"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>More</span></button>
+  <div class="auth" id="auth" hidden></div>
+  <div class="boot-loading">Loading your data…</div>
+  <header class="mtop" id="mtop"></header>
+  <div class="shell">
+    <aside class="side">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+          <rect width="48" height="48" rx="12" fill="var(--leaf)"/>
+          <path d="M24 37 C13 29 9 23 9 17.5 C9 13 12.4 10 16.3 10 C19.6 10 22.2 12 24 14.6 C25.8 12 28.4 10 31.7 10 C35.6 10 39 13 39 17.5 C39 23 35 29 24 37 Z" fill="#fff"/>
+          <path d="M12 22 H18 L20.5 17 L24 27 L27 20 L29 22 H36" fill="none" stroke="var(--leaf)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div><div class="brand-name">Moatassim<br>Health</div><div class="brand-ver" id="brandVer"></div></div>
+      </div>
+      <div class="profiles" id="profiles"></div>
+      <nav class="nav" id="nav">
+        <button data-view="today" class="active">Food diary</button>
+        <button data-view="trends">Daily Performance</button>
+        <button data-view="friends">Friends & ranking</button>
+        <button data-view="garmin">Devices</button>
+        <button data-view="foods">Food list</button>
+        <button data-view="forecast">Weight projection</button>
+        <button data-view="settings">Settings</button>
+      </nav>
+      <button class="side-add" id="sideAdd">Log food</button>
+      <div class="side-foot" id="sideFoot"></div>
+    </aside>
+    <main class="main" id="main"></main>
+  </div>
+
+  <nav class="tabbar" id="tabbar" aria-label="Main">
+    <button data-view="today"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Diary</span></button>
+    <button data-view="trends"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Performance</span></button>
+    <button data-view="scan" class="scan-btn" aria-label="Scan a barcode"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 9v6M10 9v6M13 9v6M17 9v6"/></svg></button>
+    <button data-view="friends"><svg viewBox="0 0 24 24"><path d="M8 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 11a3 3 0 1 0 0-6M18 14c2.4.6 4 2.9 4 6"/></svg><span>Friends</span></button>
+    <button data-view="more"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>More</span></button>
   </nav>
-  <div class="sheet-wrap" id="sheetWrap" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" id="modalCard"></div>
+  </div>
   <div class="toast" id="toast" hidden></div>
-  <script src="config.js"></script>
-  <script src="foods.js"></script>
-  <script src="syncmodel.js"></script>
+
+  <script src="config.js?v=2.0.0"></script>
+  <script src="foods.js?v=2.0.0"></script>
+  <script src="syncmodel.js?v=2.0.0"></script>
+  <script src="charts.js?v=2.0.0"></script>
   <script src="vendor/html5-qrcode.min.js" defer></script>
-  <script src="app.js"></script>
+  <script src="scanner.js?v=2.0.0"></script>
+  <script src="api-web.js?v=2.0.0"></script>
+  <script>window.MHBoot();</script>
 </body>
 </html>

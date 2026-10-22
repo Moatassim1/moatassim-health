@@ -120,7 +120,8 @@
       const out = [], seen = new Set();
       let after = cursor || '1970-01-01T00:00:00Z';
       for (let guard = 0; guard < 500; guard++) {
-        const q = `/rest/v1/items?select=id,kind,profile,day,data,deleted,updated_at&updated_at=gte.${encodeURIComponent(after)}&order=updated_at.asc,id.asc&limit=1000`;
+        const mine = this.session && this.session.user_id ? `&owner=eq.${this.session.user_id}` : '';
+        const q = `/rest/v1/items?select=id,kind,profile,day,data,deleted,updated_at${mine}&updated_at=gte.${encodeURIComponent(after)}&order=updated_at.asc,id.asc&limit=1000`;
         const rows = await this._req(q);
         let added = 0;
         for (const r of rows) { const k = r.id + '|' + r.updated_at; if (!seen.has(k)) { seen.add(k); out.push(r); added++; } }
@@ -149,6 +150,20 @@
       if (meta.session && !this.supa.session) this.supa.session = meta.session;
       if (!this.supa.session) throw Object.assign(new Error('Not signed in'), { status: 401 });
       try {
+        // 0) First sync on this device: take what the account already has before pushing
+        //    anything, so a fresh install never overwrites real data with blank defaults.
+        if (!meta.cursor) {
+          const all = await this.supa.since(null);
+          const st0 = this.a.getState();
+          const items0 = toItems(st0);
+          let got = 0;
+          for (const r of all) {
+            if (r.deleted) { meta.shadow[r.id] = 'X'; delete items0[r.id]; }
+            else { const it = { kind: r.kind, profile: r.profile, day: r.day, data: r.data }; items0[r.id] = it; meta.shadow[r.id] = hashItem(it); got++; }
+            if (!meta.cursor || r.updated_at > meta.cursor) meta.cursor = r.updated_at;
+          }
+          if (got) this.a.setState(rebuild(st0, items0), true);
+        }
         // 1) Push local changes.
         let state = this.a.getState();
         const local = toItems(state);

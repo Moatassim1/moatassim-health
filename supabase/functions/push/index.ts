@@ -37,10 +37,10 @@ Deno.serve(async (req) => {
       const to = String(body.to || '');
       if (!(await admin.rpc('mh_knows', { a: me, b: to })).data) return json({ ok: false, error: 'Not connected' }, 403);
       recipients = [to];
-      title = 'Moatassim Health';
+      title = 'Mabrouka Tracker';
       text = kind === 'friend-request' ? `${myName} wants to be friends. Open the app to accept.` : `${myName} accepted your friend request.`;
     } else if (kind === 'test') {
-      recipients = [me]; title = 'Moatassim Health'; text = 'Notifications are working.';
+      recipients = [me]; title = 'Mabrouka Tracker'; text = 'Notifications are working.';
     } else return json({ ok: false, error: 'Unknown kind' }, 400);
     if (!recipients.length) return json({ ok: true, sent: 0 });
 

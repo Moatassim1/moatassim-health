@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.1';
+  const APP_VERSION = '2.0.2';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -355,7 +355,7 @@
     sync: { connect: async () => ({ ok: true }), disconnect: async () => ({}), now: () => runSync(), info: async () => ({ ...status }), onStatus: cb => statusCbs.push(cb), onReload: cb => reloadCbs.push(cb) },
     async exportData() {
       const blob = new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Moatassim-Health-backup-${todayKey()}.json`; a.click();
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Mabrouka-Tracker-backup-${todayKey()}.json`; a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
       return { ok: true };
     },
@@ -365,7 +365,7 @@
         inp.onchange = async () => {
           try {
             const s = JSON.parse(await inp.files[0].text());
-            if (!s || !(s.profiles || s.diary)) return resolve({ ok: false, error: 'That file is not a Moatassim Health backup.' });
+            if (!s || !(s.profiles || s.diary)) return resolve({ ok: false, error: 'That file is not a Mabrouka Tracker backup.' });
             const one = s.profiles ? (s.profiles.me || s.profiles.moatassim || Object.values(s.profiles)[0]) : null;
             S = normalise(one ? { ...s, profiles: { me: { ...one, id: 'me' } } } : s); persist(); scheduleSync(500);
             resolve({ ok: true, state: JSON.parse(JSON.stringify(S)) });
@@ -409,7 +409,7 @@
     const signup = mode === 'signup';
     box.innerHTML = `<div class="auth-card">
       <img class="auth-logo" src="icons/icon-180.png" alt="">
-      <h1>Moatassim Health</h1>
+      <h1>Mabrouka Tracker</h1>
       <p class="muted">${signup ? 'Create your account. Pick the name your friends will see.' : 'Sign in to your account.'}</p>
       ${signup ? '<label class="field"><span>Your name</span><input type="text" id="aName" autocomplete="nickname" maxlength="40"></label>' : ''}
       <label class="field"><span>Email</span><input type="email" id="aEmail" autocomplete="username" autocapitalize="off"></label>

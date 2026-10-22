@@ -550,3 +550,5 @@ html:has(.modal:not([hidden])) { overflow: hidden; }
 @keyframes scanline { 0%, 100% { transform: translateY(-34px); } 50% { transform: translateY(34px); } }
 .scanner.hit .scan-guide i { border-color: #4ee08a; box-shadow: 0 0 0 9999px rgba(0,0,0,.35), 0 0 24px #4ee08a; }
 .scan-top button.on { background: #ffd54a; color: #111; }
+img.brand-mark { border-radius: 10px; display: block; object-fit: cover; }
+.mtop .brand-mini img { width: 34px; height: 34px; border-radius: 9px; display: block; }

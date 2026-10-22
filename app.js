@@ -228,7 +228,7 @@
     else { if (view === 'today') UI.date = todayKey(); nav(view); }
   });
 
-  document.title = `Moatassim Health v${VERSION}`;
+  document.title = 'Mabrouka Tracker';
   $('#brandVer').textContent = 'v' + VERSION;
 
   function switchProfile(pid, quiet) {
@@ -245,7 +245,7 @@
     const html = `<button class="me-card" data-act2="go-settings"><span class="avatar" style="background:${esc(P().color)}">${esc((P().name || '?').charAt(0).toUpperCase())}</span><span class="pname">${esc(P().name)}<small>${pts == null ? 'Set a goal to rank' : fmt(pts, 1) + '% to goal'}</small></span></button>
       <button class="bell" data-act2="notes" aria-label="Notifications">${BELL}${NOTES.unread ? `<i>${NOTES.unread > 9 ? '9+' : NOTES.unread}</i>` : ''}</button>`;
     $('#profiles').innerHTML = html;
-    const mt = $('#mtop'); if (mt) mt.innerHTML = `<div class="brand-mini"><svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="var(--leaf)"/><path d="M24 37 C13 29 9 23 9 17.5 C9 13 12.4 10 16.3 10 C19.6 10 22.2 12 24 14.6 C25.8 12 28.4 10 31.7 10 C35.6 10 39 13 39 17.5 C39 23 35 29 24 37 Z" fill="#fff"/></svg></div>` + html;
+    const mt = $('#mtop'); if (mt) mt.innerHTML = `<div class="brand-mini"><img class="brand-mark" src="icons/icon-192.png" alt=""></div>` + html;
     document.documentElement.style.setProperty('--person', P().color);
   }
   function onChrome(e) {
@@ -1706,7 +1706,7 @@
           </div>
         </div>
       </div>
-      <p class="faint small" style="margin-top:20px">Moatassim Health v${esc(VERSION)}. Nutrition values are averages from USDA FoodData Central and UK product labels; targets are general adult guidance, not medical advice.</p>
+      <p class="faint small" style="margin-top:20px">Mabrouka Tracker v${esc(VERSION)}. Nutrition values are averages from USDA FoodData Central and UK product labels; targets are general adult guidance, not medical advice.</p>
     </div>`;
 
     main.querySelectorAll('[data-p]').forEach(el => el.addEventListener('change', () => {
@@ -1773,7 +1773,7 @@
   function showWhatsNew(u, again) {
     card.className = 'modal-card narrow';
     card.innerHTML = `<div class="modal-head"><h2>Updated to v${esc(u.version)}</h2><button class="btn ghost" data-f="close">Close</button></div>
-      <div class="modal-body"><p class="muted" style="margin-top:0">Moatassim Health updated itself${u.from ? ' from v' + esc(u.from) : ''}. What's new:</p>
+      <div class="modal-body"><p class="muted" style="margin-top:0">Mabrouka Tracker updated itself${u.from ? ' from v' + esc(u.from) : ''}. What's new:</p>
       <ul class="whatsnew">${(u.notes || []).map(n => `<li>${esc(n)}</li>`).join('') || '<li>Small fixes and improvements.</li>'}</ul></div>
       <div class="modal-foot"><button class="btn primary" data-f="close">Got it</button></div>`;
     modal.hidden = false;

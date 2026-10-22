@@ -494,6 +494,7 @@
           <div class="picker-search">
             <div class="search-row"><input type="text" id="mq" placeholder="Search foods, e.g. chicken breast, banana" autocomplete="off" spellcheck="false"><button class="btn scan-inline" data-m="scan" aria-label="Scan a barcode"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 9v6M10 9v6M13 9v6M17 9v6"/></svg><span>Scan</span></button></div>
             <div class="seg" id="mtabs"><button data-tab="all" class="on">Food list</button><button data-tab="recent">Recent</button><button data-tab="shop">Shops</button><button data-tab="online">Search online</button></div>
+            <button class="juice-btn" data-m="juice"><span class="jb-ico">🥤</span><span><b>Make a juice or smoothie</b><small>Add the liquid, fruit and extras you blended</small></span></button>
             <div class="shop-pick" id="mshops" hidden>${SHOP_LIST.map(([id, nm]) => `<button class="chip" data-shop="${id}">${esc(nm)}</button>`).join('')}</div>
           </div>
           <div class="results" id="mres"></div>
@@ -746,6 +747,135 @@
   }
   window.MHScanIntoLog = () => { closeModal(); openAdd({ date: UI.view === 'today' ? UI.date : todayKey(), meal: guessMeal() }); scanIntoModal(); };
 
+  // ---------------------------------------------------------------- juice / smoothie builder
+  const JUICE_SETS = [
+    ['Liquid', 'What did you blend it with?', ['Water', 'Milk, semi-skimmed', 'Milk, whole', 'Milk, skimmed', 'Almond milk, unsweetened', 'Oat milk', 'Soya milk, unsweetened', 'Coconut milk drink', 'Coconut water', 'Orange juice', 'Apple juice', 'Kefir, plain']],
+    ['Fruit & veg', 'Fresh or frozen', ['Banana', 'Strawberries', 'Blueberries', 'Raspberries', 'Frozen mixed berries', 'Mango', 'Pineapple', 'Apple', 'Orange', 'Kiwi', 'Pear', 'Avocado', 'Dates, medjool', 'Spinach, raw', 'Kale, raw', 'Carrot, raw', 'Cucumber', 'Celery', 'Beetroot, cooked', 'Ginger, fresh', 'Lemon juice, fresh', 'Lime juice, fresh', 'Mint leaves, fresh']],
+    ['Extras', 'Nuts, seeds, protein, sweeteners', ['Oats, rolled (dry)', 'Peanut butter', 'Almonds', 'Walnuts', 'Cashews', 'Chia seeds', 'Flaxseed, ground', 'Honey', 'Maple syrup', 'Whey protein powder (typical)', 'Greek yogurt, 0% fat', 'Skyr, plain', 'Cocoa powder, unsweetened', 'Cinnamon, ground', 'Ice cubes']]
+  ];
+  const foodByName = nm => BUILTIN.find(f => f.name === nm) || null;
+  let J = null;
+  function juiceDefault(f, setIdx) {
+    if (setIdx === 0) return f.name === 'Water' || unitOf(f) === 'ml' ? 250 : 200;
+    if (f.each) return f.each.g;
+    return f.portion ? Math.round(f.portion) : (setIdx === 2 ? 20 : 80);
+  }
+  function openJuice(ctx) {
+    M = null; // leave the normal log-food screen
+    J = { date: ctx.date, meal: ctx.meal || guessMeal(), name: '', items: [], q: '', saveRecipe: true };
+    card.className = 'modal-card narrow juice-card';
+    card.onclick = juiceClick;
+    modal.hidden = false;
+    renderJuice();
+  }
+  function juiceTotals() {
+    const tot = {}; let g = 0;
+    for (const it of J.items) {
+      const amt = Number(it.g) || 0; g += amt;
+      for (const k of NKEYS) { const v = it.food.n[k]; if (v == null) continue; tot[k] = (tot[k] || 0) + v * amt / 100; }
+    }
+    return { tot, g };
+  }
+  function juiceName() {
+    if (J.name.trim()) return J.name.trim();
+    const fr = J.items.filter(i => !/^(Water|Milk|Almond milk|Oat milk|Soya milk|Coconut milk|Ice)/.test(i.food.name)).map(i => i.food.name.split(/[,(]/)[0].trim().toLowerCase());
+    return fr.length ? 'Smoothie: ' + fr.slice(0, 3).join(', ') + (fr.length > 3 ? ' +' + (fr.length - 3) : '') : 'Juice';
+  }
+  function renderJuice(keepFocus) {
+    const { tot, g } = juiceTotals();
+    const have = new Set(J.items.map(i => i.food.id));
+    const results = J.q.trim() ? searchFoods(J.q).slice(0, 8) : [];
+    const rows = J.items.map((it, i) => {
+      const u = unitOf(it.food);
+      const each = it.food.each && Number(it.g) > 0 ? ` <span class="faint">≈ ${esc(countLabel(Math.round(Number(it.g) / it.food.each.g * 4) / 4, it.food.each))}</span>` : '';
+      return `<div class="j-row"><span class="j-name">${esc(it.food.name)}${each}<small>${fmt((it.food.n.kcal || 0) * (Number(it.g) || 0) / 100)} kcal</small></span>
+        <span class="j-amt"><input type="number" inputmode="decimal" min="0" step="1" value="${esc(it.g)}" data-ji="${i}" aria-label="Amount of ${esc(it.food.name)}"><span>${u}</span></span>
+        <button class="btn ghost j-x" data-j="del" data-i="${i}" aria-label="Remove ${esc(it.food.name)}">✕</button></div>`;
+    }).join('');
+    card.innerHTML = `<div class="modal-head"><h2>Juice or smoothie</h2><button class="btn ghost" data-j="close">Close</button></div>
+      <div class="modal-body">
+        <p class="muted small" style="margin-top:0">Tap what went in, then set how much of each. Grams for solids, ml for liquids.</p>
+        ${JUICE_SETS.map(([title, sub, names], si) => `<div class="j-set"><div class="j-set-h"><b>${title}</b> <span class="faint small">${sub}</span></div><div class="chips">${names.map(foodByName).filter(Boolean).map(f => `<button class="chip ${have.has(f.id) ? 'on' : ''}" data-j="add" data-id="${esc(f.id)}" data-s="${si}">${have.has(f.id) ? '✓ ' : '+ '}${esc(f.name.replace(/, (unsweetened|fresh|raw|plain|ground|medjool|rolled \(dry\)|cooked)$/, '').replace(' (typical)', ''))}</button>`).join('')}</div></div>`).join('')}
+        <div class="j-set"><div class="j-set-h"><b>Something else?</b> <span class="faint small">Search your food list</span></div>
+          <input type="text" id="jq" placeholder="e.g. peanut butter, mango, protein" value="${esc(J.q)}" autocomplete="off">
+          ${results.length ? `<div class="chips" style="margin-top:8px">${results.map(f => `<button class="chip ${have.has(f.id) ? 'on' : ''}" data-j="add" data-id="${esc(f.id)}" data-s="1">${have.has(f.id) ? '✓ ' : '+ '}${esc(f.name)}</button>`).join('')}</div>` : J.q.trim() ? '<p class="faint small">No match in the food list.</p>' : ''}
+        </div>
+        <div class="j-list">${rows || '<p class="muted small">Nothing added yet.</p>'}</div>
+        <div class="preview j-total">
+          <div class="pk num">${fmt(tot.kcal || 0)}<small>kcal</small></div>
+          <div class="pmac"><div class="p"><b>${fmt(tot.p || 0, 1)} g</b><span>Protein</span></div><div class="c"><b>${fmt(tot.c || 0, 1)} g</b><span>Carbs</span></div><div class="f"><b>${fmt(tot.f || 0, 1)} g</b><span>Fat</span></div></div>
+          <div class="muted small" style="margin-top:6px">${fmt(g)} ${J.items.some(i => unitOf(i.food) === 'ml') ? 'ml/g' : 'g'} in total · fibre ${fmt(tot.fib || 0, 1)} g · sugar ${fmt(tot.sug || 0, 1)} g${tot.vc != null ? ` · vitamin C ${fmt(tot.vc, 0)} mg` : ''}</div>
+        </div>
+        <label class="field" style="margin-top:14px"><span>Name</span><input type="text" id="jname" maxlength="60" placeholder="${esc(juiceName())}" value="${esc(J.name)}"></label>
+        <label class="field" style="margin-top:10px"><span>Meal</span><select id="jmeal">${MEALS.map(m => `<option ${m === J.meal ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="jsave" ${J.saveRecipe ? 'checked' : ''}> Save it in My foods so I can log it again in one tap</label>
+        <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn primary" data-j="commit" ${J.items.length && g > 0 ? '' : 'disabled'}>Add to ${esc(J.meal.toLowerCase())}</button></div>
+      </div>`;
+    const jq = $('#jq');
+    jq.addEventListener('input', () => {
+      J.q = jq.value;
+      const tmp = document.createElement('div'); const body = card.querySelector('.modal-body'); const top = body.scrollTop;
+      // Swap only the suggestion chips so the search box keeps focus.
+      const res = J.q.trim() ? searchFoods(J.q).slice(0, 8) : [];
+      const hv = new Set(J.items.map(i => i.food.id));
+      tmp.innerHTML = res.length ? `<div class="chips" style="margin-top:8px">${res.map(f => `<button class="chip ${hv.has(f.id) ? 'on' : ''}" data-j="add" data-id="${esc(f.id)}" data-s="1">${hv.has(f.id) ? '✓ ' : '+ '}${esc(f.name)}</button>`).join('')}</div>` : J.q.trim() ? '<p class="faint small">No match in the food list.</p>' : '';
+      const set = jq.parentElement; while (set.lastElementChild && set.lastElementChild !== jq) set.lastElementChild.remove();
+      while (tmp.firstChild) set.appendChild(tmp.firstChild);
+      body.scrollTop = top;
+    });
+    card.querySelectorAll('[data-ji]').forEach(inp => inp.addEventListener('input', () => { J.items[Number(inp.dataset.ji)].g = inp.value; refreshJuiceTotals(); }));
+    $('#jname').addEventListener('input', e => { J.name = e.target.value; });
+    $('#jmeal').addEventListener('change', e => { J.meal = e.target.value; const b = card.querySelector('[data-j="commit"]'); if (b) b.textContent = 'Add to ' + J.meal.toLowerCase(); });
+    $('#jsave').addEventListener('change', e => { J.saveRecipe = e.target.checked; });
+    if (keepFocus) { const el = card.querySelector(keepFocus); if (el) { el.focus(); try { el.select(); } catch (_) {} } }
+  }
+  // Update the totals and per-item kcal without rebuilding the amount boxes.
+  function refreshJuiceTotals() {
+    const { tot, g } = juiceTotals();
+    card.querySelectorAll('.j-row').forEach((row, i) => {
+      const it = J.items[i]; if (!it) return;
+      const sm = row.querySelector('.j-name small'); if (sm) sm.textContent = fmt((it.food.n.kcal || 0) * (Number(it.g) || 0) / 100) + ' kcal';
+    });
+    const box = card.querySelector('.j-total');
+    if (box) box.innerHTML = `<div class="pk num">${fmt(tot.kcal || 0)}<small>kcal</small></div>
+      <div class="pmac"><div class="p"><b>${fmt(tot.p || 0, 1)} g</b><span>Protein</span></div><div class="c"><b>${fmt(tot.c || 0, 1)} g</b><span>Carbs</span></div><div class="f"><b>${fmt(tot.f || 0, 1)} g</b><span>Fat</span></div></div>
+      <div class="muted small" style="margin-top:6px">${fmt(g)} ${J.items.some(i => unitOf(i.food) === 'ml') ? 'ml/g' : 'g'} in total · fibre ${fmt(tot.fib || 0, 1)} g · sugar ${fmt(tot.sug || 0, 1)} g${tot.vc != null ? ` · vitamin C ${fmt(tot.vc, 0)} mg` : ''}</div>`;
+    const b = card.querySelector('[data-j="commit"]'); if (b) b.disabled = !(J.items.length && g > 0);
+    const nm = $('#jname'); if (nm) nm.placeholder = juiceName();
+  }
+  function juiceClick(e) {
+    const a = e.target.closest('[data-j]'); if (!a || !J) return;
+    const act = a.dataset.j;
+    if (act === 'close') { J = null; closeModal(); return; }
+    if (act === 'add') {
+      const f = allFoods().find(x => x.id === a.dataset.id); if (!f) return;
+      const idx = J.items.findIndex(i => i.food.id === f.id);
+      if (idx >= 0) { J.items.splice(idx, 1); renderJuice(); return; }
+      J.items.push({ food: f, g: juiceDefault(f, Number(a.dataset.s)) });
+      const body = card.querySelector('.modal-body'); const top = body ? body.scrollTop : 0;
+      renderJuice();
+      const nb = card.querySelector('.modal-body'); if (nb) nb.scrollTop = top;
+      toast(`Added ${f.name}. Set the amount below.`);
+      return;
+    }
+    if (act === 'del') { const body = card.querySelector('.modal-body'); const top = body.scrollTop; J.items.splice(Number(a.dataset.i), 1); renderJuice(); card.querySelector('.modal-body').scrollTop = top; return; }
+    if (act === 'commit') {
+      const { tot, g } = juiceTotals(); if (!(g > 0)) return;
+      const n = {}; for (const k of NKEYS) n[k] = tot[k] == null ? null : Math.round(tot[k] / g * 100 * 1000) / 1000;
+      const name = juiceName();
+      const liquid = J.items.some(i => unitOf(i.food) === 'ml');
+      const food = { id: 'mine-' + uid(), name, source: 'Mine', cat: 'Drinks', unit: liquid ? 'ml' : 'g', portion: Math.round(g), portionLabel: '1 serving (as made)', n,
+        recipe: J.items.map(i => ({ id: i.food.id, name: i.food.name, g: Number(i.g) || 0 })), savedAt: Date.now() };
+      if (J.saveRecipe) S.customFoods.unshift(food);
+      const list = P().diary[J.date] || (P().diary[J.date] = []);
+      list.push({ id: uid(), foodId: food.id, name, grams: Math.round(g), count: null, each: null, unit: food.unit, meal: J.meal, n: { ...n }, portion: food.portion, portionLabel: food.portionLabel, source: 'Mine', at: Date.now(), recipe: food.recipe });
+      remember(food); save();
+      const date = J.date, meal = J.meal; J = null; closeModal();
+      if (UI.view === 'today') { UI.date = date; render(); }
+      toast(`Added ${name} (${fmt(tot.kcal || 0)} kcal) to ${meal.toLowerCase()}.`);
+    }
+  }
+
   function onModalClick(e) {
     const a = e.target.closest('[data-m]');
     if (!a || !M) return;
@@ -767,6 +897,7 @@
     }
     else if (m === 'back') { const pk = card.querySelector('.picker'); if (pk) pk.classList.remove('show-right'); }
     else if (m === 'scan') scanIntoModal();
+    else if (m === 'juice') openJuice({ date: M.date, meal: M.meal });
     else if (m === 'grams') { M.grams = a.dataset.g; renderRight(); }
     else if (m === 'count') { M.count = Number(a.dataset.c); M.grams = M.count * M.sel.each.g; renderRight(); }
     else if (m === 'mode') {
@@ -1018,9 +1149,24 @@
 
   // Notifications (bell)
   let NOTES = { list: [], unread: 0 };
+  let seenNoteIds = null;
   async function loadNotes() {
-    try { const l = await social.notifications(); NOTES = { list: l, unread: l.filter(n => !n.read).length }; renderMe(); } catch (_) {}
+    try {
+      const l = await social.notifications();
+      const fresh = seenNoteIds ? l.filter(n => !seenNoteIds.has(n.id) && !n.read) : [];
+      seenNoteIds = new Set(l.map(n => n.id));
+      NOTES = { list: l, unread: l.filter(n => !n.read).length }; renderMe();
+      if (fresh.length) {
+        // Something new arrived while the app is open: show it straight away.
+        const n = fresh[0];
+        toast(n.kind === 'food' ? n.title + ' · ' + n.body : (n.body || n.title), 'View', () => { if (/friend/.test(n.kind)) nav('friends'); else openNotes(); });
+        if (fresh.some(x => /friend/.test(x.kind))) loadFriends(true);
+      }
+    } catch (_) {}
   }
+  // A push arriving while the app is open: refresh at once.
+  if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'mh-push') { loadNotes(); loadFriends(true); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { loadNotes(); if (UI.view === 'friends') loadFriends(true); } });
   function openNotes() {
     card.className = 'modal-card narrow';
     card.innerHTML = `<div class="modal-head"><h2>Notifications</h2><button class="btn ghost" data-f="close">Close</button></div>
@@ -1789,7 +1935,9 @@
   setInterval(async () => { for (const pid of connectedPids()) await quietSync(pid, 2); }, 3 * 3600 * 1000);
 
   loadFriends(); loadNotes();
-  setInterval(() => { if (document.visibilityState === 'visible') { loadNotes(); if (UI.view === 'friends' && !F.view) loadFriends(true); } }, 60000);
+  // Check for friend requests, accepts and food notices every few seconds while the app is open.
+  setInterval(() => { if (document.visibilityState === 'visible') loadNotes(); }, 8000);
+  setInterval(() => { if (document.visibilityState === 'visible' && UI.view === 'friends' && !F.view) loadFriends(true); }, 15000);
   // Windows app: daily reminder at the chosen time.
   if (window.desktop) setInterval(() => {
     const now = new Date(), key = todayKey();

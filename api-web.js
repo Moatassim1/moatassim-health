@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.3';
+  const APP_VERSION = '2.0.4';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -163,11 +163,23 @@
         la: x('linoleic-acid', 1) ?? x('omega-6-fat', 1), ala: x('alpha-linolenic-acid', 1) } };
   }
   async function getJson(url, opts, ms = 15000) {
+    // Open Food Facts searches go through our server: OFF blocks browsers calling its search directly.
+    if (/openfoodfacts\.org\/(cgi\/search\.pl|api\/v2\/search)/.test(url)) return viaServer(url, ms + 10000);
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), ms);
     try { const r = await fetch(url, { ...(opts || {}), signal: ctrl.signal }); if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; } return await r.json(); }
     finally { clearTimeout(t); }
   }
-  const friendly = (e, usda) => e.name === 'AbortError' ? 'took too long to answer.' : usda && (e.status === 429 || e.status === 403) ? 'free search limit reached. Add your own free USDA key in Settings.' : e.status ? 'the service returned an error (' + e.status + ').' : 'could not connect. Check your internet connection.';
+  async function viaServer(url, ms) {
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), ms);
+    try {
+      const token = await supa.token();
+      const r = await fetch(`${CFG.url}/functions/v1/foods`, { method: 'POST', signal: ctrl.signal, headers: { 'Content-Type': 'application/json', apikey: CFG.key, Authorization: 'Bearer ' + token }, body: JSON.stringify({ url }) });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || j.ok === false) { const e = new Error((j && j.error) || 'HTTP ' + r.status); e.status = r.status === 404 ? 404 : (r.status || 502); e.server = true; throw e; }
+      return j;
+    } finally { clearTimeout(t); }
+  }
+  const friendly = (e, usda) => e.name === 'AbortError' ? 'took too long to answer.' : e.server ? (e.status === 404 ? 'the food search server script is not set up yet.' : e.message) : usda && (e.status === 429 || e.status === 403) ? 'free search limit reached. Add your own free USDA key in Settings.' : e.status ? 'the service returned an error (' + e.status + ').' : 'could not connect. Check your internet connection.';
   async function searchOFF(q) {
     const mk = h => `https://${h}.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=30&fields=${OFF_FIELDS}`;
     let products = [];

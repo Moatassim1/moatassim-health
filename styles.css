@@ -552,3 +552,23 @@ html:has(.modal:not([hidden])) { overflow: hidden; }
 .scan-top button.on { background: #ffd54a; color: #111; }
 img.brand-mark { border-radius: 10px; display: block; object-fit: cover; }
 .mtop .brand-mini img { width: 34px; height: 34px; border-radius: 9px; display: block; }
+
+/* juice / smoothie builder */
+.juice-btn { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 1px dashed var(--leaf); background: var(--leaf-soft); color: var(--ink); border-radius: 12px; padding: 9px 12px; }
+.juice-btn .jb-ico { font-size: 22px; line-height: 1; }
+.juice-btn span:last-child { display: flex; flex-direction: column; }
+.juice-btn small { color: var(--muted); font-size: 12px; }
+.juice-card .modal-body { padding-bottom: calc(18px + env(safe-area-inset-bottom)); }
+.j-set { margin-top: 14px; }
+.j-set-h { margin-bottom: 6px; }
+.j-set input[type=text] { width: 100%; box-sizing: border-box; }
+.chip.on { background: var(--leaf-soft); border-color: var(--leaf); color: var(--leaf-strong); font-weight: 600; }
+.j-list { margin-top: 16px; border-top: 1px solid var(--line); }
+.j-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.j-name { display: flex; flex-direction: column; font-weight: 500; min-width: 0; }
+.j-name small { color: var(--muted); font-weight: 400; }
+.j-amt { display: flex; align-items: center; gap: 4px; }
+.j-amt input { width: 74px; font-size: 16px; padding: 7px 8px; text-align: right; }
+.j-amt span { color: var(--muted); font-size: 13px; width: 20px; }
+.j-x { padding: 6px 10px; }
+.j-total { margin-top: 14px; }

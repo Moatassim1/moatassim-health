@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Moatassim Health: wearable connections (runs on Supabase as the "wearables" function).
-// Keys are stored in public.wearable_keys, which the app itself can never read back.
+// Keys are stored ENCRYPTED in public.wearable_keys (AES-256-GCM), which the app itself can never read back.
+// The encryption key comes from the function's environment (MH_KEY_SECRET, or the service key), never the database.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
@@ -189,6 +190,30 @@ function summarise(date, st, sl, hr, hv) {
 
 
 
+// ---------------------------------------------------------------- key encryption
+let _aes = null;
+async function aesKey() {
+  if (_aes) return _aes;
+  const secret = Deno.env.get('MH_KEY_SECRET') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const raw = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('mabrouka-wearable-keys-v1|' + secret));
+  _aes = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+  return _aes;
+}
+const b64 = (u8) => btoa(String.fromCharCode(...u8));
+const unb64 = (s) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function sealKey(plain) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await aesKey(), new TextEncoder().encode(plain)));
+  const all = new Uint8Array(iv.length + ct.length); all.set(iv); all.set(ct, iv.length);
+  return 'enc1:' + b64(all);
+}
+async function openKey(stored) {
+  if (!String(stored).startsWith('enc1:')) return { plain: stored, legacy: true };
+  const all = unb64(stored.slice(5));
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: all.slice(0, 12) }, await aesKey(), all.slice(12));
+  return { plain: new TextDecoder().decode(pt), legacy: false };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   try {
@@ -217,7 +242,7 @@ Deno.serve(async (req) => {
       const api = new PersonalApi(key);
       try { await api.getToken(true); } catch (e) { return json({ ok: false, error: e.message }); }
       let name = null; try { name = (await api.profile()).displayName; } catch (_) {}
-      const { error } = await admin.from('wearable_keys').upsert({ user_id: uid, provider, api_key: key, expires_at: exp.toISOString(), connected_at: new Date().toISOString(), display_name: name });
+      const { error } = await admin.from('wearable_keys').upsert({ user_id: uid, provider, api_key: await sealKey(key), expires_at: exp.toISOString(), connected_at: new Date().toISOString(), display_name: name });
       if (error) return json({ ok: false, error: 'Could not save the key: ' + error.message });
       return json({ ok: true, displayName: name, expiresAt: exp.toISOString() });
     }
@@ -226,7 +251,10 @@ Deno.serve(async (req) => {
       if (!row) return json({ ok: false, code: 'not_connected', error: 'Connect your Garmin first.' });
       if (row.expires_at && new Date(row.expires_at) <= new Date()) return json({ ok: false, code: 'expired', error: 'Your Garmin key has expired. Make a new one and add it again.' });
       const dates = (Array.isArray(body.dates) ? body.dates : []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).slice(-14);
-      const api = new PersonalApi(row.api_key);
+      let opened;
+      try { opened = await openKey(row.api_key); } catch (_) { return json({ ok: false, code: 'bad_key', error: 'Please add your Garmin key again (it could not be unlocked).' }); }
+      if (opened.legacy) await admin.from('wearable_keys').update({ api_key: await sealKey(opened.plain) }).eq('user_id', uid).eq('provider', provider); // encrypt old plain keys
+      const api = new PersonalApi(opened.plain);
       try {
         const out = await api.fetchDays(dates);
         return json({ ok: true, days: out.days, displayName: row.display_name, expiresAt: row.expires_at });

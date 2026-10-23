@@ -627,3 +627,28 @@ body { background: radial-gradient(900px 520px at 105% -8%, var(--glow-1), trans
 .mt-v { font: 400 28px/1.1 var(--display); margin: 4px 0 2px; }
 .mt-v small { font-size: 13px; color: var(--muted); margin-left: 4px; }
 @media (max-width: 760px) { .stat.maint { grid-column: 1 / -1; } }
+
+/* quicker logging */
+.meal-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 4px; }
+.meal-tools .add-line { margin-right: 6px; }
+.tool-chip { border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); border-radius: 16px; padding: 4px 10px; font-size: 12.5px; }
+.tool-chip:hover { border-color: var(--leaf); color: var(--ink); }
+.fav-row { position: relative; padding-right: 44px; }
+.fav-x { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); padding: 4px 9px; }
+
+/* water + exercise */
+.water-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.water-num { font: 400 30px/1 var(--display); }
+.water-num small { font-size: 14px; color: var(--muted); }
+.water-btns { display: flex; gap: 6px; }
+.water-bar { height: 8px; border-radius: 5px; background: var(--track); margin-top: 10px; overflow: hidden; }
+.water-bar i { display: block; height: 100%; background: linear-gradient(90deg, #3AA0FF, #6FD3FF); border-radius: 5px; transition: width .3s; }
+.ex-list { list-style: none; padding: 0; margin: 0; }
+.ex-list li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.ex-form { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, .7fr) minmax(0, .8fr) auto; gap: 6px; }
+.ex-form select, .ex-form input { min-width: 0; }
+.rk-rate { grid-column: 3 / 5; font: 600 11.5px var(--display); margin-top: 2px; }
+.rk-rate.good { color: var(--ok); }
+.rk-rate.bad { color: var(--low); }
+.bk-list { list-style: none; margin: 0; padding: 0; }
+.bk-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }

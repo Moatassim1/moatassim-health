@@ -27,7 +27,7 @@
   const unitOf = f => (f && f.unit === 'ml') ? 'ml' : 'g';
   const fmtCount = n => { const w = Math.floor(n), h = Math.round((n - w) * 4); const fr = ['', '¼', '½', '¾'][h] ?? ''; return h === 4 ? String(w + 1) : (w ? String(w) : (fr ? '' : '0')) + fr; };
   const countLabel = (n, each) => `${fmtCount(n)} ${n > 0 && n <= 1 ? each.one : each.many}`;
-  const entryAmount = e => e.count != null && e.each ? countLabel(e.count, e.each) : fmtAmt(e.grams, unitOf(e));
+  const entryAmount = e => e.quick ? 'quick add' : e.count != null && e.each ? countLabel(e.count, e.each) : fmtAmt(e.grams, unitOf(e));
   const fmtAmt = (v, u) => u === 'ml' && v >= 1000 ? fmt(v / 1000, 2).replace(/\.?0+$/, '') + ' L' : fmt(v) + ' ' + u;
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
@@ -322,6 +322,35 @@
       <a href="#" data-action="go-forecast">See the projection</a></p>
     </div>`;
   }
+  // Water and exercise, stored with the day so they sync.
+  const EXERCISES = [['Running', 9.8], ['Walking', 3.5], ['Cycling', 7.5], ['Gym / weights', 5], ['HIIT / circuits', 8], ['Swimming', 7], ['Football', 7], ['Padel / tennis', 7], ['Other', 5]];
+  const waterGoal = () => Math.max(1500, Math.round((currentWeight() || 75) * 35 / 250) * 250);
+  function waterExerciseCard(k) {
+    const m = P().dayMeta[k] || {}, ml = m.water || 0, goal = waterGoal();
+    const ex = m.ex || [];
+    const exK = ex.reduce((a, x) => a + (x.kcal || 0), 0);
+    const gd = P().garmin.days[k];
+    return `<div class="panel water-card">
+      <h2>Water</h2>
+      <div class="water-row"><div class="water-num num">${fmtAmt(ml, 'ml')}<small> / ${fmtAmt(goal, 'ml')}</small></div>
+        <div class="water-btns"><button class="btn" data-action="water" data-ml="-250" aria-label="Remove a glass">−</button><button class="btn" data-action="water" data-ml="250">+ Glass</button><button class="btn" data-action="water" data-ml="500">+ Bottle</button></div></div>
+      <div class="water-bar"><i style="width:${Math.min(100, ml / goal * 100)}%"></i></div>
+      <h2 style="margin-top:18px">Exercise</h2>
+      ${ex.length ? `<ul class="ex-list">${ex.map(x => `<li><span><b>${esc(x.name)}</b> <span class="faint">${fmt(x.min)} min</span></span><span class="num">${fmt(x.kcal)} kcal</span><button class="btn ghost j-x" data-action="ex-del" data-id="${esc(x.id)}" aria-label="Remove">✕</button></li>`).join('')}</ul><p class="small muted" style="margin:4px 0 10px">${fmt(exK)} kcal burned in workouts${gd && gd.kcalTotal != null ? ' · already part of your Garmin total, so it isn\'t added again' : ''}.</p>` : '<p class="muted small" style="margin-top:0">Log a workout to keep a record of it.</p>'}
+      <div class="ex-form">
+        <select id="exAct">${EXERCISES.map(([n]) => `<option>${n}</option>`).join('')}</select>
+        <input type="number" id="exMin" inputmode="numeric" min="1" max="600" placeholder="min">
+        <input type="number" id="exKcal" inputmode="numeric" min="0" max="5000" placeholder="kcal">
+        <button class="btn" data-action="ex-add">Add</button>
+      </div>
+      <p class="faint small" style="margin:6px 0 0">Calories are worked out from your weight and time; type your own if your watch shows a number.</p>
+    </div>`;
+  }
+  function wireWaterExercise(k) {
+    const act = $('#exAct'), mins = $('#exMin'), kc = $('#exKcal'); if (!act) return;
+    const est = () => { const met = (EXERCISES.find(x => x[0] === act.value) || [, 5])[1]; const mn = Number(mins.value); kc.placeholder = mn > 0 ? String(Math.round(met * (currentWeight() || 75) * mn / 60)) : 'kcal'; };
+    act.addEventListener('change', est); mins.addEventListener('input', est);
+  }
   function wireWeight(k) {
     const inp = $('#wIn'); if (!inp) return;
     const saveW = () => {
@@ -380,7 +409,12 @@
           <span class="ek">${fmt(e.n.kcal * e.grams / 100)}</span>
           <span class="emac"><span class="p">${fmt((e.n.p || 0) * e.grams / 100, 1)}P</span> · <span class="c">${fmt((e.n.c || 0) * e.grams / 100, 1)}C</span> · <span class="f">${fmt((e.n.f || 0) * e.grams / 100, 1)}F</span></span>
         </li>`).join('')}</ul>
-        <button class="add-line" data-action="add" data-meal="${meal}">+ Add to ${meal.toLowerCase()}</button>
+        <div class="meal-tools">
+          <button class="add-line" data-action="add" data-meal="${meal}">+ Add to ${meal.toLowerCase()}</button>
+          <button class="tool-chip" data-action="quick-add" data-meal="${meal}">⚡ Quick add</button>
+          ${(P().diary[addDays(k, -1)] || []).some(e => e.meal === meal) ? `<button class="tool-chip" data-action="copy-meal" data-meal="${meal}">↻ Copy yesterday</button>` : ''}
+          ${list.length ? `<button class="tool-chip" data-action="fav-meal" data-meal="${meal}">★ Save as favourite</button>` : ''}
+        </div>
       </section>`;
     }).join('');
 
@@ -423,7 +457,8 @@
       <div class="grid-2" style="margin-top:18px">
         <div class="panel">
           ${entries.length ? mealsHtml : `<div class="empty-day"><h2>Nothing logged for ${isToday ? 'today' : 'this day'} yet</h2><p>Add what you ate in grams and what you drank in ml. Search the food list, pick from Sainsbury's, Aldi or Co-op products, or look up anything online.</p><button class="btn primary" data-action="add" data-meal="${isToday ? guessMeal() : 'Breakfast'}">Log food</button></div>
-            ${MEALS.map(m => `<button class="add-line" style="margin-right:16px" data-action="add" data-meal="${m}">+ ${m}</button>`).join('')}`}
+            ${MEALS.map(m => `<button class="add-line" style="margin-right:16px" data-action="add" data-meal="${m}">+ ${m}</button>`).join('')}
+            <div class="meal-tools" style="margin-top:10px"><button class="tool-chip" data-action="quick-add" data-meal="${guessMeal()}">⚡ Quick add calories</button>${(P().diary[addDays(k, -1)] || []).length ? `<button class="tool-chip" data-action="copy-day">↻ Copy all of yesterday</button>` : ''}${(P().profile.favMeals || []).length ? `<button class="tool-chip" data-action="add" data-meal="${guessMeal()}" data-fav="1">★ Favourite meals</button>` : ''}</div>`}
           ${entries.length ? `<div class="day-actions">
             ${complete ? `<span class="complete-badge">Day marked complete</span><button class="btn ghost" data-action="toggle-complete">Undo</button>`
               : `<span class="muted small">Finished logging? Marking the day complete stops the reminder and counts it in Daily Performance.</span><button class="btn" data-action="toggle-complete">Mark day complete</button>`}
@@ -431,6 +466,7 @@
         </div>
         <div class="stack">
           ${weightCard(k)}
+          ${waterExerciseCard(k)}
           <div class="panel vit-panel">
             <h2>Vitamins & minerals</h2>
             ${entries.length ? microsHtml(t, 1, entries.length) : '<p class="muted">Your vitamins, minerals and fibre for the day show here once you log food.</p>'}
@@ -438,7 +474,7 @@
         </div>
       </div>
     </div>`;
-    wireWeight(k);
+    wireWeight(k); wireWaterExercise(k);
 
     $('#datePick').addEventListener('change', e => { if (e.target.value) { UI.date = e.target.value; render(); } });
   }
@@ -453,7 +489,39 @@
     else if (act === 'go-settings') nav('settings');
     else if (act === 'g-renew') { G.connected = false; G.expired = true; G.checked = true; UI.device = 'garmin'; nav('garmin'); }
     else if (act === 'go-forecast') nav('forecast');
-    else if (act === 'add') openAdd({ meal: a.dataset.meal, date: UI.date });
+    else if (act === 'add') { openAdd({ meal: a.dataset.meal, date: UI.date }); if (a.dataset.fav) setTab('fav'); }
+    else if (act === 'quick-add') quickAdd(a.dataset.meal, UI.date);
+    else if (act === 'water') {
+      const m = P().dayMeta[UI.date] || (P().dayMeta[UI.date] = {});
+      m.water = Math.max(0, (m.water || 0) + Number(a.dataset.ml)); save(); render();
+    }
+    else if (act === 'ex-add') {
+      const name = $('#exAct').value, mn = Number($('#exMin').value);
+      if (!(mn > 0)) { toast('Type how many minutes.'); return; }
+      const met = (EXERCISES.find(x => x[0] === name) || [, 5])[1];
+      const kc = Number($('#exKcal').value) > 0 ? Number($('#exKcal').value) : Math.round(met * (currentWeight() || 75) * mn / 60);
+      const m = P().dayMeta[UI.date] || (P().dayMeta[UI.date] = {});
+      m.ex = [...(m.ex || []), { id: uid(), name, min: mn, kcal: kc }]; save(); render();
+      toast(`Logged ${name.toLowerCase()}: ${fmt(mn)} min, ${fmt(kc)} kcal.`);
+    }
+    else if (act === 'ex-del') { const m = P().dayMeta[UI.date] || {}; m.ex = (m.ex || []).filter(x => x.id !== a.dataset.id); save(); render(); }
+    else if (act === 'copy-meal' || act === 'copy-day') {
+      const from = (P().diary[addDays(UI.date, -1)] || []).filter(e => act === 'copy-day' || e.meal === a.dataset.meal);
+      if (!from.length) return;
+      const list = P().diary[UI.date] || (P().diary[UI.date] = []);
+      const added = from.map(e => ({ ...JSON.parse(JSON.stringify(e)), id: uid(), at: Date.now() }));
+      list.push(...added); save(); render();
+      toast(`Copied ${added.length} item${added.length === 1 ? '' : 's'} from yesterday.`, 'Undo', () => { const ids = new Set(added.map(x => x.id)); P().diary[UI.date] = (P().diary[UI.date] || []).filter(x => !ids.has(x.id)); save(); render(); });
+    }
+    else if (act === 'fav-meal') {
+      const list = dayEntries(UI.date).filter(e => e.meal === a.dataset.meal);
+      if (!list.length) return;
+      const nm = prompt('Name this favourite meal', `My ${a.dataset.meal.toLowerCase()}`);
+      if (nm === null) return;
+      const fav = { id: uid(), name: (nm.trim() || `My ${a.dataset.meal.toLowerCase()}`).slice(0, 50), items: list.map(e => { const c = JSON.parse(JSON.stringify(e)); delete c.id; delete c.at; delete c.meal; return c; }) };
+      P().profile.favMeals = [fav, ...(P().profile.favMeals || [])].slice(0, 30);
+      save(); toast(`Saved "${fav.name}". Find it under Favourites when you log food.`);
+    }
     else if (act === 'edit-entry') {
       const en = dayEntries(UI.date).find(x => x.id === a.dataset.id);
       if (en) openAdd({ date: UI.date, entry: en });
@@ -493,7 +561,7 @@
         <div class="picker-left">
           <div class="picker-search">
             <div class="search-row"><input type="text" id="mq" placeholder="Search foods, e.g. chicken breast, banana" autocomplete="off" spellcheck="false"><button class="btn scan-inline" data-m="scan" aria-label="Scan a barcode"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 9v6M10 9v6M13 9v6M17 9v6"/></svg><span>Scan</span></button></div>
-            <div class="seg" id="mtabs"><button data-tab="all" class="on">Food list</button><button data-tab="recent">Recent</button><button data-tab="shop">Shops</button><button data-tab="online">Search online</button></div>
+            <div class="seg" id="mtabs"><button data-tab="all" class="on">Food list</button><button data-tab="recent">Recent</button><button data-tab="fav">★ Favourites</button><button data-tab="shop">Shops</button><button data-tab="online">Search online</button></div>
             <button class="juice-btn" data-m="juice"><span class="jb-ico">🥤</span><span><b>Make a juice or smoothie</b><small>Add the liquid, fruit and extras you blended</small></span></button>
             <div class="shop-pick" id="mshops" hidden>${SHOP_LIST.map(([id, nm]) => `<button class="chip" data-shop="${id}">${esc(nm)}</button>`).join('')}</div>
           </div>
@@ -505,7 +573,7 @@
     const q = $('#mq');
     q.addEventListener('input', () => {
       M.q = q.value;
-      if (M.tab === 'recent' && M.q) setTab('all');
+      if ((M.tab === 'recent' || M.tab === 'fav') && M.q) setTab('all');
       else if (M.tab === 'shop') { clearTimeout(M.shopTimer); const t = M.q.trim(); if (M.shop === 'ryanair') runShop(1); else if (!t || t.length >= 3) M.shopTimer = setTimeout(() => runShop(1), 1200); }
       else if (M.tab !== 'online') renderResults();
     });
@@ -590,6 +658,12 @@
         lastList = searchFoods(M.q);
         html = lastList.length ? lastList.map(resultRow).join('') : `<div class="hint">No match in the food list. <button class="btn" data-m="go-online">Search online for “${esc(M.q)}”</button></div>`;
       }
+    } else if (M.tab === 'fav') {
+      const favs = P().profile.favMeals || [];
+      html = `<div class="hint" style="padding-bottom:4px"><button class="btn" data-m="quick">⚡ Quick add calories</button></div>` + (favs.length ? `<div class="group-label">Favourite meals · tap to add to ${esc(M.meal.toLowerCase())}</div>` + favs.map(f => {
+        const kc = f.items.reduce((a, e) => a + (e.n.kcal || 0) * e.grams / 100, 0);
+        return `<div class="result fav-row" data-m="fav-log" data-id="${esc(f.id)}"><span class="rn">★ ${esc(f.name)}</span><span class="rk">${fmt(kc)} kcal</span><span class="rm">${esc(f.items.map(e => e.name).join(', ').slice(0, 90))}</span><button class="btn ghost fav-x" data-m="fav-del" data-id="${esc(f.id)}" aria-label="Remove favourite">✕</button></div>`;
+      }).join('') : `<div class="hint">No favourite meals yet. In your diary, tap <b>★ Save as favourite</b> under a meal to save it here for one-tap logging.</div>`);
     } else if (M.tab === 'shop') {
       const nm = esc(shopName(M.shop));
       lastList = M.shopRes || [];
@@ -765,9 +839,14 @@
     if (f.each) return f.each.g;
     return f.portion ? Math.round(f.portion) : (setIdx === 2 ? 20 : 80);
   }
-  function openJuice(ctx) {
+  function openJuice(ctx, editFood) {
     M = null; // leave the normal log-food screen
-    J = { date: ctx.date, meal: ctx.meal || guessMeal(), name: '', items: [], q: '', saveRecipe: true };
+    J = { date: ctx.date, meal: ctx.meal || guessMeal(), name: '', items: [], q: '', saveRecipe: true, editId: null };
+    if (editFood && editFood.recipe) {
+      const foods = allFoods();
+      J.editId = editFood.id; J.name = editFood.name;
+      J.items = editFood.recipe.map(r => ({ food: foods.find(f => f.id === r.id), g: r.g })).filter(i => i.food);
+    }
     card.className = 'modal-card narrow juice-card';
     card.onclick = juiceClick;
     modal.hidden = false;
@@ -797,7 +876,7 @@
         <span class="j-amt"><input type="number" inputmode="decimal" min="0" step="1" value="${esc(it.g)}" data-ji="${i}" aria-label="Amount of ${esc(it.food.name)}"><span>${u}</span></span>
         <button class="btn ghost j-x" data-j="del" data-i="${i}" aria-label="Remove ${esc(it.food.name)}">✕</button></div>`;
     }).join('');
-    card.innerHTML = `<div class="modal-head"><h2>Juice or smoothie</h2><button class="btn ghost" data-j="close">Close</button></div>
+    card.innerHTML = `<div class="modal-head"><h2>${J.editId ? 'Edit saved juice' : 'Juice or smoothie'}</h2><button class="btn ghost" data-j="close">Close</button></div>
       <div class="modal-body">
         <p class="muted small" style="margin-top:0">Tap what went in, then set how much of each. Grams for solids, ml for liquids.</p>
         ${JUICE_SETS.map(([title, sub, names], si) => `<div class="j-set"><div class="j-set-h"><b>${title}</b> <span class="faint small">${sub}</span></div><div class="chips">${names.map(foodByName).filter(Boolean).map(f => `<button class="chip ${have.has(f.id) ? 'on' : ''}" data-j="add" data-id="${esc(f.id)}" data-s="${si}">${have.has(f.id) ? '✓ ' : '+ '}${esc(f.name.replace(/, (unsweetened|fresh|raw|plain|ground|medjool|rolled \(dry\)|cooked)$/, '').replace(' (typical)', ''))}</button>`).join('')}</div></div>`).join('')}
@@ -813,8 +892,8 @@
         </div>
         <label class="field" style="margin-top:14px"><span>Name</span><input type="text" id="jname" maxlength="60" placeholder="${esc(juiceName())}" value="${esc(J.name)}"></label>
         <label class="field" style="margin-top:10px"><span>Meal</span><select id="jmeal">${MEALS.map(m => `<option ${m === J.meal ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
-        <label class="check" style="margin-top:12px"><input type="checkbox" id="jsave" ${J.saveRecipe ? 'checked' : ''}> Save it in My foods so I can log it again in one tap</label>
-        <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn primary" data-j="commit" ${J.items.length && g > 0 ? '' : 'disabled'}>Add to ${esc(J.meal.toLowerCase())}</button></div>
+        ${J.editId ? '' : `<label class="check" style="margin-top:12px"><input type="checkbox" id="jsave" ${J.saveRecipe ? 'checked' : ''}> Save it in My foods so I can log it again in one tap</label>`}
+        <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">${J.editId ? `<button class="btn primary" data-j="update" ${J.items.length && g > 0 ? '' : 'disabled'}>Save changes</button><button class="btn" data-j="update-log" ${J.items.length && g > 0 ? '' : 'disabled'}>Save and add to ${esc(J.meal.toLowerCase())}</button>` : `<button class="btn primary" data-j="commit" ${J.items.length && g > 0 ? '' : 'disabled'}>Add to ${esc(J.meal.toLowerCase())}</button>`}</div>
       </div>`;
     const jq = $('#jq');
     jq.addEventListener('input', () => {
@@ -831,7 +910,7 @@
     card.querySelectorAll('[data-ji]').forEach(inp => inp.addEventListener('input', () => { J.items[Number(inp.dataset.ji)].g = inp.value; refreshJuiceTotals(); }));
     $('#jname').addEventListener('input', e => { J.name = e.target.value; });
     $('#jmeal').addEventListener('change', e => { J.meal = e.target.value; const b = card.querySelector('[data-j="commit"]'); if (b) b.textContent = 'Add to ' + J.meal.toLowerCase(); });
-    $('#jsave').addEventListener('change', e => { J.saveRecipe = e.target.checked; });
+    const js = $('#jsave'); if (js) js.addEventListener('change', e => { J.saveRecipe = e.target.checked; });
     if (keepFocus) { const el = card.querySelector(keepFocus); if (el) { el.focus(); try { el.select(); } catch (_) {} } }
   }
   // Update the totals and per-item kcal without rebuilding the amount boxes.
@@ -845,7 +924,7 @@
     if (box) box.innerHTML = `<div class="pk num">${fmt(tot.kcal || 0)}<small>kcal</small></div>
       <div class="pmac"><div class="p"><b>${fmt(tot.p || 0, 1)} g</b><span>Protein</span></div><div class="c"><b>${fmt(tot.c || 0, 1)} g</b><span>Carbs</span></div><div class="f"><b>${fmt(tot.f || 0, 1)} g</b><span>Fat</span></div></div>
       <div class="muted small" style="margin-top:6px">${fmt(g)} ${J.items.some(i => unitOf(i.food) === 'ml') ? 'ml/g' : 'g'} in total · fibre ${fmt(tot.fib || 0, 1)} g · sugar ${fmt(tot.sug || 0, 1)} g${tot.vc != null ? ` · vitamin C ${fmt(tot.vc, 0)} mg` : ''}</div>`;
-    const b = card.querySelector('[data-j="commit"]'); if (b) b.disabled = !(J.items.length && g > 0);
+    card.querySelectorAll('[data-j="commit"],[data-j="update"],[data-j="update-log"]').forEach(b => { b.disabled = !(J.items.length && g > 0); });
     const nm = $('#jname'); if (nm) nm.placeholder = juiceName();
   }
   function juiceClick(e) {
@@ -864,12 +943,20 @@
       return;
     }
     if (act === 'del') { const body = card.querySelector('.modal-body'); const top = body.scrollTop; J.items.splice(Number(a.dataset.i), 1); renderJuice(); card.querySelector('.modal-body').scrollTop = top; return; }
-    if (act === 'commit') {
+    if (act === 'update' || act === 'update-log') {
+      const { tot, g } = juiceTotals(); if (!(g > 0)) return;
+      const f = S.customFoods.find(x => x.id === J.editId); if (!f) return;
+      const n = {}; for (const k of NKEYS) n[k] = tot[k] == null ? null : Math.round(tot[k] / g * 100 * 1000) / 1000;
+      Object.assign(f, { name: juiceName(), n, portion: Math.round(g), unit: J.items.some(i => unitOf(i.food) === 'ml') ? 'ml' : 'g', recipe: J.items.map(i => ({ id: i.food.id, name: i.food.name, g: Number(i.g) || 0 })), savedAt: Date.now() });
+      if (act === 'update') { save(); J = null; closeModal(); render(); toast(`Saved changes to ${f.name}. Past diary entries keep their old values.`); return; }
+      J.saveRecipe = false; J.logFoodId = f.id; J.editId = null; // fall through to log it once
+    }
+    if (act === 'commit' || act === 'update-log') {
       const { tot, g } = juiceTotals(); if (!(g > 0)) return;
       const n = {}; for (const k of NKEYS) n[k] = tot[k] == null ? null : Math.round(tot[k] / g * 100 * 1000) / 1000;
       const name = juiceName();
       const liquid = J.items.some(i => unitOf(i.food) === 'ml');
-      const food = { id: 'mine-' + uid(), name, source: 'Mine', cat: 'Drinks', unit: liquid ? 'ml' : 'g', portion: Math.round(g), portionLabel: '1 serving (as made)', n,
+      const food = { id: J.logFoodId || ('mine-' + uid()), name, source: 'Mine', cat: 'Drinks', unit: liquid ? 'ml' : 'g', portion: Math.round(g), portionLabel: '1 serving (as made)', n,
         recipe: J.items.map(i => ({ id: i.food.id, name: i.food.name, g: Number(i.g) || 0 })), savedAt: Date.now() };
       if (J.saveRecipe) S.customFoods.unshift(food);
       const list = P().diary[J.date] || (P().diary[J.date] = []);
@@ -879,6 +966,49 @@
       if (UI.view === 'today') { UI.date = date; render(); }
       toast(`Added ${name} (${fmt(tot.kcal || 0)} kcal) to ${meal.toLowerCase()}.`);
     }
+  }
+
+  // Quick add: just calories (and macros if you know them), no food needed.
+  function quickAdd(meal, date) {
+    M = null; card.className = 'modal-card narrow'; card.onclick = null;
+    card.innerHTML = `<div class="modal-head"><h2>Quick add · ${esc(meal)}</h2><button class="btn ghost" data-q="close">Close</button></div>
+      <div class="modal-body">
+        <label class="field"><span>Calories</span><input type="number" id="qk" inputmode="numeric" min="1" max="5000" placeholder="e.g. 300" style="font-size:28px"></label>
+        <div class="form-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px">
+          <label class="field"><span>Protein g</span><input type="number" id="qp" inputmode="decimal" min="0" placeholder="optional"></label>
+          <label class="field"><span>Carbs g</span><input type="number" id="qc" inputmode="decimal" min="0" placeholder="optional"></label>
+          <label class="field"><span>Fat g</span><input type="number" id="qf" inputmode="decimal" min="0" placeholder="optional"></label>
+        </div>
+        <label class="field" style="margin-top:10px"><span>Name (optional)</span><input type="text" id="qn" maxlength="50" placeholder="e.g. Coffee shop muffin"></label>
+        <label class="field" style="margin-top:10px"><span>Meal</span><select id="qm">${MEALS.map(m => `<option ${m === meal ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+        <div style="margin-top:16px"><button class="btn primary" data-q="add">Add</button></div>
+      </div>`;
+    modal.hidden = false;
+    setTimeout(() => { const i = $('#qk'); if (i) i.focus(); }, 30);
+    card.onclick = e => {
+      const b = e.target.closest('[data-q]'); if (!b) return;
+      if (b.dataset.q === 'close') return closeModal();
+      const kcal = Number($('#qk').value);
+      if (!(kcal > 0)) { toast('Type how many calories.'); return; }
+      const num = id => { const v = Number($(id).value); return v > 0 ? v : 0; };
+      const n = {}; for (const k of NKEYS) n[k] = null;
+      Object.assign(n, { kcal, p: num('#qp'), c: num('#qc'), f: num('#qf') });
+      const m = $('#qm').value, name = $('#qn').value.trim() || 'Quick add';
+      (P().diary[date] = P().diary[date] || []).push({ id: uid(), foodId: 'quick', name, grams: 100, count: null, each: null, unit: 'g', meal: m, n, source: 'Quick add', quick: true, at: Date.now() });
+      save(); closeModal();
+      if (UI.view === 'today') { UI.date = date; render(); }
+      toast(`Added ${fmt(kcal)} kcal to ${m.toLowerCase()}.`);
+    };
+    card.addEventListener('keydown', function enter(e) { if (e.key === 'Enter' && card.querySelector('[data-q="add"]')) card.querySelector('[data-q="add"]').click(); });
+  }
+  function logFavourite(id) {
+    const fav = (P().profile.favMeals || []).find(f => f.id === id); if (!fav || !M) return;
+    const date = M.date, meal = M.meal;
+    const list = P().diary[date] || (P().diary[date] = []);
+    for (const it of fav.items) list.push({ ...JSON.parse(JSON.stringify(it)), id: uid(), meal, at: Date.now() });
+    save(); closeModal();
+    if (UI.view === 'today') { UI.date = date; render(); }
+    toast(`Added ${fav.name} (${fmt(fav.items.reduce((a, e) => a + (e.n.kcal || 0) * e.grams / 100, 0))} kcal) to ${meal.toLowerCase()}.`);
   }
 
   function onModalClick(e) {
@@ -902,6 +1032,9 @@
     }
     else if (m === 'back') { const pk = card.querySelector('.picker'); if (pk) pk.classList.remove('show-right'); }
     else if (m === 'scan') scanIntoModal();
+    else if (m === 'fav-log') logFavourite(a.dataset.id);
+    else if (m === 'fav-del') { P().profile.favMeals = (P().profile.favMeals || []).filter(f => f.id !== a.dataset.id); save(); renderResults(); toast('Favourite removed.'); }
+    else if (m === 'quick') { const mm = M.meal, d = M.date; closeModal(); quickAdd(mm, d); }
     else if (m === 'juice') openJuice({ date: M.date, meal: M.meal });
     else if (m === 'grams') { M.grams = a.dataset.g; renderRight(); }
     else if (m === 'count') { M.count = Number(a.dataset.c); M.grams = M.count * M.sel.each.g; renderRight(); }
@@ -1047,9 +1180,9 @@
   function myPoints() { return social.pointsFor(S); }
   function rankingRows() {
     const me = window.MH_ME || {};
-    const s0 = social.startOf(S), lw = latestWeight();
+    const pg = social.progressOf(S);
     const rows = [{ id: 'me', name: P().name, color: P().color, goal: (P().profile.goal || '').startsWith('lose') ? 'lose' : P().profile.goal, points: myPoints(), me: true,
-      kg: { s: s0 ? s0.kg : null, c: lw ? lw.kg : null, g: P().profile.goalWeightKg ?? null } }];
+      kg: { s: pg.start ? pg.start.kg : null, c: pg.latest ? pg.latest.kg : null, a: pg.avg, w: pg.perWeek, g: P().profile.goalWeightKg ?? null } }];
     for (const f of (F.list || []).filter(x => x.status === 'accepted')) {
       let kg = null; try { kg = f.profile.points_detail ? JSON.parse(f.profile.points_detail) : null; } catch (_) {}
       rows.push({ id: f.id, name: f.profile.name, color: f.profile.color, goal: f.profile.goal, points: f.profile.points, updated: f.profile.points_updated, friend: f, kg });
@@ -1063,7 +1196,8 @@
     const maint = r.goal === 'maintain' || k.g == null;
     return `<div class="rk-prog">
       <div class="rk-track"><i style="width:${pct}%"></i>${has ? `<b style="left:${pct}%"></b>` : ''}</div>
-      <div class="rk-labels">${has ? `<span>Start ${fmt(k.s, 1)} kg</span><span class="rk-now">Now ${fmt(k.c, 1)} kg${k.s !== k.c ? ` (${k.c < k.s ? '−' : '+'}${fmt(Math.abs(k.c - k.s), 1)})` : ''}</span><span>${maint ? 'Maintain' : `Goal ${fmt(k.g, 1)} kg`}</span>` : '<span class="faint">Waiting for a weigh-in</span>'}</div>
+      <div class="rk-labels">${has ? `<span>Start ${fmt(k.s, 1)} kg</span><span class="rk-now">Now ${fmt(k.c, 1)} kg${k.a != null && Math.abs(k.a - k.c) >= 0.05 ? ` · avg ${fmt(k.a, 1)}` : ''}</span><span>${maint ? 'Maintain' : `Goal ${fmt(k.g, 1)} kg`}</span>` : '<span class="faint">Waiting for a weigh-in</span>'}</div>
+      ${has && k.w != null ? `<div class="rk-rate ${(r.goal === 'gain' ? k.w > 0 : r.goal === 'lose' ? k.w < 0 : Math.abs(k.w) < 0.25) ? 'good' : 'bad'}">${k.w > 0 ? '+' : k.w < 0 ? '−' : ''}${fmt(Math.abs(k.w), 2)} kg/week lately</div>` : ''}
     </div>`;
   }
   function renderFriends() {
@@ -1081,7 +1215,7 @@
       <div class="grid-2">
         <div class="panel">
           <h2>Ranking</h2>
-          <p class="muted small" style="margin-top:-6px">Points are how far each person is from their start weight to their goal weight: 100% means goal reached. If you're maintaining, staying on your weight scores 100%.</p>
+          <p class="muted small" style="margin-top:-6px">Points are how far each person has got from their start weight to their goal weight: 100% means goal reached. To keep it fair, it uses your average weight over the last 7 days, so a single heavy or light morning doesn't swing the table. If you're maintaining, staying on your weight scores 100%.</p>
           ${rows.length > 1 || !F.loading ? `<ol class="rank">${rows.map((r, i) => `<li class="${r.me ? 'me' : ''}" ${r.friend ? `data-action="f-view" data-id="${esc(r.id)}"` : ''}>
             <span class="rk-pos num">${i + 1}</span><span class="avatar" style="background:${esc(r.color || '#E0263A')}">${esc((r.name || '?').charAt(0).toUpperCase())}</span>
             <span class="rk-name">${esc(r.name)}${r.me ? ' <span class="faint">(you)</span>' : ''}<small>${goalText(r.goal)}</small></span>
@@ -1738,13 +1872,14 @@
     card.innerHTML = `<div class="modal-head"><h2>${esc(f.name)}</h2><button class="btn ghost" data-f="close">Close</button></div>
       <div class="modal-body"><p class="muted small" style="margin-top:0">Per 100 ${unitOf(f)}${f.size ? ` · pack ${esc(f.size)}` : ''}${f.portion ? ` · ${esc(f.portionLabel || 'portion')} ≈ ${fmtAmt(f.portion, unitOf(f))}` : ''} · ${esc(f.source === 'Built-in' ? 'Food list' : f.source === 'Mine' ? 'My food' : f.source)}</p>
       <table class="t">${rows}</table></div>
-      <div class="modal-foot">${f.source !== 'Built-in' ? `<button class="btn danger" data-f="del">Delete</button>${f.source === 'Mine' ? '<button class="btn" data-f="edit">Edit</button>' : ''}` : ''}<button class="btn primary" data-f="log">Log this food</button></div>`;
+      <div class="modal-foot">${f.source !== 'Built-in' ? `<button class="btn danger" data-f="del">Delete</button>${f.source === 'Mine' ? (f.recipe ? '<button class="btn" data-f="recipe">Edit recipe</button>' : '<button class="btn" data-f="edit">Edit</button>') : ''}` : ''}<button class="btn primary" data-f="log">Log this food</button></div>`;
     modal.hidden = false;
     card.onclick = (e) => {
       const b = e.target.closest('[data-f]'); if (!b) return;
       if (b.dataset.f === 'close') closeModal();
       if (b.dataset.f === 'log') { closeModal(); openAdd({ date: UI.date, meal: guessMeal(), food: f }); }
       if (b.dataset.f === 'edit') foodForm(f);
+      if (b.dataset.f === 'recipe') openJuice({ date: UI.date, meal: guessMeal() }, f);
       if (b.dataset.f === 'del') {
         S.customFoods = S.customFoods.filter(c => c.id !== f.id);
         save(); closeModal(); render(); toast(`Deleted ${f.name} from your foods. Past diary entries keep their values.`);
@@ -1857,6 +1992,13 @@
         </div>
 
         <div class="stack">
+          ${window.desktop ? '' : `<div class="panel">
+            <h2>Daily reminder</h2>
+            <p class="muted small" style="margin-top:0">Adds a repeating reminder to your phone's calendar, so you get a nudge to log your food even when the app is closed.</p>
+            <div class="row-inline" style="align-items:center"><select id="remTime" style="max-width:140px">${Array.from({ length: 48 }, (_, i) => { const hm = String(Math.floor(i / 2)).padStart(2, '0') + (i % 2 ? '30' : '00'); return `<option value="${hm}" ${hm === (st.reminderTime || '21:00').replace(':', '') ? 'selected' : ''}>${hm.slice(0, 2)}:${hm.slice(2)}</option>`; }).join('')}</select>
+              <a class="btn primary" id="remLink" href="reminders/${esc((st.reminderTime || '21:00').replace(':', ''))}.ics" target="_blank" rel="noopener">Add to my calendar</a></div>
+            <p class="faint small">Tap <b>Add All</b> when your calendar opens. To stop it, delete the event in your calendar.</p>
+          </div>`}
           ${window.desktop ? `<div class="panel">
             <h2>Daily reminder</h2>
             <label class="check" style="margin-bottom:8px"><input type="checkbox" data-rem="me" ${P().reminderOn ? 'checked' : ''}> Remind me to log food</label>
@@ -1881,7 +2023,11 @@
           <div class="panel">
             <h2>Your data</h2>
             <p class="muted small" style="margin-top:0">Saved on this device and in your account, so it's the same on every device you sign in on. ${SYNC.error ? `<span class="err">${esc(SYNC.error)}</span>` : SYNC.lastSync ? 'Last synced ' + esc(new Date(SYNC.lastSync).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })) + '.' : ''}</p>
-            <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-action="sync-now">Sync now</button><button class="btn" data-action="export">Save a backup</button><button class="btn" data-action="import">Restore a backup</button></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-action="sync-now">Sync now</button><button class="btn" data-action="export">Save a backup file</button><button class="btn" data-action="import">Restore from a file</button></div>
+            <h3 style="margin:16px 0 6px">Automatic backups</h3>
+            <p class="muted small" style="margin-top:0">Your account is backed up on the server every Monday, and the last 8 are kept.${window.desktop ? ' This PC also saves a backup file in Documents › Mabrouka Tracker Backups every week.' : ''}</p>
+            <div id="bkList" class="small muted">Loading…</div>
+            <button class="btn" data-action="backup-now" style="margin-top:8px">Back up now</button></div>
           </div>
         </div>
       </div>
@@ -1906,6 +2052,8 @@
       save(); softRender(renderSettings);
     });
     $('#pName').addEventListener('change', e => { const v = e.target.value.trim(); if (v) { P().name = v; save(); softRender(render); } });
+    loadBackupList();
+    const rt = $('#remTime'); if (rt) rt.addEventListener('change', () => { $('#remLink').href = 'reminders/' + rt.value + '.ics'; S.settings.reminderTime = rt.value.slice(0, 2) + ':' + rt.value.slice(2); save(); });
     main.querySelectorAll('[data-rem]').forEach(el => el.addEventListener('change', () => { P().reminderOn = el.checked; save(); }));
     main.querySelectorAll('[data-s]').forEach(el => el.addEventListener('change', () => {
       const k = el.dataset.s;
@@ -1916,6 +2064,14 @@
     }));
   }
 
+  async function loadBackupList() {
+    const box = $('#bkList'); if (!box) return;
+    try {
+      const l = await social.backups();
+      if (!$('#bkList')) return;
+      $('#bkList').innerHTML = l.length ? `<ul class="bk-list">${l.map(b => `<li><span>${esc(new Date(b.taken_at).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))} <span class="faint">· ${fmt(b.item_count)} items</span></span><button class="btn ghost" data-action="bk-restore" data-id="${b.id}">Restore</button></li>`).join('')}</ul>` : 'No backups yet. The first one is made on Monday, or tap Back up now.';
+    } catch (e) { if ($('#bkList')) $('#bkList').textContent = e.offline ? 'Backups show when you are online.' : (e.status === 404 ? 'Backups are being set up.' : 'Could not load backups.'); }
+  }
   async function handleFoodsSettingsAction(act, a) {
     if (act === 'sync-connect') {
       const url = $('#syUrl').value, key = $('#syKey').value, email = $('#syEmail').value, pass = $('#syPass').value;
@@ -1938,6 +2094,11 @@
       if (r.ok) { S = r.state; applyTheme(); render(); toast('Backup restored.'); } else if (r.error) toast(r.error);
     }
     else if (act === 'open-data') api.openDataFolder();
+    else if (act === 'backup-now') { try { const r = await social.backupNow(); toast(r && r.recent ? 'A backup was made in the last few minutes already.' : 'Backed up.'); loadBackupList(); } catch (e) { toast('Could not back up: ' + e.message); } }
+    else if (act === 'bk-restore') {
+      if (!confirm('Restore this backup? Your log goes back to how it was then, on all your devices.')) return;
+      try { S = await social.restoreBackup(a.dataset.id); applyTheme(); render(); toast('Backup restored.'); } catch (e) { toast('Could not restore: ' + e.message); }
+    }
     else if (act === 'upd-folder') api.update.openFolder();
     else if (act === 'upd-notes' && S.lastUpdate) showWhatsNew(S.lastUpdate, true);
     else if (act === 'upd-check') {
@@ -1968,9 +2129,19 @@
   setInterval(async () => { for (const pid of connectedPids()) await quietSync(pid, 2); }, 3 * 3600 * 1000);
 
   loadFriends(); loadNotes();
-  // Check for friend requests, accepts and food notices every few seconds while the app is open.
-  setInterval(() => { if (document.visibilityState === 'visible') loadNotes(); }, 8000);
-  setInterval(() => { if (document.visibilityState === 'visible' && UI.view === 'friends' && !F.view) loadFriends(true); }, 15000);
+  // Live updates arrive from the server instantly; a slow check is kept as a safety net.
+  let liveT = null;
+  window.addEventListener('mh-live', e => {
+    clearTimeout(liveT);
+    liveT = setTimeout(() => { // a burst of changes = one refresh
+      const t = e.detail.table;
+      if (t === 'notifications' || t === 'friendships') loadNotes();
+      if (t === 'friendships' || (t === 'profiles' && UI.view === 'friends')) loadFriends(true);
+    }, 400);
+  });
+  setInterval(() => { if (document.visibilityState === 'visible' && !social.liveConnected()) loadNotes(); }, 10000);
+  setInterval(() => { if (document.visibilityState === 'visible') loadNotes(); }, 60000);
+  setInterval(() => { if (document.visibilityState === 'visible' && UI.view === 'friends' && !F.view && !social.liveConnected()) loadFriends(true); }, 15000);
   // Windows app: daily reminder at the chosen time.
   if (window.desktop) setInterval(() => {
     const now = new Date(), key = todayKey();

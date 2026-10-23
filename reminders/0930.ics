@@ -1,0 +1,22 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Mabrouka Tracker//Reminder//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+UID:mabrouka-log-food-0930@moatassim1.github.io
+DTSTAMP:20261023T120000Z
+DTSTART:20261024T093000
+DURATION:PT5M
+RRULE:FREQ=DAILY
+SUMMARY:Log today's food in Mabrouka Tracker
+DESCRIPTION:Add anything you ate today\, log your weight and water\, then mark the day complete.\nhttps://moatassim1.github.io/moatassim-health/
+URL:https://moatassim1.github.io/moatassim-health/
+TRANSP:TRANSPARENT
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Log today's food in Mabrouka Tracker
+TRIGGER:PT0M
+END:VALARM
+END:VEVENT
+END:VCALENDAR

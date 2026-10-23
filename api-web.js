@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.7';
+  const APP_VERSION = '2.0.8';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -131,15 +131,35 @@
     if (on) return { date: on, kg: w[on] };
     return null;
   }
-  function pointsFor(st) {
-    const p = st.profiles.me, pr = p.profile;
-    const ws = Object.keys(p.weights || {}).filter(k => p.weights[k] != null).sort();
-    const cur = ws.length ? p.weights[ws[ws.length - 1]] : null;
+  // Weight used for the ranking: the average of the last 7 days of weigh-ins (since the
+  // start), so a salty dinner or a glass of water doesn't swing the table.
+  function progressOf(st) {
+    const p = st.profiles.me, w = p.weights || {};
+    const ws = Object.keys(w).filter(k => w[k] != null).sort();
     const s0 = startOf(st);
-    if (cur == null || !s0) return null;
-    const start = s0.kg, goal = pr.goalWeightKg, g = pr.goal;
+    if (!ws.length) return { start: s0, latest: null, avg: null, perWeek: null };
+    const last = ws[ws.length - 1];
+    const d = new Date(last + 'T12:00:00'); d.setDate(d.getDate() - 6);
+    const from = keyOf(d) > (s0 ? s0.date : '') ? keyOf(d) : (s0 ? s0.date : keyOf(d));
+    const win = ws.filter(k => k >= from && k <= last);
+    const avg = win.reduce((a, k) => a + w[k], 0) / win.length;
+    // kg per week from the last 3 weeks of weigh-ins (straight-line fit)
+    const d2 = new Date(last + 'T12:00:00'); d2.setDate(d2.getDate() - 20);
+    const pts = ws.filter(k => k >= keyOf(d2)).map(k => [(new Date(k + 'T12:00:00') - new Date(last + 'T12:00:00')) / 864e5, w[k]]);
+    let perWeek = null;
+    if (pts.length >= 2 && pts[pts.length - 1][0] - pts[0][0] >= 3) {
+      const n = pts.length, mx = pts.reduce((a, q) => a + q[0], 0) / n, my = pts.reduce((a, q) => a + q[1], 0) / n;
+      const sxx = pts.reduce((a, q) => a + (q[0] - mx) ** 2, 0), sxy = pts.reduce((a, q) => a + (q[0] - mx) * (q[1] - my), 0);
+      perWeek = sxx ? Math.round(sxy / sxx * 7 * 100) / 100 : null;
+    }
+    return { start: s0, latest: { date: last, kg: w[last] }, avg: Math.round(avg * 10) / 10, perWeek };
+  }
+  function pointsFor(st) {
+    const pr = st.profiles.me.profile, pg = progressOf(st);
+    if (!pg.start || pg.avg == null) return null;
+    const start = pg.start.kg, cur = pg.avg, goal = pr.goalWeightKg, g = pr.goal;
     if (g === 'maintain' || goal == null || Math.abs(goal - start) < 0.1) {
-      return Math.round(Math.max(0, 100 - Math.abs(cur - start) * 25) * 10) / 10; // 100 = right on your weight; -25 per kg off
+      return Math.round(Math.max(0, 100 - Math.abs(cur - start) * 25) * 10) / 10 + 0; // 100 = right on your weight; -25 per kg off
     }
     return Math.round((start - cur) / (start - goal) * 1000) / 10 + 0;
   }
@@ -147,9 +167,8 @@
   async function pushProfile() {
     const p = S.profiles.me, pts = pointsFor(S);
     const goal = p.profile.goal === 'lose-slow' ? 'lose' : (['lose', 'gain', 'maintain'].includes(p.profile.goal) ? p.profile.goal : 'maintain');
-    const s0 = startOf(S), ws = Object.keys(p.weights || {}).filter(k => p.weights[k] != null).sort();
-    const cur = ws.length ? p.weights[ws[ws.length - 1]] : null;
-    const detail = JSON.stringify({ s: s0 ? s0.kg : null, c: cur, g: p.profile.goalWeightKg ?? null });
+    const pg = progressOf(S);
+    const detail = JSON.stringify({ s: pg.start ? pg.start.kg : null, c: pg.latest ? pg.latest.kg : null, a: pg.avg, w: pg.perWeek, g: p.profile.goalWeightKg ?? null });
     const row = { name: (p.name || 'Me').slice(0, 40), color: p.color || '#E0263A', goal, points: pts, points_detail: detail, points_updated: new Date().toISOString() };
     const sig = JSON.stringify({ ...row, points_updated: 0 });
     if (sig === lastProfilePush) return;
@@ -369,8 +388,19 @@
       return { ok: true };
     },
     async testPush() { return callFn('push', { kind: 'test' }); },
+    async backups() { return (await req(`/rest/v1/backups?select=id,taken_at,item_count&order=taken_at.desc&limit=8`)) || []; },
+    async backupNow() { return req('/rest/v1/rpc/mh_backup_me', { method: 'POST', body: '{}' }); },
+    async restoreBackup(id) {
+      const r = await req(`/rest/v1/backups?id=eq.${Number(id)}&select=data`);
+      const rows = r && r[0] && r[0].data; if (!Array.isArray(rows)) throw new Error('That backup is empty.');
+      const items = {}; for (const it of rows) items[it.id] = { kind: it.kind, profile: it.profile, day: it.day, data: it.data };
+      S = normalise(MHSync.rebuild(S, items)); persist(); emitReload(); scheduleSync(300);
+      return JSON.parse(JSON.stringify(S));
+    },
+    liveConnected: () => live.connected,
     pointsFor: (st) => pointsFor(st || S),
     startOf: (st) => startOf(st || S),
+    progressOf: (st) => progressOf(st || S),
     lookupBarcode,
     signOut() { LS.del('mh2.session'); location.reload(); }
   };
@@ -530,6 +560,55 @@
     window.addEventListener('online', () => runSync());
     if (!first) runSync();
     pushProfile();
+    startLive();
+    setTimeout(pcBackup, 60000);
+  }
+
+  // ---------------------------------------------------------------- live updates
+  // Supabase Realtime: the server tells the app the moment a notification, friend request
+  // or friend's ranking changes, instead of the app asking every few seconds.
+  const live = { ws: null, connected: false, ref: 0, hb: null, retry: 1000, topic: 'realtime:mh-live' };
+  async function startLive() {
+    if (!CFG.url || !('WebSocket' in window)) return;
+    let token; try { token = await supa.token(); } catch (_) { return setTimeout(startLive, 30000); }
+    const url = CFG.url.replace(/^http/, 'ws') + '/realtime/v1/websocket?apikey=' + encodeURIComponent(CFG.key) + '&vsn=1.0.0';
+    let ws; try { ws = new WebSocket(url); } catch (_) { return; }
+    live.ws = ws;
+    const send = (topic, event, payload) => { if (ws.readyState === 1) ws.send(JSON.stringify({ topic, event, payload, ref: String(++live.ref), join_ref: '1' })); };
+    ws.onopen = () => {
+      send(live.topic, 'phx_join', { access_token: token, config: { broadcast: { self: false }, presence: { key: '' }, postgres_changes: [
+        { event: '*', schema: 'public', table: 'notifications', filter: 'recipient=eq.' + uid },
+        { event: '*', schema: 'public', table: 'friendships' },
+        { event: 'UPDATE', schema: 'public', table: 'profiles' }
+      ] } });
+      clearInterval(live.hb);
+      live.hb = setInterval(async () => {
+        send('phoenix', 'heartbeat', {});
+        try { const t = await supa.token(); if (t !== token) { token = t; send(live.topic, 'access_token', { access_token: t }); } } catch (_) {}
+      }, 25000);
+    };
+    ws.onmessage = (m) => {
+      let msg; try { msg = JSON.parse(m.data); } catch (_) { return; }
+      if (msg.event === 'phx_reply' && msg.topic === live.topic && msg.payload && msg.payload.status === 'ok') { live.connected = true; live.retry = 1000; }
+      if (msg.event === 'postgres_changes' && msg.payload && msg.payload.data) {
+        window.dispatchEvent(new CustomEvent('mh-live', { detail: { table: msg.payload.data.table, type: msg.payload.data.type } }));
+      }
+    };
+    ws.onclose = () => {
+      live.connected = false; clearInterval(live.hb);
+      if (live.ws === ws) setTimeout(() => { if (document.visibilityState === 'visible') startLive(); else live.ws = null; }, live.retry);
+      live.retry = Math.min(60000, live.retry * 2);
+    };
+    ws.onerror = () => { try { ws.close(); } catch (_) {} };
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && uid && (!live.ws || live.ws.readyState > 1)) startLive(); });
+
+  // Windows app: a backup file in Documents every week, as a copy outside the server.
+  async function pcBackup() {
+    if (!window.desktop || !window.desktop.saveBackup) return;
+    const last = LS.get('mh2.pcBackup.' + uid, 0);
+    if (Date.now() - last < 7 * 864e5) return;
+    try { const r = await window.desktop.saveBackup(`Mabrouka-Tracker-backup-${todayKey()}.json`, JSON.stringify(S)); if (r && r.ok) LS.set('mh2.pcBackup.' + uid, Date.now()); } catch (_) {}
   }
 
   // ---------------------------------------------------------------- boot

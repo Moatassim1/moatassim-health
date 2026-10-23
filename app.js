@@ -884,7 +884,8 @@
     if (editFood && editFood.recipe) {
       const foods = allFoods();
       J.editId = editFood.id; J.name = editFood.name; J.potMl = editFood.potMl || '';
-      J.items = editFood.recipe.map(r => ({ food: foods.find(f => f.id === r.id), g: r.g })).filter(i => i.food);
+      J.items = editFood.recipe.map(r => { const food = foods.find(f => f.id === r.id); if (!food) return null; const ea = food.each, q = ea ? r.g / ea.g : 0;
+        return ea && Math.abs(q * 2 - Math.round(q * 2)) < 1e-6 ? { food, g: r.g, mode: 'n', n: q } : { food, g: r.g, mode: 'g' }; }).filter(Boolean);
     }
     card.className = 'modal-card narrow juice-card';
     card.onclick = juiceClick;
@@ -922,10 +923,10 @@
     const have = new Set(J.items.map(i => i.food.id));
     const results = J.q.trim() ? searchFoods(J.q).slice(0, 8) : [];
     const rows = J.items.map((it, i) => {
-      const u = unitOf(it.food);
-      const each = it.food.each && Number(it.g) > 0 ? ` <span class="faint">≈ ${esc(countLabel(Math.round(Number(it.g) / it.food.each.g * 4) / 4, it.food.each))}</span>` : '';
-      return `<div class="j-row"><span class="j-name">${esc(it.food.name)}${each}<small>${fmt((it.food.n.kcal || 0) * (Number(it.g) || 0) / 100)} kcal</small></span>
-        <span class="j-amt"><input type="number" inputmode="decimal" min="0" step="1" value="${esc(it.g)}" data-ji="${i}" aria-label="Amount of ${esc(it.food.name)}"><span>${u}</span></span>
+      const u = unitOf(it.food), ea = it.food.each, cnt = ea && it.mode === 'n';
+      const hint = ea && Number(it.g) > 0 ? ` <span class="faint">${cnt ? '≈ ' + esc(fmtAmt(Number(it.g), u)) : '≈ ' + esc(countLabel(Math.round(Number(it.g) / ea.g * 4) / 4, ea))}</span>` : '';
+      return `<div class="j-row"><span class="j-name">${esc(it.food.name)}${hint}<small>${fmt((it.food.n.kcal || 0) * (Number(it.g) || 0) / 100)} kcal</small></span>
+        <span class="j-amt"><input type="number" inputmode="decimal" min="0" step="${cnt ? '0.5' : '1'}" value="${esc(cnt ? it.n : it.g)}" data-ji="${i}" aria-label="Amount of ${esc(it.food.name)}">${ea ? `<span class="j-unit"><button class="${cnt ? 'on' : ''}" data-j="mode" data-i="${i}" data-mode="n">${esc(Number(it.n) === 1 ? ea.one : ea.many)}</button><button class="${cnt ? '' : 'on'}" data-j="mode" data-i="${i}" data-mode="g">${u}</button></span>` : `<span>${u}</span>`}</span>
         <button class="btn ghost j-x" data-j="del" data-i="${i}" aria-label="Remove ${esc(it.food.name)}">✕</button></div>`;
     }).join('');
     const soup = isSoup();
@@ -966,7 +967,11 @@
       while (tmp.firstChild) set.appendChild(tmp.firstChild);
       body.scrollTop = top;
     });
-    card.querySelectorAll('[data-ji]').forEach(inp => inp.addEventListener('input', () => { J.items[Number(inp.dataset.ji)].g = inp.value; refreshJuiceTotals(); }));
+    card.querySelectorAll('[data-ji]').forEach(inp => inp.addEventListener('input', () => {
+      const it = J.items[Number(inp.dataset.ji)];
+      if (it.food.each && it.mode === 'n') { it.n = inp.value; it.g = Math.round((Number(inp.value) || 0) * it.food.each.g * 10) / 10; } else it.g = inp.value;
+      refreshJuiceTotals();
+    }));
     $('#jname').addEventListener('input', e => { J.name = e.target.value; });
     const sp = $('#spot'); if (sp) sp.addEventListener('input', () => { J.potMl = sp.value; card.querySelectorAll('[data-j="pot"]').forEach(b => b.classList.toggle('on', Number(b.dataset.b) * BOWL_ML === Number(sp.value))); refreshJuiceTotals(); });
     const sm = $('#sml'); if (sm) sm.addEventListener('input', () => { J.portionMl = sm.value; card.querySelectorAll('[data-j="bowl"]').forEach(b => b.classList.toggle('on', Number(b.dataset.b) * BOWL_ML === Number(sm.value))); refreshJuiceTotals(); });
@@ -980,6 +985,9 @@
     card.querySelectorAll('.j-row').forEach((row, i) => {
       const it = J.items[i]; if (!it) return;
       const sm = row.querySelector('.j-name small'); if (sm) sm.textContent = fmt((it.food.n.kcal || 0) * (Number(it.g) || 0) / 100) + ' kcal';
+      const ea = it.food.each, fa = row.querySelector('.j-name .faint');
+      if (ea && fa) fa.textContent = it.mode === 'n' ? '≈ ' + fmtAmt(Number(it.g) || 0, unitOf(it.food)) : '≈ ' + countLabel(Math.round((Number(it.g) || 0) / ea.g * 4) / 4, ea);
+      const ub = row.querySelector('[data-mode="n"]'); if (ea && ub) ub.textContent = Number(it.n) === 1 ? ea.one : ea.many;
     });
     const box = card.querySelector('.j-total');
     const sp = $('#spot'); if (sp) sp.placeholder = fmt(Math.round(g));
@@ -998,11 +1006,21 @@
       const f = allFoods().find(x => x.id === a.dataset.id); if (!f) return;
       const idx = J.items.findIndex(i => i.food.id === f.id);
       if (idx >= 0) { J.items.splice(idx, 1); renderJuice(); return; }
-      J.items.push({ food: f, g: juiceDefault(f, Number(a.dataset.s)) });
+      const g0 = juiceDefault(f, Number(a.dataset.s));
+      J.items.push(f.each ? { food: f, mode: 'n', n: Math.max(0.5, Math.round(g0 / f.each.g * 2) / 2), g: Math.max(0.5, Math.round(g0 / f.each.g * 2) / 2) * f.each.g } : { food: f, g: g0, mode: 'g' });
       const body = card.querySelector('.modal-body'); const top = body ? body.scrollTop : 0;
       renderJuice();
       const nb = card.querySelector('.modal-body'); if (nb) nb.scrollTop = top;
       toast(`Added ${f.name}. Set the amount below.`);
+      return;
+    }
+    if (act === 'mode') {
+      const it = J.items[Number(a.dataset.i)]; if (!it || !it.food.each) return;
+      it.mode = a.dataset.mode;
+      if (it.mode === 'n') { it.n = Math.max(0.5, Math.round((Number(it.g) || 0) / it.food.each.g * 2) / 2); it.g = it.n * it.food.each.g; }
+      const body = card.querySelector('.modal-body'); const top = body ? body.scrollTop : 0;
+      renderJuice(); const nb = card.querySelector('.modal-body'); if (nb) nb.scrollTop = top;
+      const inp = card.querySelector(`[data-ji="${a.dataset.i}"]`); if (inp) { inp.focus(); try { inp.select(); } catch (_) {} }
       return;
     }
     if (act === 'pot') { J.potMl = Number(a.dataset.b) * BOWL_ML; const sp = $('#spot'); if (sp) sp.value = J.potMl; card.querySelectorAll('[data-j="pot"]').forEach(b => b.classList.toggle('on', b === a)); refreshJuiceTotals(); return; }

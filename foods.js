@@ -218,3 +218,19 @@ window.BUILTIN_FOODS = [{"id":"b1","name":"Egg, whole (raw)","cat":"Eggs & dairy
     V(23, 'Swiss chard', 80, '1 portion', { kcal: 19, p: 1.8, c: 3.74, f: 0.2, fib: 1.6, sug: 1.1, na: 213, k: 379, ca: 51, fe: 1.8, mg: 81, va: 306, vc: 30, vk: 830, fol: 14 })
   );
 })();
+// Let more foods be counted (1 mushroom, 2 carrots, ½ cabbage...).
+(function () {
+  const add = {
+    'Mushrooms': [18, 'mushroom', 'mushrooms'], 'Aubergine': [250, 'aubergine', 'aubergines'], 'Cucumber': [300, 'cucumber', 'cucumbers'],
+    'Broccoli, raw': [300, 'head of broccoli', 'heads of broccoli'], 'Broccoli, boiled': [300, 'head of broccoli', 'heads of broccoli'],
+    'Cauliflower': [500, 'cauliflower', 'cauliflowers'], 'Cabbage': [800, 'cabbage', 'cabbages'], 'Red cabbage': [800, 'red cabbage', 'red cabbages'],
+    'Butternut squash': [900, 'butternut squash', 'butternut squashes'], 'Beetroot, cooked': [50, 'beetroot', 'beetroots'], 'Beetroot, raw': [80, 'beetroot', 'beetroots'],
+    'Carrot, boiled': [60, 'carrot', 'carrots'], 'Potato, boiled': [175, 'potato', 'potatoes'], 'Lemon juice, fresh': [30, 'lemon (juiced)', 'lemons (juiced)'],
+    'Lime juice, fresh': [20, 'lime (juiced)', 'limes (juiced)'], 'Fennel': [200, 'fennel bulb', 'fennel bulbs'], 'Swede': [500, 'swede', 'swedes'],
+    'Celeriac': [600, 'celeriac', 'celeriacs'], 'Kohlrabi': [150, 'kohlrabi', 'kohlrabis'], 'Pak choi': [100, 'pak choi', 'pak choi'],
+    'Radishes': [8, 'radish', 'radishes'], 'Pumpkin': [1000, 'small pumpkin', 'small pumpkins'], 'Lettuce, romaine': [300, 'lettuce', 'lettuces'],
+    'Lettuce, iceberg': [500, 'iceberg lettuce', 'iceberg lettuces'], 'Pineapple': [900, 'pineapple', 'pineapples'], 'Melon (cantaloupe)': [800, 'melon', 'melons'],
+    'Honeydew melon': [1000, 'melon', 'melons'], 'Watermelon': [3000, 'watermelon', 'watermelons'], 'Diced beef, raw': [0, '', ''], 'Ginger, fresh': [10, 'thumb of ginger', 'thumbs of ginger']
+  };
+  for (const f of window.BUILTIN_FOODS) { const a = add[f.name]; if (a && a[0] && !f.each) f.each = { g: a[0], one: a[1], many: a[2] }; }
+})();

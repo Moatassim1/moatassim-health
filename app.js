@@ -323,7 +323,7 @@
     </div>`;
   }
   // Water and exercise, stored with the day so they sync.
-  const EXERCISES = [['Running', 9.8], ['Walking', 3.5], ['Cycling', 7.5], ['Gym / weights', 5], ['HIIT / circuits', 8], ['Swimming', 7], ['Football', 7], ['Padel / tennis', 7], ['Other', 5]];
+  const EXERCISES = [['Running', 9.8], ['Walking', 3.5], ['Cycling', 7.5], ['Gym / weights', 5], ['HIIT / circuits', 8], ['Swimming', 7], ['Football', 7], ['Padel / tennis', 7], ['Sauna (80°C)', 1.5], ['Other', 5]];
   const waterGoal = () => Math.max(1500, Math.round((currentWeight() || 75) * 35 / 250) * 250);
   function waterExerciseCard(k) {
     const m = P().dayMeta[k] || {}, ml = m.water || 0, goal = waterGoal();

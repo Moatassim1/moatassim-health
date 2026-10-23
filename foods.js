@@ -160,3 +160,31 @@ window.BUILTIN_FOODS = [{"id":"b1","name":"Egg, whole (raw)","cat":"Eggs & dairy
     S(71, 'Psyllium husk (5 g)', 5, 'scoop', { kcal: 10, c: 4.4, fib: 4 })
   );
 })();
+// Soup ingredients (per 100 g / 100 ml; stocks as made up from cubes or pots).
+(function () {
+  const K = ['kcal', 'p', 'c', 'f', 'fib', 'sug', 'sat', 'na', 'k', 'ca', 'fe', 'mg', 'zn', 'va', 'vc', 'vd', 've', 'vk', 'b6', 'b12', 'fol', 'se', 'io', 'ph', 'cu', 'b1', 'b2', 'b3', 'ch', 'epa', 'la', 'ala'];
+  const X = (id, name, cat, unit, portion, label, v, each) => { const n = {}; for (const k of K) n[k] = v[k] ?? null; return { id: 'sp' + id, name, cat, portion, portionLabel: label, n, ...(unit === 'ml' ? { unit: 'ml' } : {}), ...(each ? { each } : {}) }; };
+  window.BUILTIN_FOODS.push(
+    X(1, 'Chicken stock', 'Drinks', 'ml', 500, '1 cube + 500 ml water', { kcal: 7, p: 0.5, c: 0.5, f: 0.3, sug: 0.2, sat: 0.1, na: 320, k: 20 }),
+    X(2, 'Vegetable stock', 'Drinks', 'ml', 500, '1 cube + 500 ml water', { kcal: 6, p: 0.2, c: 0.9, f: 0.2, sug: 0.4, sat: 0.1, na: 300, k: 25 }),
+    X(3, 'Beef stock', 'Drinks', 'ml', 500, '1 cube + 500 ml water', { kcal: 8, p: 0.6, c: 0.5, f: 0.3, sug: 0.2, sat: 0.1, na: 330, k: 20 }),
+    X(4, 'Coconut milk (tinned)', 'Drinks', 'ml', 200, 'half a tin', { kcal: 197, p: 2, c: 2.8, f: 21, fib: 0, sug: 2.8, sat: 18.9, na: 13, k: 220, fe: 3.3, mg: 46, la: 0.23 }),
+    X(5, 'Leek', 'Vegetables', 'g', 150, '1 leek', { kcal: 61, p: 1.5, c: 14.2, f: 0.3, fib: 1.8, sug: 3.9, na: 20, k: 180, ca: 59, fe: 2.1, mg: 28, va: 83, vc: 12, vk: 47, b6: 0.23, fol: 64 }, { g: 150, one: 'leek', many: 'leeks' }),
+    X(6, 'Potato, raw', 'Vegetables', 'g', 200, '1 medium', { kcal: 77, p: 2.05, c: 17.5, f: 0.09, fib: 2.1, sug: 0.8, na: 6, k: 425, ca: 12, fe: 0.81, mg: 23, vc: 19.7, b6: 0.3, fol: 15, ph: 57 }, { g: 200, one: 'potato', many: 'potatoes' }),
+    X(7, 'Sweet potato, raw', 'Vegetables', 'g', 150, '1 medium', { kcal: 86, p: 1.57, c: 20.1, f: 0.05, fib: 3, sug: 4.2, na: 55, k: 337, ca: 30, fe: 0.61, mg: 25, va: 709, vc: 2.4, b6: 0.21, fol: 11 }, { g: 150, one: 'sweet potato', many: 'sweet potatoes' }),
+    X(8, 'Butternut squash', 'Vegetables', 'g', 200, 'a quarter', { kcal: 45, p: 1, c: 11.7, f: 0.1, fib: 2, sug: 2.2, na: 4, k: 352, ca: 48, fe: 0.7, mg: 34, va: 532, vc: 21, ve: 1.44, b6: 0.15, fol: 27 }),
+    X(9, 'Pumpkin', 'Vegetables', 'g', 200, '1 portion', { kcal: 26, p: 1, c: 6.5, f: 0.1, fib: 0.5, sug: 2.8, na: 1, k: 340, ca: 21, fe: 0.8, mg: 12, va: 426, vc: 9, ve: 1.06 }),
+    X(10, 'Chopped tomatoes (tin)', 'Vegetables', 'g', 400, '1 tin', { kcal: 21, p: 1.2, c: 3, f: 0.1, fib: 0.9, sug: 3, na: 12, k: 220, ca: 20, fe: 0.6, va: 30, vc: 9, vk: 3 }),
+    X(11, 'Tomato purée', 'Vegetables', 'g', 15, '1 tbsp', { kcal: 82, p: 4.3, c: 18.9, f: 0.5, fib: 4.1, sug: 12.2, na: 59, k: 1014, ca: 36, fe: 2.98, mg: 42, va: 76, vc: 22, vk: 11.4 }),
+    X(12, 'Red lentils, dry', 'Beans, lentils & soy', 'g', 75, '1 portion (dry)', { kcal: 352, p: 24.6, c: 63.4, f: 1.06, fib: 10.7, sug: 2, sat: 0.15, na: 6, k: 677, ca: 35, fe: 6.51, mg: 47, zn: 3.27, vc: 4.5, b6: 0.54, fol: 479, ph: 281, cu: 0.75, b1: 0.87 }),
+    X(13, 'Vermicelli, dry', 'Bread, grains & cereals', 'g', 30, '1 small handful', { kcal: 371, p: 13, c: 75, f: 1.5, fib: 3.2, sug: 2.7, na: 6, k: 223, fe: 1.3, mg: 53 }),
+    X(14, 'Pearl barley, dry', 'Bread, grains & cereals', 'g', 50, '1 portion (dry)', { kcal: 352, p: 9.9, c: 77.7, f: 1.16, fib: 15.6, sug: 0.8, na: 9, k: 280, ca: 29, fe: 2.5, mg: 79, zn: 2.13, se: 37.7 }),
+    X(15, 'Plain flour', 'Bread, grains & cereals', 'g', 15, '1 tbsp', { kcal: 364, p: 10.3, c: 76.3, f: 0.98, fib: 2.7, sug: 0.3, na: 2, k: 107, ca: 15, fe: 1.17, mg: 22 }),
+    X(16, 'Fresh coriander', 'Vegetables', 'g', 5, 'a small handful', { kcal: 23, p: 2.1, c: 3.7, f: 0.5, fib: 2.8, sug: 0.9, na: 46, k: 521, ca: 67, fe: 1.77, va: 337, vc: 27, vk: 310 }),
+    X(17, 'Fresh parsley', 'Vegetables', 'g', 5, 'a small handful', { kcal: 36, p: 3, c: 6.3, f: 0.8, fib: 3.3, sug: 0.9, na: 56, k: 554, ca: 138, fe: 6.2, va: 421, vc: 133, vk: 1640, fol: 152 }),
+    X(18, 'Ground cumin', 'Oils, sauces & sweet things', 'g', 2, '1 tsp', { kcal: 375, p: 17.8, c: 44.2, f: 22.3, fib: 10.5, sug: 2.3, na: 168, k: 1788, ca: 931, fe: 66.4, mg: 366 }),
+    X(19, 'Harissa paste', 'Oils, sauces & sweet things', 'g', 15, '1 tbsp', { kcal: 120, p: 2.5, c: 9, f: 8, fib: 4, sug: 5, sat: 1, na: 1500 }),
+    X(20, 'Salt', 'Oils, sauces & sweet things', 'g', 1, 'a pinch', { kcal: 0, p: 0, c: 0, f: 0, na: 38758 }),
+    X(21, 'Stock cube', 'Oils, sauces & sweet things', 'g', 10, '1 cube', { kcal: 250, p: 10, c: 25, f: 12, sug: 5, sat: 6, na: 16000 }, { g: 10, one: 'stock cube', many: 'stock cubes' })
+  );
+})();

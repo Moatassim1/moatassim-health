@@ -562,7 +562,7 @@
           <div class="picker-search">
             <div class="search-row"><input type="text" id="mq" placeholder="Search foods, e.g. chicken breast, banana" autocomplete="off" spellcheck="false"><button class="btn scan-inline" data-m="scan" aria-label="Scan a barcode"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 9v6M10 9v6M13 9v6M17 9v6"/></svg><span>Scan</span></button></div>
             <div class="seg" id="mtabs"><button data-tab="all" class="on">Food list</button><button data-tab="recent">Recent</button><button data-tab="fav">★ Favourites</button><button data-tab="sup">💊 Supplements</button><button data-tab="shop">Shops</button><button data-tab="online">Search online</button></div>
-            <button class="juice-btn" data-m="juice"><span class="jb-ico">🥤</span><span><b>Make a juice or smoothie</b><small>Add the liquid, fruit and extras you blended</small></span></button>
+            <div class="maker-row"><button class="juice-btn" data-m="juice"><span class="jb-ico">🥤</span><span><b>Juice or smoothie</b><small>Liquid, fruit and extras you blended</small></span></button><button class="juice-btn" data-m="soup"><span class="jb-ico">🍲</span><span><b>Soup</b><small>What went in the pot, then how much you had</small></span></button></div>
             <div class="shop-pick" id="mshops" hidden>${SHOP_LIST.map(([id, nm]) => `<button class="chip" data-shop="${id}">${esc(nm)}</button>`).join('')}</div>
           </div>
           <div class="results" id="mres"></div>
@@ -853,19 +853,37 @@
     ['Fruit & veg', 'Fresh or frozen', ['Banana', 'Strawberries', 'Blueberries', 'Raspberries', 'Frozen mixed berries', 'Mango', 'Pineapple', 'Apple', 'Orange', 'Kiwi', 'Pear', 'Avocado', 'Dates, medjool', 'Spinach, raw', 'Kale, raw', 'Carrot, raw', 'Cucumber', 'Celery', 'Beetroot, cooked', 'Ginger, fresh', 'Lemon juice, fresh', 'Lime juice, fresh', 'Mint leaves, fresh']],
     ['Extras', 'Nuts, seeds, protein, sweeteners', ['Oats, rolled (dry)', 'Peanut butter', 'Almonds', 'Walnuts', 'Cashews', 'Chia seeds', 'Flaxseed, ground', 'Honey', 'Maple syrup', 'Whey protein powder (typical)', 'Greek yogurt, 0% fat', 'Skyr, plain', 'Cocoa powder, unsweetened', 'Cinnamon, ground', 'Ice cubes']]
   ];
+  const SOUP_SETS = [
+    ['Liquid', 'What the soup is made with', ['Water', 'Chicken stock', 'Vegetable stock', 'Beef stock', 'Milk, semi-skimmed', 'Coconut milk (tinned)', 'Double cream']],
+    ['Vegetables', 'Raw weight going into the pot', ['Onion', 'Garlic', 'Carrot, raw', 'Celery', 'Leek', 'Potato, raw', 'Sweet potato, raw', 'Butternut squash', 'Pumpkin', 'Tomato', 'Chopped tomatoes (tin)', 'Tomato purée', 'Spinach, raw', 'Kale, raw', 'Broccoli, raw', 'Cauliflower', 'Courgette', 'Red pepper', 'Mushrooms', 'Cabbage', 'Peas, boiled', 'Sweetcorn', 'Fresh coriander', 'Fresh parsley']],
+    ['Protein', 'Meat, fish, lentils and beans', ['Chicken breast, raw', 'Chicken thigh, skinless, raw', 'Diced beef, raw', 'Beef mince 5% fat, raw', 'Lamb mince, raw', 'Red lentils, dry', 'Chickpeas, canned (drained)', 'Kidney beans, canned (drained)', 'Cod, cooked', 'Prawns, cooked', 'Egg, whole (raw)']],
+    ['Extras', 'Oil, pasta, rice, thickeners, seasoning', ['Olive oil', 'Butter', 'Vermicelli, dry', 'Pasta, dry', 'White / basmati rice, uncooked', 'Pearl barley, dry', 'Plain flour', 'Parmesan', 'Harissa paste', 'Ground cumin', 'Stock cube', 'Salt']]
+  ];
+  const BOWL_ML = 500;
   const foodByName = nm => BUILTIN.find(f => f.name === nm) || null;
   let J = null;
+  const isSoup = () => J && J.kind === 'soup';
+  const builderSets = () => isSoup() ? SOUP_SETS : JUICE_SETS;
+  // Soup: the whole pot's nutrition is shared out per ml of finished soup.
+  function soupPot() { const raw = juiceTotals().g; return Number(J.potMl) > 0 ? Number(J.potMl) : Math.round(raw); }
+  function soupPortion() { return Number(J.portionMl) > 0 ? Number(J.portionMl) : 0; }
   function juiceDefault(f, setIdx) {
+    if (isSoup()) {
+      if (setIdx === 0) return unitOf(f) === 'ml' && !/milk|cream/i.test(f.name) ? 1000 : 200;
+      if (f.each) return f.each.g;
+      if (setIdx === 2) return /lentil|barley/i.test(f.name) ? 150 : 250;
+      return f.portion ? Math.round(f.portion) : 100;
+    }
     if (setIdx === 0) return f.name === 'Water' || unitOf(f) === 'ml' ? 250 : 200;
     if (f.each) return f.each.g;
     return f.portion ? Math.round(f.portion) : (setIdx === 2 ? 20 : 80);
   }
-  function openJuice(ctx, editFood) {
+  function openJuice(ctx, editFood, kind) {
     M = null; // leave the normal log-food screen
-    J = { date: ctx.date, meal: ctx.meal || guessMeal(), name: '', items: [], q: '', saveRecipe: true, editId: null };
+    J = { kind: (editFood && editFood.recipeKind) || kind || 'juice', date: ctx.date, meal: ctx.meal || guessMeal(), name: '', items: [], q: '', saveRecipe: true, editId: null, potMl: P().profile.soupPotMl || 3 * BOWL_ML, portionMl: BOWL_ML };
     if (editFood && editFood.recipe) {
       const foods = allFoods();
-      J.editId = editFood.id; J.name = editFood.name;
+      J.editId = editFood.id; J.name = editFood.name; J.potMl = editFood.potMl || '';
       J.items = editFood.recipe.map(r => ({ food: foods.find(f => f.id === r.id), g: r.g })).filter(i => i.food);
     }
     card.className = 'modal-card narrow juice-card';
@@ -884,7 +902,20 @@
   function juiceName() {
     if (J.name.trim()) return J.name.trim();
     const fr = J.items.filter(i => !/^(Water|Milk|Almond milk|Oat milk|Soya milk|Coconut milk|Ice)/.test(i.food.name)).map(i => i.food.name.split(/[,(]/)[0].trim().toLowerCase());
+    if (isSoup()) {
+      const main = J.items.filter(i => !/^(Water|Milk|Coconut milk|Double cream|Olive oil|Butter|Salt|Ground cumin|Stock|.* stock|Fresh |Harissa|Plain flour|Tomato purée|Garlic|Onion)/.test(i.food.name)).map(i => i.food.name.split(/[,(]/)[0].replace(/ dry$/, '').trim().toLowerCase());
+      return main.length ? 'Soup: ' + main.slice(0, 3).join(', ') + (main.length > 3 ? ' +' + (main.length - 3) : '') : 'Soup';
+    }
     return fr.length ? 'Smoothie: ' + fr.slice(0, 3).join(', ') + (fr.length > 3 ? ' +' + (fr.length - 3) : '') : 'Juice';
+  }
+  // Soup: what the bowl you had contains.
+  function soupBox() {
+    const { tot, g } = juiceTotals();
+    const pot = soupPot(), por = soupPortion(), share = pot > 0 ? por / pot : 0;
+    const x = k => (tot[k] || 0) * share;
+    return `<div class="pk num">${fmt(x('kcal'))}<small>kcal in ${fmtAmt(por, 'ml')}</small></div>
+      <div class="pmac"><div class="p"><b>${fmt(x('p'), 1)} g</b><span>Protein</span></div><div class="c"><b>${fmt(x('c'), 1)} g</b><span>Carbs</span></div><div class="f"><b>${fmt(x('f'), 1)} g</b><span>Fat</span></div></div>
+      <div class="muted small" style="margin-top:6px">Whole pot: ${fmt(tot.kcal || 0)} kcal in ${fmtAmt(pot, 'ml')} · ${pot > 0 ? fmt((tot.kcal || 0) / pot * BOWL_ML) : 0} kcal per bowl (500 ml)</div>`;
   }
   function renderJuice(keepFocus) {
     const { tot, g } = juiceTotals();
@@ -897,19 +928,26 @@
         <span class="j-amt"><input type="number" inputmode="decimal" min="0" step="1" value="${esc(it.g)}" data-ji="${i}" aria-label="Amount of ${esc(it.food.name)}"><span>${u}</span></span>
         <button class="btn ghost j-x" data-j="del" data-i="${i}" aria-label="Remove ${esc(it.food.name)}">✕</button></div>`;
     }).join('');
-    card.innerHTML = `<div class="modal-head"><h2>${J.editId ? 'Edit saved juice' : 'Juice or smoothie'}</h2><button class="btn ghost" data-j="close">Close</button></div>
+    const soup = isSoup();
+    card.innerHTML = `<div class="modal-head"><h2>${soup ? (J.editId ? 'Edit saved soup' : 'Soup') : (J.editId ? 'Edit saved juice' : 'Juice or smoothie')}</h2><button class="btn ghost" data-j="close">Close</button></div>
       <div class="modal-body">
-        <p class="muted small" style="margin-top:0">Tap what went in, then set how much of each. Grams for solids, ml for liquids.</p>
-        ${JUICE_SETS.map(([title, sub, names], si) => `<div class="j-set"><div class="j-set-h"><b>${title}</b> <span class="faint small">${sub}</span></div><div class="chips">${names.map(foodByName).filter(Boolean).map(f => `<button class="chip ${have.has(f.id) ? 'on' : ''}" data-j="add" data-id="${esc(f.id)}" data-s="${si}">${have.has(f.id) ? '✓ ' : '+ '}${esc(f.name.replace(/, (unsweetened|fresh|raw|plain|ground|medjool|rolled \(dry\)|cooked)$/, '').replace(' (typical)', ''))}</button>`).join('')}</div></div>`).join('')}
+        <p class="muted small" style="margin-top:0">${soup ? 'Add everything that went into the pot (raw weights), then say how much you had. A bowl is 500 ml.' : 'Tap what went in, then set how much of each. Grams for solids, ml for liquids.'}</p>
+        ${builderSets().map(([title, sub, names], si) => `<div class="j-set"><div class="j-set-h"><b>${title}</b> <span class="faint small">${sub}</span></div><div class="chips">${names.map(foodByName).filter(Boolean).map(f => `<button class="chip ${have.has(f.id) ? 'on' : ''}" data-j="add" data-id="${esc(f.id)}" data-s="${si}">${have.has(f.id) ? '✓ ' : '+ '}${esc(f.name.replace(/, (unsweetened|fresh|raw|plain|ground|medjool|rolled \(dry\)|cooked)$/, '').replace(' (typical)', ''))}</button>`).join('')}</div></div>`).join('')}
         <div class="j-set"><div class="j-set-h"><b>Something else?</b> <span class="faint small">Search your food list</span></div>
-          <input type="text" id="jq" placeholder="e.g. peanut butter, mango, protein" value="${esc(J.q)}" autocomplete="off">
+          <input type="text" id="jq" placeholder="${soup ? 'e.g. chicken thigh, lentils, noodles' : 'e.g. peanut butter, mango, protein'}" value="${esc(J.q)}" autocomplete="off">
           ${results.length ? `<div class="chips" style="margin-top:8px">${results.map(f => `<button class="chip ${have.has(f.id) ? 'on' : ''}" data-j="add" data-id="${esc(f.id)}" data-s="1">${have.has(f.id) ? '✓ ' : '+ '}${esc(f.name)}</button>`).join('')}</div>` : J.q.trim() ? '<p class="faint small">No match in the food list.</p>' : ''}
         </div>
         <div class="j-list">${rows || '<p class="muted small">Nothing added yet.</p>'}</div>
-        <div class="preview j-total">
+        ${soup ? `<div class="j-set"><div class="j-set-h"><b>How many bowls does the whole pot make?</b> <span class="faint small">the app remembers your usual</span></div>
+          <div class="chips">${[2, 3, 4, 5, 6, 8].map(b => `<button class="chip ${Number(J.potMl) === b * BOWL_ML ? 'on' : ''}" data-j="pot" data-b="${b}">${b} bowls</button>`).join('')}</div>
+          <div class="j-amt" style="margin-top:8px"><input type="number" id="spot" inputmode="numeric" min="0" step="50" value="${esc(J.potMl)}" placeholder="${fmt(Math.round(g))}" style="width:110px"><span>ml</span></div></div>
+          <div class="j-set"><div class="j-set-h"><b>How much did you have?</b></div>
+          <div class="chips">${[0.5, 1, 1.5, 2].map(b => `<button class="chip ${Number(J.portionMl) === b * BOWL_ML ? 'on' : ''}" data-j="bowl" data-b="${b}">${b === 0.5 ? '½ bowl' : b === 1 ? '1 bowl' : b === 1.5 ? '1½ bowls' : '2 bowls'}</button>`).join('')}</div>
+          <div class="j-amt" style="margin-top:8px"><input type="number" id="sml" inputmode="numeric" min="0" step="50" value="${esc(J.portionMl)}" style="width:110px"><span>ml</span></div></div>` : ''}
+        <div class="preview j-total">${soup ? soupBox() : `
           <div class="pk num">${fmt(tot.kcal || 0)}<small>kcal</small></div>
           <div class="pmac"><div class="p"><b>${fmt(tot.p || 0, 1)} g</b><span>Protein</span></div><div class="c"><b>${fmt(tot.c || 0, 1)} g</b><span>Carbs</span></div><div class="f"><b>${fmt(tot.f || 0, 1)} g</b><span>Fat</span></div></div>
-          <div class="muted small" style="margin-top:6px">${fmt(g)} ${J.items.some(i => unitOf(i.food) === 'ml') ? 'ml/g' : 'g'} in total · fibre ${fmt(tot.fib || 0, 1)} g · sugar ${fmt(tot.sug || 0, 1)} g${tot.vc != null ? ` · vitamin C ${fmt(tot.vc, 0)} mg` : ''}</div>
+          <div class="muted small" style="margin-top:6px">${fmt(g)} ${J.items.some(i => unitOf(i.food) === 'ml') ? 'ml/g' : 'g'} in total · fibre ${fmt(tot.fib || 0, 1)} g · sugar ${fmt(tot.sug || 0, 1)} g${tot.vc != null ? ` · vitamin C ${fmt(tot.vc, 0)} mg` : ''}</div>`}
         </div>
         <label class="field" style="margin-top:14px"><span>Name</span><input type="text" id="jname" maxlength="60" placeholder="${esc(juiceName())}" value="${esc(J.name)}"></label>
         <label class="field" style="margin-top:10px"><span>Meal</span><select id="jmeal">${MEALS.map(m => `<option ${m === J.meal ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
@@ -930,6 +968,8 @@
     });
     card.querySelectorAll('[data-ji]').forEach(inp => inp.addEventListener('input', () => { J.items[Number(inp.dataset.ji)].g = inp.value; refreshJuiceTotals(); }));
     $('#jname').addEventListener('input', e => { J.name = e.target.value; });
+    const sp = $('#spot'); if (sp) sp.addEventListener('input', () => { J.potMl = sp.value; card.querySelectorAll('[data-j="pot"]').forEach(b => b.classList.toggle('on', Number(b.dataset.b) * BOWL_ML === Number(sp.value))); refreshJuiceTotals(); });
+    const sm = $('#sml'); if (sm) sm.addEventListener('input', () => { J.portionMl = sm.value; card.querySelectorAll('[data-j="bowl"]').forEach(b => b.classList.toggle('on', Number(b.dataset.b) * BOWL_ML === Number(sm.value))); refreshJuiceTotals(); });
     $('#jmeal').addEventListener('change', e => { J.meal = e.target.value; const b = card.querySelector('[data-j="commit"]'); if (b) b.textContent = 'Add to ' + J.meal.toLowerCase(); });
     const js = $('#jsave'); if (js) js.addEventListener('change', e => { J.saveRecipe = e.target.checked; });
     if (keepFocus) { const el = card.querySelector(keepFocus); if (el) { el.focus(); try { el.select(); } catch (_) {} } }
@@ -942,10 +982,12 @@
       const sm = row.querySelector('.j-name small'); if (sm) sm.textContent = fmt((it.food.n.kcal || 0) * (Number(it.g) || 0) / 100) + ' kcal';
     });
     const box = card.querySelector('.j-total');
-    if (box) box.innerHTML = `<div class="pk num">${fmt(tot.kcal || 0)}<small>kcal</small></div>
+    const sp = $('#spot'); if (sp) sp.placeholder = fmt(Math.round(g));
+    if (box && isSoup()) box.innerHTML = soupBox();
+    else if (box) box.innerHTML = `<div class="pk num">${fmt(tot.kcal || 0)}<small>kcal</small></div>
       <div class="pmac"><div class="p"><b>${fmt(tot.p || 0, 1)} g</b><span>Protein</span></div><div class="c"><b>${fmt(tot.c || 0, 1)} g</b><span>Carbs</span></div><div class="f"><b>${fmt(tot.f || 0, 1)} g</b><span>Fat</span></div></div>
       <div class="muted small" style="margin-top:6px">${fmt(g)} ${J.items.some(i => unitOf(i.food) === 'ml') ? 'ml/g' : 'g'} in total · fibre ${fmt(tot.fib || 0, 1)} g · sugar ${fmt(tot.sug || 0, 1)} g${tot.vc != null ? ` · vitamin C ${fmt(tot.vc, 0)} mg` : ''}</div>`;
-    card.querySelectorAll('[data-j="commit"],[data-j="update"],[data-j="update-log"]').forEach(b => { b.disabled = !(J.items.length && g > 0); });
+    card.querySelectorAll('[data-j="commit"],[data-j="update"],[data-j="update-log"]').forEach(b => { b.disabled = !(J.items.length && g > 0 && (!isSoup() || soupPortion() > 0)); });
     const nm = $('#jname'); if (nm) nm.placeholder = juiceName();
   }
   function juiceClick(e) {
@@ -963,14 +1005,36 @@
       toast(`Added ${f.name}. Set the amount below.`);
       return;
     }
+    if (act === 'pot') { J.potMl = Number(a.dataset.b) * BOWL_ML; const sp = $('#spot'); if (sp) sp.value = J.potMl; card.querySelectorAll('[data-j="pot"]').forEach(b => b.classList.toggle('on', b === a)); refreshJuiceTotals(); return; }
+    if (act === 'bowl') { J.portionMl = Number(a.dataset.b) * BOWL_ML; const sm = $('#sml'); if (sm) sm.value = J.portionMl; card.querySelectorAll('[data-j="bowl"]').forEach(b => b.classList.toggle('on', b === a)); refreshJuiceTotals(); return; }
     if (act === 'del') { const body = card.querySelector('.modal-body'); const top = body.scrollTop; J.items.splice(Number(a.dataset.i), 1); renderJuice(); card.querySelector('.modal-body').scrollTop = top; return; }
     if (act === 'update' || act === 'update-log') {
       const { tot, g } = juiceTotals(); if (!(g > 0)) return;
       const f = S.customFoods.find(x => x.id === J.editId); if (!f) return;
-      const n = {}; for (const k of NKEYS) n[k] = tot[k] == null ? null : Math.round(tot[k] / g * 100 * 1000) / 1000;
-      Object.assign(f, { name: juiceName(), n, portion: Math.round(g), unit: J.items.some(i => unitOf(i.food) === 'ml') ? 'ml' : 'g', recipe: J.items.map(i => ({ id: i.food.id, name: i.food.name, g: Number(i.g) || 0 })), savedAt: Date.now() });
+      const base = isSoup() ? soupPot() : g;
+      const n = {}; for (const k of NKEYS) n[k] = tot[k] == null ? null : Math.round(tot[k] / base * 100 * 1000) / 1000;
+      Object.assign(f, { name: juiceName(), n, recipe: J.items.map(i => ({ id: i.food.id, name: i.food.name, g: Number(i.g) || 0 })), savedAt: Date.now() },
+        isSoup() ? { unit: 'ml', portion: BOWL_ML, potMl: Number(J.potMl) > 0 ? Number(J.potMl) : null } : { portion: Math.round(g), unit: J.items.some(i => unitOf(i.food) === 'ml') ? 'ml' : 'g' });
       if (act === 'update') { save(); J = null; closeModal(); render(); toast(`Saved changes to ${f.name}. Past diary entries keep their old values.`); return; }
       J.saveRecipe = false; J.logFoodId = f.id; J.editId = null; // fall through to log it once
+    }
+    if ((act === 'commit' || act === 'update-log') && isSoup()) {
+      const { tot } = juiceTotals();
+      const pot = soupPot(), por = soupPortion(); if (!(pot > 0 && por > 0)) return;
+      const n = {}; for (const k of NKEYS) n[k] = tot[k] == null ? null : Math.round(tot[k] / pot * 100 * 1000) / 1000;
+      const name = juiceName(), each = { g: BOWL_ML, one: 'bowl', many: 'bowls' };
+      const food = { id: J.logFoodId || ('mine-' + uid()), name, source: 'Mine', cat: 'Meals & takeaway', unit: 'ml', portion: BOWL_ML, portionLabel: '1 bowl (500 ml)', each, n,
+        recipe: J.items.map(i => ({ id: i.food.id, name: i.food.name, g: Number(i.g) || 0 })), recipeKind: 'soup', potMl: Number(J.potMl) > 0 ? Number(J.potMl) : null, savedAt: Date.now() };
+      if (J.saveRecipe) S.customFoods.unshift(food);
+      if (Number(J.potMl) > 0) P().profile.soupPotMl = Number(J.potMl); // remember this person's usual pot
+      const count = Math.abs(por / BOWL_ML * 4 - Math.round(por / BOWL_ML * 4)) < 1e-9 ? por / BOWL_ML : null;
+      const list = P().diary[J.date] || (P().diary[J.date] = []);
+      list.push({ id: uid(), foodId: food.id, name, grams: Math.round(por), count, each: count != null ? each : null, unit: 'ml', meal: J.meal, n: { ...n }, portion: BOWL_ML, portionLabel: food.portionLabel, source: 'Mine', at: Date.now(), recipe: food.recipe });
+      remember(food); save();
+      const date = J.date, meal = J.meal; J = null; closeModal();
+      if (UI.view === 'today') { UI.date = date; render(); }
+      toast(`Added ${name} (${fmt((tot.kcal || 0) * por / pot)} kcal) to ${meal.toLowerCase()}.`);
+      return;
     }
     if (act === 'commit' || act === 'update-log') {
       const { tot, g } = juiceTotals(); if (!(g > 0)) return;
@@ -1057,6 +1121,7 @@
     else if (m === 'fav-del') { P().profile.favMeals = (P().profile.favMeals || []).filter(f => f.id !== a.dataset.id); save(); renderResults(); toast('Favourite removed.'); }
     else if (m === 'quick') { const mm = M.meal, d = M.date; closeModal(); quickAdd(mm, d); }
     else if (m === 'juice') openJuice({ date: M.date, meal: M.meal });
+    else if (m === 'soup') openJuice({ date: M.date, meal: M.meal }, null, 'soup');
     else if (m === 'grams') { M.grams = a.dataset.g; renderRight(); }
     else if (m === 'count') { M.count = Number(a.dataset.c); M.grams = M.count * M.sel.each.g; renderRight(); }
     else if (m === 'mode') {

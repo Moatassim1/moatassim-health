@@ -63,3 +63,100 @@ window.BUILTIN_FOODS = [{"id":"b1","name":"Egg, whole (raw)","cat":"Eggs & dairy
     R(29, 'Hot chocolate', 'ml', 250, '1 cup', { kcal: 72, p: 2.2, c: 11.5, f: 2, fib: 0.6, sug: 10, sat: 1.2, na: 50, ca: 70 })
   );
 })();
+// More fruit (USDA FoodData Central values per 100 g).
+(function () {
+  const K = ['kcal', 'p', 'c', 'f', 'fib', 'sug', 'sat', 'na', 'k', 'ca', 'fe', 'mg', 'zn', 'va', 'vc', 'vd', 've', 'vk', 'b6', 'b12', 'fol', 'se', 'io', 'ph', 'cu', 'b1', 'b2', 'b3', 'ch', 'epa', 'la', 'ala'];
+  const F = (id, name, portion, label, v, each) => { const n = {}; for (const k of K) n[k] = v[k] ?? null; return { id: 'fr' + id, name, cat: 'Fruit', portion, portionLabel: label, n, ...(each ? { each } : {}) }; };
+  window.BUILTIN_FOODS.push(
+    F(1, 'Figs, fresh', 50, '1 fig', { kcal: 74, p: 0.75, c: 19.2, f: 0.3, fib: 2.9, sug: 16.3, sat: 0.06, na: 1, k: 232, ca: 35, fe: 0.37, mg: 17, zn: 0.15, va: 7, vc: 2, ve: 0.11, vk: 4.7, b6: 0.11, fol: 6, ph: 14, cu: 0.07, b1: 0.06, b2: 0.05, b3: 0.4, ch: 4.7 }, { g: 50, one: 'fig', many: 'figs' }),
+    F(2, 'Figs, dried', 8, '1 dried fig', { kcal: 249, p: 3.3, c: 63.9, f: 0.93, fib: 9.8, sug: 47.9, sat: 0.15, na: 10, k: 680, ca: 162, fe: 2.03, mg: 68, zn: 0.55, va: 0, vc: 1.2, ve: 0.35, vk: 15.6, b6: 0.11, fol: 9, ph: 67, cu: 0.29, b1: 0.09, b2: 0.08, b3: 0.62, ch: 15.8 }, { g: 8, one: 'dried fig', many: 'dried figs' }),
+    F(3, 'Papaya', 150, '1 cup, cubed', { kcal: 43, p: 0.47, c: 10.8, f: 0.26, fib: 1.7, sug: 7.8, sat: 0.08, na: 8, k: 182, ca: 20, fe: 0.25, mg: 21, zn: 0.08, va: 47, vc: 60.9, ve: 0.3, vk: 2.6, b6: 0.04, fol: 37, ph: 10, cu: 0.05, b3: 0.36, ch: 6.1 }),
+    F(4, 'Lychees', 100, '10 lychees', { kcal: 66, p: 0.83, c: 16.5, f: 0.44, fib: 1.3, sug: 15.2, na: 1, k: 171, ca: 5, fe: 0.31, mg: 10, zn: 0.07, vc: 71.5, b6: 0.1, fol: 14, ph: 31, cu: 0.15, b3: 0.6 }, { g: 10, one: 'lychee', many: 'lychees' }),
+    F(5, 'Prunes', 10, '1 prune', { kcal: 240, p: 2.18, c: 63.9, f: 0.38, fib: 7.1, sug: 38.1, sat: 0.09, na: 2, k: 732, ca: 43, fe: 0.93, mg: 41, zn: 0.44, va: 39, vc: 0.6, ve: 0.43, vk: 59.5, b6: 0.21, fol: 4, ph: 69, cu: 0.28, b3: 1.88, ch: 10.1 }, { g: 10, one: 'prune', many: 'prunes' }),
+    F(6, 'Passion fruit', 18, '1 fruit (pulp)', { kcal: 97, p: 2.2, c: 23.4, f: 0.7, fib: 10.4, sug: 11.2, sat: 0.06, na: 28, k: 348, ca: 12, fe: 1.6, mg: 29, zn: 0.1, va: 64, vc: 30, ve: 0.02, vk: 0.7, b6: 0.1, fol: 14, ph: 68, cu: 0.09, b3: 1.5, ch: 7.6 }, { g: 18, one: 'passion fruit', many: 'passion fruits' }),
+    F(7, 'Guava', 55, '1 guava', { kcal: 68, p: 2.55, c: 14.3, f: 0.95, fib: 5.4, sug: 8.9, sat: 0.27, na: 2, k: 417, ca: 18, fe: 0.26, mg: 22, zn: 0.23, va: 31, vc: 228, ve: 0.73, vk: 2.6, b6: 0.11, fol: 49, ph: 40, cu: 0.23, b3: 1.08, ch: 7.6 }, { g: 55, one: 'guava', many: 'guavas' }),
+    F(8, 'Dragon fruit', 200, '1 fruit', { kcal: 57, p: 0.36, c: 15.2, f: 0.14, fib: 3.1, sug: 7.7, na: 0, k: 116, ca: 9, fe: 0.18, mg: 40, zn: 0.12, vc: 2.5, ph: 19 }, { g: 200, one: 'dragon fruit', many: 'dragon fruits' }),
+    F(9, 'Blackberries', 80, '1 handful', { kcal: 43, p: 1.39, c: 9.6, f: 0.49, fib: 5.3, sug: 4.9, sat: 0.01, na: 1, k: 162, ca: 29, fe: 0.62, mg: 20, zn: 0.53, va: 11, vc: 21, ve: 1.17, vk: 19.8, b6: 0.03, fol: 25, ph: 22, cu: 0.17, b3: 0.65, ch: 8.5 }),
+    F(10, 'Cranberries, dried', 30, '1 handful', { kcal: 308, p: 0.17, c: 82.4, f: 1.1, fib: 5.3, sug: 65, sat: 0.08, na: 3, k: 49, ca: 9, fe: 0.38, mg: 4, zn: 0.07, vc: 0.2, ve: 2.1, vk: 7.6, ph: 8, cu: 0.06 }),
+    F(11, 'Apricot, fresh', 35, '1 apricot', { kcal: 48, p: 1.4, c: 11.1, f: 0.39, fib: 2, sug: 9.2, sat: 0.03, na: 1, k: 259, ca: 13, fe: 0.39, mg: 10, zn: 0.2, va: 96, vc: 10, ve: 0.89, vk: 3.3, b6: 0.05, fol: 9, ph: 23, cu: 0.08, b3: 0.6, ch: 2.8 }, { g: 35, one: 'apricot', many: 'apricots' }),
+    F(12, 'Persimmon (sharon fruit)', 170, '1 fruit', { kcal: 70, p: 0.58, c: 18.6, f: 0.19, fib: 3.6, sug: 12.5, sat: 0.02, na: 1, k: 161, ca: 8, fe: 0.15, mg: 9, zn: 0.11, va: 81, vc: 7.5, ve: 0.73, vk: 2.6, b6: 0.1, fol: 8, ph: 17, cu: 0.11, b3: 0.1 }, { g: 170, one: 'persimmon', many: 'persimmons' }),
+    F(13, 'Honeydew melon', 150, '1 slice', { kcal: 36, p: 0.54, c: 9.1, f: 0.14, fib: 0.8, sug: 8.1, na: 18, k: 228, ca: 6, fe: 0.17, mg: 10, zn: 0.09, va: 3, vc: 18, vk: 2.9, b6: 0.09, fol: 19, ph: 11, cu: 0.02, b3: 0.42 }),
+    F(14, 'Coconut, fresh flesh', 40, '1 piece', { kcal: 354, p: 3.33, c: 15.2, f: 33.5, fib: 9, sug: 6.2, sat: 29.7, na: 20, k: 356, ca: 14, fe: 2.43, mg: 32, zn: 1.1, vc: 3.3, ve: 0.24, vk: 0.2, b6: 0.05, fol: 26, se: 10.1, ph: 113, cu: 0.44, b3: 0.54, ch: 12.1, la: 0.37 }),
+    F(15, 'Desiccated coconut', 10, '1 tbsp', { kcal: 660, p: 6.9, c: 23.7, f: 64.5, fib: 16.3, sug: 7.4, sat: 57.2, na: 37, k: 543, ca: 26, fe: 3.3, mg: 90, zn: 2.0, vc: 1.5, ph: 206, cu: 0.8, la: 0.7 }),
+    F(16, 'Goji berries, dried', 20, '1 tbsp', { kcal: 349, p: 14.3, c: 77.1, f: 0.39, fib: 13, sug: 45.6, na: 298, k: 1132, ca: 190, fe: 6.8, vc: 48.4, va: 0 }),
+    F(17, 'Jackfruit', 150, '1 cup', { kcal: 95, p: 1.72, c: 23.2, f: 0.64, fib: 1.5, sug: 19.1, sat: 0.2, na: 2, k: 448, ca: 24, fe: 0.23, mg: 29, zn: 0.13, va: 5, vc: 13.7, ve: 0.34, b6: 0.33, fol: 24, ph: 21, cu: 0.08, b3: 0.92 }),
+    F(18, 'Rhubarb, stewed with sugar', 120, '1 portion', { kcal: 116, p: 0.39, c: 31.2, f: 0.05, fib: 1.8, sug: 29.2, na: 1, k: 96, ca: 145, fe: 0.21, mg: 12, va: 4, vc: 3.3, vk: 34.6 }),
+    F(19, 'Sultanas', 30, '1 handful', { kcal: 299, p: 3.07, c: 79.2, f: 0.46, fib: 3.7, sug: 59.2, sat: 0.06, na: 11, k: 749, ca: 50, fe: 1.88, mg: 32, zn: 0.22, vc: 2.3, vk: 3.5, b6: 0.17, ph: 101, cu: 0.32, b3: 0.77 })
+  );
+})();
+
+// Supplements: per capsule / tablet / gummy / scoop, typical UK products.
+// Values are given per 1 unit and stored per 100 g like everything else.
+(function () {
+  const K = ['kcal', 'p', 'c', 'f', 'fib', 'sug', 'sat', 'na', 'k', 'ca', 'fe', 'mg', 'zn', 'va', 'vc', 'vd', 've', 'vk', 'b6', 'b12', 'fol', 'se', 'io', 'ph', 'cu', 'b1', 'b2', 'b3', 'ch', 'epa', 'la', 'ala'];
+  // g = weight of one unit; unit = 'capsule' | 'tablet' | 'gummy' | 'scoop' | 'softgel'
+  const S = (id, name, g, unit, per) => {
+    const n = {}; for (const k of K) n[k] = 0;
+    for (const [k, v] of Object.entries(per)) n[k] = Math.round(v / g * 100 * 1000) / 1000;
+    const many = unit === 'gummy' ? 'gummies' : unit + 's';
+    return { id: 'sup' + id, name, cat: 'Supplements', portion: g, portionLabel: '1 ' + unit, n, each: { g, one: unit, many }, supplement: true };
+  };
+  window.BUILTIN_FOODS.push(
+    // oils
+    S(1, 'Cod liver oil capsule', 1, 'capsule', { kcal: 9, f: 1, sat: 0.2, epa: 200, va: 160, vd: 5, ve: 1 }),
+    S(2, 'Cod liver oil & fish oil capsule', 1, 'capsule', { kcal: 9, f: 1, sat: 0.25, epa: 270, va: 120, vd: 5, ve: 1.5 }),
+    S(3, 'Fish oil (omega-3) 1000 mg capsule', 1.3, 'capsule', { kcal: 9, f: 1, sat: 0.3, epa: 300, ve: 1 }),
+    S(4, 'High-strength omega-3 capsule', 1.4, 'capsule', { kcal: 9, f: 1, sat: 0.1, epa: 600, ve: 2 }),
+    S(5, 'Krill oil capsule', 0.7, 'capsule', { kcal: 5, f: 0.5, epa: 120, ch: 20 }),
+    S(6, 'Algae omega-3 (vegan) capsule', 0.8, 'capsule', { kcal: 6, f: 0.6, epa: 250 }),
+    S(7, 'Flaxseed oil capsule', 1.2, 'capsule', { kcal: 9, f: 1, ala: 0.55, la: 0.15 }),
+    S(8, 'Evening primrose oil capsule', 1.2, 'capsule', { kcal: 9, f: 1, la: 0.72 }),
+    // vitamin D and single vitamins
+    S(10, 'Vitamin D3 1000 IU (25 µg)', 0.2, 'tablet', { vd: 25 }),
+    S(11, 'Vitamin D3 2000 IU (50 µg)', 0.2, 'tablet', { vd: 50 }),
+    S(12, 'Vitamin D3 4000 IU (100 µg)', 0.2, 'softgel', { vd: 100 }),
+    S(13, 'Vitamin D3 + K2', 0.3, 'capsule', { vd: 75, vk: 100 }),
+    S(14, 'Vitamin D gummy', 3, 'gummy', { kcal: 9, c: 2, sug: 1.6, vd: 25 }),
+    S(15, 'Vitamin C 1000 mg', 1.4, 'tablet', { vc: 1000 }),
+    S(16, 'Vitamin C 500 mg', 0.8, 'tablet', { vc: 500 }),
+    S(17, 'Vitamin B12 1000 µg', 0.2, 'tablet', { b12: 1000 }),
+    S(18, 'Vitamin B complex (high strength)', 0.6, 'tablet', { b1: 50, b2: 50, b3: 50, b6: 10, b12: 25, fol: 400 }),
+    S(19, 'Folic acid 400 µg', 0.1, 'tablet', { fol: 400 }),
+    S(20, 'Vitamin E 400 IU', 0.6, 'softgel', { ve: 268 }),
+    S(21, 'Vitamin K2 100 µg', 0.2, 'capsule', { vk: 100 }),
+    S(22, 'Vitamin A 800 µg', 0.2, 'tablet', { va: 800 }),
+    // multivitamins
+    S(30, 'Multivitamin & minerals A–Z', 1.4, 'tablet', { va: 800, vc: 80, vd: 10, ve: 12, vk: 30, b1: 1.1, b2: 1.4, b3: 16, b6: 1.4, b12: 2.5, fol: 200, ca: 160, mg: 56, fe: 14, zn: 10, cu: 1, se: 55, io: 150, ph: 125 }),
+    S(31, "Men's multivitamin", 1.5, 'tablet', { va: 800, vc: 120, vd: 25, ve: 15, vk: 30, b1: 5, b2: 5, b3: 20, b6: 5, b12: 10, fol: 400, mg: 100, fe: 5, zn: 15, cu: 1, se: 100, io: 150 }),
+    S(32, "Women's multivitamin", 1.5, 'tablet', { va: 800, vc: 80, vd: 10, ve: 12, vk: 30, b1: 2.2, b2: 2.8, b3: 18, b6: 2.8, b12: 5, fol: 400, ca: 200, mg: 100, fe: 14, zn: 10, cu: 1, se: 55, io: 150 }),
+    S(33, 'Pregnancy multivitamin', 1.4, 'tablet', { vc: 70, vd: 10, ve: 4, b1: 3, b2: 2, b3: 20, b6: 10, b12: 6, fol: 400, fe: 17, zn: 15, mg: 150, cu: 1, se: 30, io: 140 }),
+    S(34, 'Multivitamin gummy', 4, 'gummy', { kcal: 12, c: 3, sug: 2, va: 400, vc: 40, vd: 10, ve: 6, b6: 0.7, b12: 1.25, fol: 100, zn: 2.5, io: 75 }),
+    // minerals
+    S(40, 'Magnesium 375 mg (oxide)', 1.3, 'tablet', { mg: 375 }),
+    S(41, 'Magnesium glycinate (150 mg)', 1, 'capsule', { mg: 150 }),
+    S(42, 'Magnesium citrate (200 mg)', 1.2, 'tablet', { mg: 200 }),
+    S(43, 'Zinc 15 mg', 0.3, 'tablet', { zn: 15 }),
+    S(44, 'Zinc 25 mg', 0.3, 'tablet', { zn: 25 }),
+    S(45, 'Iron 14 mg (gentle iron)', 0.4, 'capsule', { fe: 14 }),
+    S(46, 'Ferrous sulphate 200 mg (65 mg iron)', 0.4, 'tablet', { fe: 65 }),
+    S(47, 'Calcium 500 mg + vitamin D', 1.6, 'tablet', { ca: 500, vd: 10 }),
+    S(48, 'Selenium 200 µg', 0.2, 'tablet', { se: 200 }),
+    S(49, 'Iodine (kelp) 150 µg', 0.3, 'tablet', { io: 150 }),
+    S(50, 'Potassium 99 mg', 0.6, 'capsule', { k: 99 }),
+    S(51, 'ZMA (zinc, magnesium, B6)', 1.2, 'capsule', { zn: 10, mg: 150, b6: 3.5 }),
+    S(52, 'Electrolyte tablet (effervescent)', 4, 'tablet', { kcal: 5, c: 1, na: 360, k: 100, mg: 25, ca: 25 }),
+    // sports and other
+    S(60, 'Creatine monohydrate (5 g scoop)', 5, 'scoop', {}),
+    S(61, 'Collagen powder (10 g scoop)', 10, 'scoop', { kcal: 36, p: 9 }),
+    S(62, 'BCAA powder (7 g scoop)', 7, 'scoop', { kcal: 28, p: 7 }),
+    S(63, 'Pre-workout (10 g scoop)', 10, 'scoop', { kcal: 10, c: 2, b3: 20, b6: 2, b12: 5 }),
+    S(64, 'Choline 250 mg', 0.6, 'capsule', { ch: 250 }),
+    S(65, 'Spirulina 500 mg', 0.5, 'tablet', { kcal: 2, p: 0.3, fe: 0.14 }),
+    S(66, 'Probiotic', 0.4, 'capsule', {}),
+    S(67, 'Glucosamine', 1.5, 'tablet', {}),
+    S(68, 'Ashwagandha', 0.6, 'capsule', {}),
+    S(69, 'Turmeric / curcumin', 0.6, 'capsule', {}),
+    S(70, 'Biotin', 0.2, 'tablet', {}),
+    S(71, 'Psyllium husk (5 g)', 5, 'scoop', { kcal: 10, c: 4.4, fib: 4 })
+  );
+})();

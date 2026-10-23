@@ -652,3 +652,4 @@ body { background: radial-gradient(900px 520px at 105% -8%, var(--glow-1), trans
 .rk-rate.bad { color: var(--low); }
 .bk-list { list-style: none; margin: 0; padding: 0; }
 .bk-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.result .rm-sup { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }

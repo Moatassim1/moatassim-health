@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.8';
+  const APP_VERSION = '2.0.10';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -179,7 +179,7 @@
   // ---------------------------------------------------------------- food search (Open Food Facts + USDA)
   const num = v => (v === undefined || v === null || v === '' || isNaN(Number(v))) ? null : Number(v);
   const round = (v, d = 2) => v === null ? null : Math.round(v * 10 ** d) / 10 ** d;
-  const OFF_FIELDS = 'code,product_name,product_name_en,brands,serving_size,serving_quantity,quantity,product_quantity_unit,nutriments';
+  const OFF_FIELDS = 'code,product_name,product_name_en,brands,serving_size,serving_quantity,quantity,product_quantity_unit,nutriments,categories_tags';
   function offToFood(p) {
     const n = p.nutriments || {};
     const g = k => num(n[k + '_100g']);
@@ -271,11 +271,19 @@
     if (!any) out.errors.push(`${shop.name}: ` + friendly(settled[0].reason || {}));
     return out;
   }
+  const SUPP_RE = /supplement|vitamin|capsule|softgel|tablet|omega|fish.?oil|cod.?liver|multivit|mineral|magnesium|zinc|collagen|creatine|probiotic|krill/i;
   async function lookupBarcode(code) {
     code = String(code).replace(/\D/g, '');
     if (!code) return null;
     const j = await getJson(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${OFF_FIELDS}`);
-    return j && j.status === 1 && j.product ? offToFood({ ...j.product, code }) : null;
+    if (!(j && j.status === 1 && j.product)) return null;
+    const p = j.product;
+    const name = ((p.product_name_en || p.product_name || '') + ' ' + (p.brands || '').split(',')[0]).trim();
+    const supplement = (p.categories_tags || []).some(t => /supplement|vitamin/.test(t)) || SUPP_RE.test(p.product_name_en || p.product_name || '');
+    const food = offToFood({ ...p, code });
+    // Supplements are logged per capsule from the built-in list, not as a food with macros.
+    if (supplement) return { supplement: true, name, food: null };
+    return food;
   }
 
   // ---------------------------------------------------------------- devices (Garmin through the server)

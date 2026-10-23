@@ -561,7 +561,7 @@
         <div class="picker-left">
           <div class="picker-search">
             <div class="search-row"><input type="text" id="mq" placeholder="Search foods, e.g. chicken breast, banana" autocomplete="off" spellcheck="false"><button class="btn scan-inline" data-m="scan" aria-label="Scan a barcode"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 9v6M10 9v6M13 9v6M17 9v6"/></svg><span>Scan</span></button></div>
-            <div class="seg" id="mtabs"><button data-tab="all" class="on">Food list</button><button data-tab="recent">Recent</button><button data-tab="fav">★ Favourites</button><button data-tab="shop">Shops</button><button data-tab="online">Search online</button></div>
+            <div class="seg" id="mtabs"><button data-tab="all" class="on">Food list</button><button data-tab="recent">Recent</button><button data-tab="fav">★ Favourites</button><button data-tab="sup">💊 Supplements</button><button data-tab="shop">Shops</button><button data-tab="online">Search online</button></div>
             <button class="juice-btn" data-m="juice"><span class="jb-ico">🥤</span><span><b>Make a juice or smoothie</b><small>Add the liquid, fruit and extras you blended</small></span></button>
             <div class="shop-pick" id="mshops" hidden>${SHOP_LIST.map(([id, nm]) => `<button class="chip" data-shop="${id}">${esc(nm)}</button>`).join('')}</div>
           </div>
@@ -573,7 +573,7 @@
     const q = $('#mq');
     q.addEventListener('input', () => {
       M.q = q.value;
-      if ((M.tab === 'recent' || M.tab === 'fav') && M.q) setTab('all');
+      if ((M.tab === 'recent' || M.tab === 'fav') && M.q) setTab('all'); else if (M.tab === 'sup') renderResults();
       else if (M.tab === 'shop') { clearTimeout(M.shopTimer); const t = M.q.trim(); if (M.shop === 'ryanair') runShop(1); else if (!t || t.length >= 3) M.shopTimer = setTimeout(() => runShop(1), 1200); }
       else if (M.tab !== 'online') renderResults();
     });
@@ -631,15 +631,20 @@
     renderResults();
   }
 
+  // "per capsule: Vitamin D 25 µg · Omega-3 300 mg"
+  function supSummary(f) {
+    const parts = NKEYS.filter(k => !['kcal', 'p', 'c', 'f', 'sat', 'sug', 'na', 'fib'].includes(k) && f.n[k] > 0).map(k => `${N_LABEL[k][0].replace('Omega-3 EPA + DHA', 'Omega-3')} ${fmtSmart(f.n[k] * f.each.g / 100)} ${N_LABEL[k][1]}`);
+    return `per ${esc(f.each.one)}: ` + (parts.slice(0, 4).join(' · ') || 'no vitamins or minerals');
+  }
   function resultRow(f) {
     const n = f.n;
     const sel = M.sel && M.sel.id === f.id;
     const u = unitOf(f);
     const meta = f.source === 'Built-in' ? (f.cat || '') : f.source === 'Mine' ? 'My food' : f.source;
     return `<div class="result ${sel ? 'sel' : ''}" tabindex="0" data-m="pick" data-id="${esc(f.id)}">
-      <span class="rn">${esc(f.name)}</span><span class="rk">${fmt(n.kcal)} kcal</span>
-      <span class="rm">${esc(meta)}${f.size ? ' · pack ' + esc(f.size) : ''}${f.portionLabel && f.portion ? ' · ' + esc(f.portionLabel) + ' ≈ ' + fmtAmt(f.portion, u) : ''}</span>
-      <span class="rm2">per 100 ${u} · ${fmt(n.p, 1)}P ${fmt(n.c, 1)}C ${fmt(n.f, 1)}F</span></div>`;
+      <span class="rn">${esc(f.name)}</span><span class="rk">${fmt(f.cat === 'Supplements' && f.each ? n.kcal * f.each.g / 100 : n.kcal)} kcal</span>
+      ${f.cat === 'Supplements' ? '' : `<span class="rm">${esc(meta)}${f.size ? ' · pack ' + esc(f.size) : ''}${f.portionLabel && f.portion ? ' · ' + esc(f.portionLabel) + ' ≈ ' + fmtAmt(f.portion, u) : ''}</span>`}
+      ${f.cat === 'Supplements' && f.each ? `<span class="rm-sup">${supSummary(f)}</span>` : `<span class="rm2">per 100 ${u} · ${fmt(n.p, 1)}P ${fmt(n.c, 1)}C ${fmt(n.f, 1)}F</span>`}</div>`;
   }
 
   let lastList = [];
@@ -658,6 +663,16 @@
         lastList = searchFoods(M.q);
         html = lastList.length ? lastList.map(resultRow).join('') : `<div class="hint">No match in the food list. <button class="btn" data-m="go-online">Search online for “${esc(M.q)}”</button></div>`;
       }
+    } else if (M.tab === 'sup') {
+      const all = BUILTIN.filter(f => f.cat === 'Supplements');
+      let list = M.q.trim() ? searchFoods(M.q, all) : all;
+      if (!M.q.trim() && M.supHint) { // a scanned supplement: closest matches first
+        const words = M.supHint.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length > 2);
+        const score = f => words.filter(w => f.name.toLowerCase().includes(w)).length;
+        list = [...all].sort((a, b) => score(b) - score(a));
+      }
+      lastList = list;
+      html = `<div class="group-label">${M.supHint && !M.q.trim() ? `Closest to “${esc(M.supHint)}” first` : 'Supplements · logged per capsule, tablet or scoop'}</div>` + (list.length ? list.map(resultRow).join('') : `<div class="hint">No supplement matches “${esc(M.q)}”.</div>`) + `<div class="hint faint small">Typical amounts per unit. If your product's label is very different, create it in Food list › Create a food.</div>`;
     } else if (M.tab === 'fav') {
       const favs = P().profile.favMeals || [];
       html = `<div class="hint" style="padding-bottom:4px"><button class="btn" data-m="quick">⚡ Quick add calories</button></div>` + (favs.length ? `<div class="group-label">Favourite meals · tap to add to ${esc(M.meal.toLowerCase())}</div>` + favs.map(f => {
@@ -723,10 +738,10 @@
       return `<span>${lab[0]}</span><span>${v == null ? '–' : fmtSmart(v) + ' ' + lab[1]}</span>`;
     }).join('');
     box.innerHTML = `<button class="btn ghost mobile-only back-btn" data-m="back">‹ Back to search</button><h2>${esc(f.name)}</h2>
-      <div class="muted small">${esc(f.source === 'Built-in' ? 'Food list' : f.source === 'Mine' ? 'My food' : f.source)} · ${fmt(n.kcal)} kcal per 100 ${u}${f.size ? ' · pack ' + esc(f.size) : ''}</div>
+      <div class="muted small">${esc(f.source === 'Built-in' ? 'Food list' : f.source === 'Mine' ? 'My food' : f.source)} · ${f.cat === 'Supplements' && f.each ? `per ${esc(f.each.one)}: ${fmt(n.kcal * f.each.g / 100)} kcal` : `${fmt(n.kcal)} kcal per 100 ${u}`}${f.size ? ' · pack ' + esc(f.size) : ''}</div>
       <div class="amount-q">How much did you have?</div>
       ${counting ? `<div class="grams-in"><input type="number" id="mg" min="0" step="0.5" value="${M.count}" aria-label="How many ${esc(f.each.many)}"><span>${esc(Number(M.count) > 0 && Number(M.count) <= 1 ? f.each.one : f.each.many)}</span></div>
-      <div class="muted small" style="margin:-4px 0 10px">${fmtAmt(g, u)} · 1 ${esc(f.each.one)} ≈ ${fmtAmt(f.each.g, u)} · <a href="#" data-m="mode" data-mode="grams">enter ${u === 'ml' ? 'ml' : 'grams'} instead</a></div>
+      ${f.cat === 'Supplements' ? '' : `<div class="muted small" style="margin:-4px 0 10px">${fmtAmt(g, u)} · 1 ${esc(f.each.one)} ≈ ${fmtAmt(f.each.g, u)} · <a href="#" data-m="mode" data-mode="grams">enter ${u === 'ml' ? 'ml' : 'grams'} instead</a></div>`}
       <div class="chips">${[0.5, 1, 2, 3, 4, 6].map(c => `<button class="chip" data-m="count" data-c="${c}">${esc(countLabel(c, f.each))}</button>`).join('')}</div>`
       : `<div class="grams-in"><input type="number" id="mg" min="0" step="1" value="${g}" aria-label="${u === 'ml' ? 'Millilitres' : 'Grams'}"><span>${u}</span></div>
       ${u === 'ml' && g >= 1000 ? `<div class="muted small" style="margin:-4px 0 8px">= ${fmtAmt(g, 'ml')}</div>` : ''}
@@ -810,6 +825,12 @@
     if (!food) {
       toast('Looking up ' + code + '…');
       try { food = await social.lookupBarcode(code); } catch (e) { toast('Could not reach Open Food Facts. Check your internet, or add the product yourself.'); }
+      if (food && food.supplement) {
+        if (!M) openAdd(ctx);
+        M.supHint = food.name; setTab('sup');
+        toast(`${food.name || 'This'} is a supplement. Pick the closest one: it's logged per capsule or tablet.`);
+        return;
+      }
     }
     if (food) {
       if (!M) openAdd(ctx);

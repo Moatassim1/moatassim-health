@@ -855,7 +855,7 @@
   ];
   const SOUP_SETS = [
     ['Liquid', 'What the soup is made with', ['Water', 'Chicken stock', 'Vegetable stock', 'Beef stock', 'Milk, semi-skimmed', 'Coconut milk (tinned)', 'Double cream']],
-    ['Vegetables', 'Raw weight going into the pot', ['Onion', 'Garlic', 'Carrot, raw', 'Celery', 'Leek', 'Potato, raw', 'Sweet potato, raw', 'Butternut squash', 'Pumpkin', 'Tomato', 'Chopped tomatoes (tin)', 'Tomato purée', 'Spinach, raw', 'Kale, raw', 'Broccoli, raw', 'Cauliflower', 'Courgette', 'Red pepper', 'Mushrooms', 'Cabbage', 'Peas, boiled', 'Sweetcorn', 'Fresh coriander', 'Fresh parsley']],
+    ['Vegetables', 'Raw weight going into the pot', ['Onion', 'Garlic', 'Carrot, raw', 'Celery', 'Leek', 'Potato, raw', 'Sweet potato, raw', 'Turnip', 'Swede', 'Parsnip', 'Celeriac', 'Butternut squash', 'Pumpkin', 'Tomato', 'Chopped tomatoes (tin)', 'Tomato purée', 'Spinach, raw', 'Kale, raw', 'Broccoli, raw', 'Cauliflower', 'Courgette', 'Red pepper', 'Mushrooms', 'Cabbage', 'Okra', 'Fennel', 'Chilli, fresh', 'Peas, boiled', 'Sweetcorn', 'Fresh coriander', 'Fresh parsley']],
     ['Protein', 'Meat, fish, lentils and beans', ['Chicken breast, raw', 'Chicken thigh, skinless, raw', 'Diced beef, raw', 'Beef mince 5% fat, raw', 'Lamb mince, raw', 'Red lentils, dry', 'Chickpeas, canned (drained)', 'Kidney beans, canned (drained)', 'Cod, cooked', 'Prawns, cooked', 'Egg, whole (raw)']],
     ['Extras', 'Oil, pasta, rice, thickeners, seasoning', ['Olive oil', 'Butter', 'Vermicelli, dry', 'Pasta, dry', 'White / basmati rice, uncooked', 'Pearl barley, dry', 'Plain flour', 'Parmesan', 'Harissa paste', 'Ground cumin', 'Stock cube', 'Salt']]
   ];

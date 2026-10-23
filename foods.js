@@ -188,3 +188,33 @@ window.BUILTIN_FOODS = [{"id":"b1","name":"Egg, whole (raw)","cat":"Eggs & dairy
     X(21, 'Stock cube', 'Oils, sauces & sweet things', 'g', 10, '1 cube', { kcal: 250, p: 10, c: 25, f: 12, sug: 5, sat: 6, na: 16000 }, { g: 10, one: 'stock cube', many: 'stock cubes' })
   );
 })();
+// More vegetables (USDA FoodData Central, raw, per 100 g).
+(function () {
+  const K = ['kcal', 'p', 'c', 'f', 'fib', 'sug', 'sat', 'na', 'k', 'ca', 'fe', 'mg', 'zn', 'va', 'vc', 'vd', 've', 'vk', 'b6', 'b12', 'fol', 'se', 'io', 'ph', 'cu', 'b1', 'b2', 'b3', 'ch', 'epa', 'la', 'ala'];
+  const V = (id, name, portion, label, v, each) => { const n = {}; for (const k of K) n[k] = v[k] ?? null; return { id: 'vg' + id, name, cat: 'Vegetables', portion, portionLabel: label, n, ...(each ? { each } : {}) }; };
+  window.BUILTIN_FOODS.push(
+    V(1, 'Turnip', 120, '1 medium', { kcal: 28, p: 0.9, c: 6.43, f: 0.1, fib: 1.8, sug: 3.8, sat: 0.01, na: 67, k: 191, ca: 30, fe: 0.3, mg: 11, zn: 0.27, vc: 21, vk: 0.1, b6: 0.09, fol: 15, ph: 27, cu: 0.09, b3: 0.4 }, { g: 120, one: 'turnip', many: 'turnips' }),
+    V(2, 'Swede', 150, '1 portion', { kcal: 37, p: 1.08, c: 8.62, f: 0.16, fib: 2.3, sug: 4.46, sat: 0.03, na: 12, k: 305, ca: 43, fe: 0.44, mg: 20, zn: 0.24, vc: 25, vk: 0.3, b6: 0.1, fol: 21, ph: 53 }),
+    V(3, 'Parsnip', 120, '1 medium', { kcal: 75, p: 1.2, c: 18, f: 0.3, fib: 4.9, sug: 4.8, sat: 0.05, na: 10, k: 375, ca: 36, fe: 0.59, mg: 29, zn: 0.59, vc: 17, ve: 1.49, vk: 22.5, b6: 0.09, fol: 67, ph: 71 }, { g: 120, one: 'parsnip', many: 'parsnips' }),
+    V(4, 'Celeriac', 150, '1 portion', { kcal: 42, p: 1.5, c: 9.2, f: 0.3, fib: 1.8, sug: 1.6, na: 100, k: 300, ca: 43, fe: 0.7, mg: 20, vc: 8, vk: 41, b6: 0.17, ph: 115 }),
+    V(5, 'Radishes', 40, '5 radishes', { kcal: 16, p: 0.68, c: 3.4, f: 0.1, fib: 1.6, sug: 1.86, na: 39, k: 233, ca: 25, fe: 0.34, mg: 10, vc: 14.8, fol: 25 }),
+    V(6, 'Okra', 80, '1 portion', { kcal: 33, p: 1.93, c: 7.45, f: 0.19, fib: 3.2, sug: 1.48, na: 7, k: 299, ca: 82, fe: 0.62, mg: 57, va: 36, vc: 23, vk: 31.3, b6: 0.22, fol: 60 }),
+    V(7, 'Fennel', 100, 'half a bulb', { kcal: 31, p: 1.24, c: 7.3, f: 0.2, fib: 3.1, sug: 3.9, na: 52, k: 414, ca: 49, fe: 0.73, mg: 17, vc: 12, vk: 62.8, fol: 27 }),
+    V(8, 'Pak choi', 100, '1 head', { kcal: 13, p: 1.5, c: 2.18, f: 0.2, fib: 1, sug: 1.18, na: 65, k: 252, ca: 105, fe: 0.8, mg: 19, va: 223, vc: 45, vk: 45.5, b6: 0.19, fol: 66 }),
+    V(9, 'Spring onions', 15, '1 spring onion', { kcal: 32, p: 1.83, c: 7.34, f: 0.19, fib: 2.6, sug: 2.33, na: 16, k: 276, ca: 72, fe: 1.48, mg: 20, va: 50, vc: 18.8, vk: 207, fol: 64 }, { g: 15, one: 'spring onion', many: 'spring onions' }),
+    V(10, 'Red onion', 150, '1 medium', { kcal: 40, p: 1.1, c: 9.34, f: 0.1, fib: 1.7, sug: 4.24, na: 4, k: 146, ca: 23, fe: 0.21, mg: 10, vc: 7.4, b6: 0.12, fol: 19 }, { g: 150, one: 'red onion', many: 'red onions' }),
+    V(11, 'Shallot', 25, '1 shallot', { kcal: 72, p: 2.5, c: 16.8, f: 0.1, fib: 3.2, sug: 7.87, na: 12, k: 334, ca: 37, fe: 1.2, mg: 21, vc: 8, b6: 0.35, fol: 34 }, { g: 25, one: 'shallot', many: 'shallots' }),
+    V(12, 'Chilli, fresh', 10, '1 chilli', { kcal: 40, p: 1.87, c: 8.81, f: 0.44, fib: 1.5, sug: 5.3, na: 9, k: 322, ca: 14, fe: 1.03, mg: 23, va: 48, vc: 144, vk: 14, b6: 0.51, fol: 23 }, { g: 10, one: 'chilli', many: 'chillies' }),
+    V(13, 'Red cabbage', 100, '1 portion', { kcal: 31, p: 1.43, c: 7.37, f: 0.16, fib: 2.1, sug: 3.83, na: 27, k: 243, ca: 45, fe: 0.8, mg: 16, va: 56, vc: 57, vk: 38.2, b6: 0.21, fol: 18 }),
+    V(14, 'Kohlrabi', 100, '1 portion', { kcal: 27, p: 1.7, c: 6.2, f: 0.1, fib: 3.6, sug: 2.6, na: 20, k: 350, ca: 24, fe: 0.4, mg: 19, vc: 62, vk: 0.1, b6: 0.15, fol: 16 }),
+    V(15, 'Watercress', 20, '1 handful', { kcal: 11, p: 2.3, c: 1.29, f: 0.1, fib: 0.5, sug: 0.2, na: 41, k: 330, ca: 120, fe: 0.2, mg: 21, va: 160, vc: 43, vk: 250, fol: 9 }),
+    V(16, 'Beansprouts', 80, '1 handful', { kcal: 30, p: 3.04, c: 5.94, f: 0.18, fib: 1.8, sug: 4.13, na: 6, k: 149, ca: 13, fe: 0.91, mg: 21, vc: 13.2, vk: 33, fol: 61 }),
+    V(17, 'Mangetout / sugar snap peas', 80, '1 portion', { kcal: 42, p: 2.8, c: 7.55, f: 0.2, fib: 2.6, sug: 4, na: 4, k: 200, ca: 43, fe: 2.08, mg: 24, va: 54, vc: 60, vk: 25, fol: 42 }),
+    V(18, 'Edamame beans', 80, '1 portion', { kcal: 121, p: 11.9, c: 8.9, f: 5.2, fib: 5.2, sug: 2.2, sat: 0.62, na: 6, k: 436, ca: 63, fe: 2.27, mg: 64, zn: 1.37, vc: 6.1, vk: 26.7, fol: 311 }),
+    V(19, 'Corn on the cob, cooked', 100, '1 cob (kernels)', { kcal: 96, p: 3.41, c: 21, f: 1.5, fib: 2.4, sug: 4.5, sat: 0.2, na: 1, k: 218, ca: 3, fe: 0.45, mg: 26, vc: 5.5, fol: 23 }, { g: 100, one: 'corn cob', many: 'corn cobs' }),
+    V(20, 'Cherry tomatoes', 15, '1 cherry tomato', { kcal: 18, p: 0.88, c: 3.89, f: 0.2, fib: 1.2, sug: 2.63, na: 5, k: 237, ca: 10, fe: 0.27, mg: 11, va: 42, vc: 13.7, vk: 7.9, fol: 15 }, { g: 15, one: 'cherry tomato', many: 'cherry tomatoes' }),
+    V(21, 'Yellow pepper', 150, '1 pepper', { kcal: 27, p: 1, c: 6.32, f: 0.21, fib: 0.9, na: 2, k: 212, ca: 11, fe: 0.46, mg: 12, va: 10, vc: 184, b6: 0.17, fol: 26 }, { g: 150, one: 'pepper', many: 'peppers' }),
+    V(22, 'Beetroot, raw', 80, '1 small', { kcal: 43, p: 1.61, c: 9.56, f: 0.17, fib: 2.8, sug: 6.76, na: 78, k: 325, ca: 16, fe: 0.8, mg: 23, vc: 4.9, fol: 109 }),
+    V(23, 'Swiss chard', 80, '1 portion', { kcal: 19, p: 1.8, c: 3.74, f: 0.2, fib: 1.6, sug: 1.1, na: 213, k: 379, ca: 51, fe: 1.8, mg: 81, va: 306, vc: 30, vk: 830, fol: 14 })
+  );
+})();

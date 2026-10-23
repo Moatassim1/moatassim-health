@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.6';
+  const APP_VERSION = '2.0.7';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -122,7 +122,12 @@
     if (!gs || !gs.date) return null;
     const w = p.weights || {}, ws = Object.keys(w).filter(k => w[k] != null).sort();
     if (gs.real && gs.kg != null) return { date: gs.date, kg: gs.kg };
-    const on = ws.find(k => k >= gs.date) || [...ws].reverse().find(k => k < gs.date);
+    // The weight saved with the goal counts if it really was a weigh-in in the week before.
+    const weekBefore = new Date(gs.date + 'T12:00:00'); weekBefore.setDate(weekBefore.getDate() - 7);
+    const wb = keyOf(weekBefore);
+    if (gs.kg != null) { const m = ws.filter(k => k <= gs.date && k >= wb && Math.abs(w[k] - gs.kg) < 0.01).pop(); if (m) return { date: m, kg: gs.kg }; }
+    const before = ws.filter(k => k < gs.date && k >= wb).pop();
+    const on = before || ws.find(k => k >= gs.date) || [...ws].reverse().find(k => k < gs.date);
     if (on) return { date: on, kg: w[on] };
     return null;
   }
@@ -142,7 +147,10 @@
   async function pushProfile() {
     const p = S.profiles.me, pts = pointsFor(S);
     const goal = p.profile.goal === 'lose-slow' ? 'lose' : (['lose', 'gain', 'maintain'].includes(p.profile.goal) ? p.profile.goal : 'maintain');
-    const row = { name: (p.name || 'Me').slice(0, 40), color: p.color || '#E0263A', goal, points: pts, points_updated: new Date().toISOString() };
+    const s0 = startOf(S), ws = Object.keys(p.weights || {}).filter(k => p.weights[k] != null).sort();
+    const cur = ws.length ? p.weights[ws[ws.length - 1]] : null;
+    const detail = JSON.stringify({ s: s0 ? s0.kg : null, c: cur, g: p.profile.goalWeightKg ?? null });
+    const row = { name: (p.name || 'Me').slice(0, 40), color: p.color || '#E0263A', goal, points: pts, points_detail: detail, points_updated: new Date().toISOString() };
     const sig = JSON.stringify({ ...row, points_updated: 0 });
     if (sig === lastProfilePush) return;
     try { await req(`/rest/v1/profiles?id=eq.${uid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) }); lastProfilePush = sig; } catch (_) {}
@@ -507,7 +515,11 @@
       const p = S.profiles.me, gs = p.profile.goalStart;
       if (gs && !gs.real) { const w = p.weights || {}; if (gs.kg != null && !Object.values(w).some(v => Math.abs(v - gs.kg) < 0.01)) { gs.kg = null; } }
     }
-    if (S.profiles.me.color === '#1E7656') S.profiles.me.color = '#E0263A'; // old default green -> new theme red
+    if (!S.profiles.me.colorPicked) { // each person gets a colour automatically
+      const pal = ['#E0263A', '#FF8A1F', '#2D5FC0', '#8B55E6', '#D63384', '#1B8A9A', '#C4851A', '#5B6CF0', '#E85D75', '#2F9E8F'];
+      let h = 0; for (const ch of uid) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      S.profiles.me.color = pal[h % pal.length]; S.profiles.me.colorPicked = true;
+    }
     knownEntryIds = null; noteNewEntries(S);
     persist();
     if (!document.querySelector('script[data-mh-app]')) {
@@ -518,8 +530,6 @@
     window.addEventListener('online', () => runSync());
     if (!first) runSync();
     pushProfile();
-    // Keep this device's push subscription up to date.
-    try { if (social.pushSupported() && Notification.permission === 'granted') social.enablePush(); } catch (_) {}
   }
 
   // ---------------------------------------------------------------- boot

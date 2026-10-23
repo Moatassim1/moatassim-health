@@ -431,7 +431,7 @@
         </div>
         <div class="stack">
           ${weightCard(k)}
-          <div class="panel">
+          <div class="panel vit-panel">
             <h2>Vitamins & minerals</h2>
             ${entries.length ? microsHtml(t, 1, entries.length) : '<p class="muted">Your vitamins, minerals and fibre for the day show here once you log food.</p>'}
           </div>
@@ -506,7 +506,7 @@
     q.addEventListener('input', () => {
       M.q = q.value;
       if (M.tab === 'recent' && M.q) setTab('all');
-      else if (M.tab === 'shop') { clearTimeout(M.shopTimer); const t = M.q.trim(); if (!t || t.length >= 3) M.shopTimer = setTimeout(() => runShop(1), 1200); }
+      else if (M.tab === 'shop') { clearTimeout(M.shopTimer); const t = M.q.trim(); if (M.shop === 'ryanair') runShop(1); else if (!t || t.length >= 3) M.shopTimer = setTimeout(() => runShop(1), 1200); }
       else if (M.tab !== 'online') renderResults();
     });
     $('#mshops').addEventListener('click', e => {
@@ -528,7 +528,7 @@
     else if (!matchMedia('(max-width: 760px)').matches) setTimeout(() => q.focus(), 30);
   }
 
-  const SHOP_LIST = [['sainsburys', "Sainsbury's"], ['aldi', 'Aldi'], ['coop', 'Co-op']];
+  const SHOP_LIST = [['sainsburys', "Sainsbury's"], ['aldi', 'Aldi'], ['coop', 'Co-op'], ['ryanair', 'Ryanair ✈']];
   const shopName = id => (SHOP_LIST.find(x => x[0] === id) || [, id])[1];
   function setTab(tab) {
     M.tab = tab;
@@ -546,6 +546,11 @@
     M.tab = 'shop';
     card.querySelectorAll('#mshops button').forEach(b => b.classList.toggle('on', b.dataset.shop === shop));
     $('#mq').placeholder = `Search ${shopName(shop)} products, e.g. chicken, yogurt, cola`;
+    if (shop === 'ryanair') { // built in: works on the plane with no internet
+      const all = BUILTIN.filter(f => f.cat === 'Ryanair');
+      M.shopRes = q ? searchFoods(q, all) : all; M.shopErr = []; M.shopBusy = false; M.shopMore = false; M.shopKey = key;
+      renderResults(); return;
+    }
     M.shopBusy = true; M.shopKey = key;
     if (page === 1) { M.shopRes = null; M.shopErr = []; }
     renderResults();
@@ -594,7 +599,7 @@
           (lastList.length ? `<div class="group-label">${M.q.trim() ? `${nm} products matching “${esc(M.q.trim())}”` : `Popular ${nm} products · type to search`}</div>` + lastList.map(resultRow).join('')
             + (M.shopMore ? `<div class="hint"><button class="btn" data-m="shop-more" ${M.shopBusy ? 'disabled' : ''}>${M.shopBusy ? 'Loading…' : 'Show more'}</button></div>` : '')
             : (M.shopErr.length ? '' : `<div class="hint">No ${nm} products found${M.q.trim() ? ` for “${esc(M.q.trim())}”` : ''}. Try another word, or use <b>Search online</b>.</div>`));
-        html += `<div class="hint faint small">Products come from Open Food Facts, where shoppers add products from these shops. It isn't the shops' own list, so some products are missing.</div>`;
+        html += M.shop === 'ryanair' ? `<div class="hint faint small">Ryanair's onboard menu works offline, so you can log it on the plane. Ryanair doesn't publish nutrition, so these are typical values for each item.</div>` : `<div class="hint faint small">Products come from Open Food Facts, where shoppers add products from these shops. It isn't the shops' own list, so some products are missing.</div>`;
       }
     } else {
       if (M.onlineBusy) html = `<div class="hint">Searching Open Food Facts and the USDA database…</div>`;
@@ -992,6 +997,7 @@
         <div class="stat"><div class="k" style="color:${HRPEAK}">Peak heart rate</div><div class="v">${fmt(mean(peakHr))}<small>bpm</small></div><div class="d">average daily peak${peakHr.some(v => v != null) ? ' · highest ' + fmt(Math.max(...peakHr.filter(v => v != null))) : ''}</div></div>
         <div class="stat"><div class="k">Resting heart rate</div><div class="v">${fmt(mean(keys.map(k => gday(k) && gday(k).restingHr)))}<small>bpm</small></div><div class="d">average</div></div>
         ${metabolismTile()}
+        ${maintenanceTile()}
       </div>
 
       <div class="panel" style="margin-top:16px">
@@ -1041,9 +1047,24 @@
   function myPoints() { return social.pointsFor(S); }
   function rankingRows() {
     const me = window.MH_ME || {};
-    const rows = [{ id: 'me', name: P().name, color: P().color, goal: (P().profile.goal || '').startsWith('lose') ? 'lose' : P().profile.goal, points: myPoints(), me: true }];
-    for (const f of (F.list || []).filter(x => x.status === 'accepted')) rows.push({ id: f.id, name: f.profile.name, color: f.profile.color, goal: f.profile.goal, points: f.profile.points, updated: f.profile.points_updated, friend: f });
+    const s0 = social.startOf(S), lw = latestWeight();
+    const rows = [{ id: 'me', name: P().name, color: P().color, goal: (P().profile.goal || '').startsWith('lose') ? 'lose' : P().profile.goal, points: myPoints(), me: true,
+      kg: { s: s0 ? s0.kg : null, c: lw ? lw.kg : null, g: P().profile.goalWeightKg ?? null } }];
+    for (const f of (F.list || []).filter(x => x.status === 'accepted')) {
+      let kg = null; try { kg = f.profile.points_detail ? JSON.parse(f.profile.points_detail) : null; } catch (_) {}
+      rows.push({ id: f.id, name: f.profile.name, color: f.profile.color, goal: f.profile.goal, points: f.profile.points, updated: f.profile.points_updated, friend: f, kg });
+    }
     return rows.sort((a, b) => (b.points ?? -1e9) - (a.points ?? -1e9));
+  }
+  // Start weight -> goal weight, with a marker where the person is now.
+  function progressBar(r) {
+    const k = r.kg || {}, pct = r.points == null ? 0 : Math.max(0, Math.min(100, r.points));
+    const has = k.s != null && k.c != null;
+    const maint = r.goal === 'maintain' || k.g == null;
+    return `<div class="rk-prog">
+      <div class="rk-track"><i style="width:${pct}%"></i>${has ? `<b style="left:${pct}%"></b>` : ''}</div>
+      <div class="rk-labels">${has ? `<span>Start ${fmt(k.s, 1)} kg</span><span class="rk-now">Now ${fmt(k.c, 1)} kg${k.s !== k.c ? ` (${k.c < k.s ? '−' : '+'}${fmt(Math.abs(k.c - k.s), 1)})` : ''}</span><span>${maint ? 'Maintain' : `Goal ${fmt(k.g, 1)} kg`}</span>` : '<span class="faint">Waiting for a weigh-in</span>'}</div>
+    </div>`;
   }
   function renderFriends() {
     loadFriends();
@@ -1065,7 +1086,7 @@
             <span class="rk-pos num">${i + 1}</span><span class="avatar" style="background:${esc(r.color || '#E0263A')}">${esc((r.name || '?').charAt(0).toUpperCase())}</span>
             <span class="rk-name">${esc(r.name)}${r.me ? ' <span class="faint">(you)</span>' : ''}<small>${goalText(r.goal)}</small></span>
             <span class="rk-pts num">${pointsText(r.points)}</span>
-            <span class="rk-bar"><i style="width:${r.points == null ? 0 : Math.max(0, Math.min(100, r.points))}%"></i></span></li>`).join('')}</ol>` : '<p class="muted">Loading…</p>'}
+            ${progressBar(r)}</li>`).join('')}</ol>` : '<p class="muted">Loading…</p>'}
           ${!friends.length ? '<p class="muted small">Add a friend below to start competing.</p>' : ''}
         </div>
         <div class="stack">
@@ -1076,21 +1097,13 @@
           </div>
           ${incoming.length ? `<div class="panel"><h2>Friend requests</h2>${incoming.map(f => `<div class="frow"><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)}</span><button class="btn primary" data-action="f-accept" data-id="${esc(f.id)}">Accept</button><button class="btn ghost" data-action="f-remove" data-id="${esc(f.id)}">Decline</button></div>`).join('')}</div>` : ''}
           ${outgoing.length ? `<div class="panel"><h2>Waiting for them to accept</h2>${outgoing.map(f => `<div class="frow"><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)}</span><button class="btn ghost" data-action="f-remove" data-id="${esc(f.id)}">Cancel</button></div>`).join('')}</div>` : ''}
-          ${friends.length ? `<div class="panel"><h2>What each friend can see</h2><p class="muted small" style="margin-top:-6px">Your ranking points are always visible to friends. Everything else is up to you, per friend.</p>
-            ${friends.map(f => `<div class="share-row"><div class="frow" style="margin:0"><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)}</span><button class="btn ghost" data-action="f-view" data-id="${esc(f.id)}">View</button></div>
-              <label class="check"><input type="checkbox" data-share="see_diary" data-id="${esc(f.id)}" ${f.iShare.see_diary ? 'checked' : ''}> Can see what I eat each day</label>
-              <label class="check"><input type="checkbox" data-share="see_weight" data-id="${esc(f.id)}" ${f.iShare.see_weight ? 'checked' : ''}> Can see my weight history</label>
-              <label class="check"><input type="checkbox" data-share="notify_logs" data-id="${esc(f.id)}" ${f.iShare.notify_logs ? 'checked' : ''}> Gets a notification when I log food</label></div>`).join('')}</div>` : ''}
+          ${friends.length ? `<div class="panel"><h2>Your friends</h2><p class="muted small" style="margin-top:-6px">Friends can see your ranking points, what you eat each day and your weight history, and get told in the app when you log food. To stop sharing with someone, remove them as a friend.</p>
+            ${friends.map(f => `<div class="frow"><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)}</span><button class="btn" data-action="f-view" data-id="${esc(f.id)}">View</button></div>`).join('')}</div>` : ''}
           ${F.err ? `<div class="panel flat"><span class="err">${esc(F.err)}</span></div>` : ''}
         </div>
       </div>
     </div>`;
     const fc = $('#fCode'); if (fc) { fc.addEventListener('input', () => { F.code = fc.value; }); fc.addEventListener('keydown', e => { if (e.key === 'Enter') $('[data-action="f-add"]').click(); }); }
-    main.querySelectorAll('[data-share]').forEach(el => el.addEventListener('change', async () => {
-      const f = F.list.find(x => x.id === el.dataset.id); if (!f) return;
-      f.iShare = { ...f.iShare, [el.dataset.share]: el.checked };
-      try { await social.setShare(f.id, f.iShare); toast(el.checked ? 'Shared.' : 'No longer shared.'); } catch (e) { toast('Could not save: ' + e.message); el.checked = !el.checked; }
-    }));
   }
 
   async function loadFriendData(f, day) {
@@ -1099,11 +1112,11 @@
     const out = { day, entries: [], weights: {}, garmin: null, dayMeta: null };
     try {
       const kinds = [];
-      if (f.theyShare.see_diary) kinds.push('entry', 'daymeta', 'garmin');
-      if (f.theyShare.see_weight) kinds.push('weight');
+      if (true) kinds.push('entry', 'daymeta', 'garmin');
+      if (true) kinds.push('weight');
       if (kinds.length) {
-        const rowsDay = f.theyShare.see_diary ? await social.friendItems(f.id, ['entry', 'daymeta', 'garmin'], day, day) : [];
-        const rowsW = f.theyShare.see_weight ? await social.friendItems(f.id, ['weight'], addDays(todayKey(), -120), null) : [];
+        const rowsDay = true ? await social.friendItems(f.id, ['entry', 'daymeta', 'garmin'], day, day) : [];
+        const rowsW = true ? await social.friendItems(f.id, ['weight'], addDays(todayKey(), -120), null) : [];
         for (const r of rowsDay) { if (r.kind === 'entry') out.entries.push(r.data); else if (r.kind === 'garmin') out.garmin = r.data; else if (r.kind === 'daymeta') out.dayMeta = r.data; }
         for (const r of rowsW) out.weights[r.day] = r.data.kg;
         out.entries.sort((a, b) => (a.at || 0) - (b.at || 0));
@@ -1120,7 +1133,7 @@
     const C = COLORS(), WCOL = getComputedStyle(document.documentElement).getPropertyValue('--weight').trim();
     const t = totalsOf(d.entries || []);
     const wk = Object.keys(d.weights || {}).sort();
-    const nothingShared = !f.theyShare.see_diary && !f.theyShare.see_weight;
+    const nothingShared = false;
     let wchart = '';
     if (wk.length >= 2) {
       const keys = rangeKeys(todayKey(), 90);
@@ -1129,19 +1142,19 @@
     const meals = MEALS.map(m => { const list = (d.entries || []).filter(e => e.meal === m); return list.length ? `<div class="cmp-meal"><b>${m}</b> <span class="faint num">${fmt(totalsOf(list).kcal)} kcal</span><ul>${list.map(e => `<li><span>${esc(e.name)}</span><span class="faint num">${esc(entryAmount(e))} · ${fmt(e.n.kcal * e.grams / 100)}</span></li>`).join('')}</ul></div>` : ''; }).join('');
     const g = d.garmin;
     main.innerHTML = `<div class="page">
-      <div class="page-head"><div><button class="btn ghost" data-action="f-back" style="margin:0 0 6px -10px">‹ Friends</button><h1 style="display:flex;align-items:center;gap:10px"><span class="avatar big" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span>${esc(f.profile.name)}</h1>
+      <div class="page-head"><div><button class="btn primary back-friends" data-action="f-back">‹ Back to Friends</button><h1 style="display:flex;align-items:center;gap:10px"><span class="avatar big" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span>${esc(f.profile.name)}</h1>
         <p class="sub">${goalText(f.profile.goal)} · ${pointsText(f.profile.points)} of the way to goal${f.profile.points_updated ? ' · updated ' + esc(new Date(f.profile.points_updated).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })) : ''}</p></div>
-        ${f.theyShare.see_diary ? `<div class="datebar"><button class="btn icon" data-action="f-day" data-d="-1" aria-label="Previous day">‹</button><span class="num" style="min-width:110px;text-align:center">${F.day === todayKey() ? 'Today' : esc(shortDate(F.day))}</span><button class="btn icon" data-action="f-day" data-d="1" ${F.day >= todayKey() ? 'disabled' : ''} aria-label="Next day">›</button></div>` : ''}
+        ${true ? `<div class="datebar"><button class="btn icon" data-action="f-day" data-d="-1" aria-label="Previous day">‹</button><span class="num" style="min-width:110px;text-align:center">${F.day === todayKey() ? 'Today' : esc(shortDate(F.day))}</span><button class="btn icon" data-action="f-day" data-d="1" ${F.day >= todayKey() ? 'disabled' : ''} aria-label="Next day">›</button></div>` : ''}
       </div>
       ${d.loading ? '<p class="muted">Loading…</p>' : d.error ? `<p class="err">${esc(d.error)}</p>` : nothingShared ? `<div class="panel"><p class="muted" style="margin:0">${esc(f.profile.name)} hasn't shared their food or weight with you. You can still see their ranking points.</p></div>` : `
       <div class="grid-2">
-        ${f.theyShare.see_diary ? `<div class="panel"><h2>What ${esc(f.profile.name)} ate</h2>
+        ${true ? `<div class="panel"><h2>What ${esc(f.profile.name)} ate</h2>
           <div class="cmp-kcal"><span class="num">${fmt(t.kcal)}</span><small>kcal${d.dayMeta && d.dayMeta.complete ? ' · day complete' : ''}</small></div>
           <div class="pmac" style="margin-bottom:12px"><div class="p"><b>${fmt(t.p)} g</b><span>Protein</span></div><div class="c"><b>${fmt(t.c)} g</b><span>Carbs</span></div><div class="f"><b>${fmt(t.f)} g</b><span>Fat</span></div></div>
           ${meals || '<p class="muted">Nothing logged this day.</p>'}
           ${g ? `<div class="kv" style="margin-top:12px"><span>Sleep</span><span>${g.sleepSec ? hm(g.sleepSec) : '–'}</span><span>Steps</span><span>${g.steps != null ? fmt(g.steps) : '–'}</span><span>Avg / peak heart rate</span><span>${g.avgHr || g.maxHr ? fmt(g.avgHr) + ' / ' + fmt(g.maxHr) + ' bpm' : '–'}</span></div>` : ''}
         </div>` : `<div class="panel"><p class="muted" style="margin:0">${esc(f.profile.name)} hasn't shared their food diary with you.</p></div>`}
-        <div class="panel"><h2>Weight</h2>${f.theyShare.see_weight ? (wk.length ? `<div class="big-score"><span class="v">${fmt(d.weights[wk[wk.length - 1]], 1)}</span><span class="q">kg on ${esc(shortDate(wk[wk.length - 1]))}</span></div>${wchart}` : '<p class="muted">No weigh-ins yet.</p>') : `<p class="muted" style="margin:0">${esc(f.profile.name)} hasn't shared their weight with you.</p>`}</div>
+        <div class="panel"><h2>Weight</h2>${true ? (wk.length ? `<div class="big-score"><span class="v">${fmt(d.weights[wk[wk.length - 1]], 1)}</span><span class="q">kg on ${esc(shortDate(wk[wk.length - 1]))}</span></div>${wchart}` : '<p class="muted">No weigh-ins yet.</p>') : `<p class="muted" style="margin:0">${esc(f.profile.name)} hasn't shared their weight with you.</p>`}</div>
       </div>`}
       <div style="margin-top:20px"><button class="btn ghost danger" data-action="f-remove" data-id="${esc(f.id)}">Remove friend</button></div>
     </div>`;
@@ -1364,6 +1377,33 @@
     pi.addEventListener('keydown', e => { if (e.key === 'Enter') setPlan(pi.value); });
   }
 
+  // Maintenance calories: what keeps weight steady. From the logs (food eaten vs how
+  // weight moved) next to the standard estimate from age, height, weight and activity.
+  function maintenanceTile() {
+    const pr = P().profile, met = metabolismModel();
+    const lw = latestWeight();
+    const w = lw ? lw.kg : pr.weightKg;
+    const formula = Math.round(bmrFor(w, pr) * pr.activity / 10) * 10;
+    let logs = '';
+    if (met.ready) logs = `<div class="mt-v num">${fmt(Math.round(met.measured / 10) * 10)}<small>kcal/day</small></div><div class="d">You ate ~${fmt(met.intake)} a day while weight moved ${met.kgPerWeek >= 0 ? '+' : ''}${fmt(met.kgPerWeek, 2)} kg/week${met.confidence === 'early' ? ' · early estimate' : ''}</div>`;
+    else {
+      const need = [];
+      if (met.loggedDays < met.needDays) need.push(`${met.needDays - met.loggedDays} more logged day${met.needDays - met.loggedDays === 1 ? '' : 's'}`);
+      if (met.weighIns < met.needWeighIns) need.push(`${met.needWeighIns - met.weighIns} more weigh-in${met.needWeighIns - met.weighIns === 1 ? '' : 's'}`);
+      if (met.spanDays < met.needSpan) need.push(`weigh-ins over ${met.needSpan}+ days`);
+      logs = `<div class="mt-v" style="font-size:20px">Learning…</div><div class="d">Needs ${esc(need.join(', '))} in the last 4 weeks.</div>`;
+    }
+    const diff = met.ready ? Math.round(met.measured - formula) : null;
+    return `<div class="stat maint" title="Maintenance = the calories that keep your weight where it is.">
+      <div class="k">Maintenance calories</div>
+      <div class="maint-grid">
+        <div><div class="mt-k">From your logs</div>${logs}</div>
+        <div><div class="mt-k">From age, height & weight</div><div class="mt-v num">${fmt(formula)}<small>kcal/day</small></div><div class="d">${pr.sex === 'female' ? 'Woman' : 'Man'}, ${fmt(pr.age)}, ${fmt(pr.heightCm)} cm, ${fmt(w, 1)} kg, activity ×${pr.activity}</div></div>
+      </div>
+      ${diff != null ? `<div class="d" style="margin-top:6px">Your real maintenance is <b>${fmt(Math.abs(diff))} kcal ${diff >= 0 ? 'higher' : 'lower'}</b> than the formula says.</div>` : ''}
+    </div>`;
+  }
+
   // Metabolism tile for Daily Performance.
   function metabolismTile() {
     const met = metabolismModel();
@@ -1374,7 +1414,7 @@
       if (met.spanDays < met.needSpan) need.push(`weigh-ins over ${met.needSpan}+ days`);
       return `<div class="stat" title="Works out how fast ${esc(P().name)} burns energy, from food logged and how weight moves."><div class="k">Metabolism</div><div class="v" style="font-size:22px;margin-top:8px">Learning…</div><div class="d">Needs ${esc(need.join(', '))} in the last 4 weeks.</div></div>`;
     }
-    const col = met.pct <= -5 ? 'var(--low)' : met.pct >= 5 ? 'var(--pro)' : 'var(--leaf)';
+    const col = met.pct <= -5 ? 'var(--low)' : met.pct >= 5 ? 'var(--pro)' : 'var(--ok)';
     return `<div class="stat" title="From the last 4 weeks: eaten ${fmt(met.intake)} kcal/day on average while weight changed ${met.kgPerWeek >= 0 ? '+' : ''}${fmt(met.kgPerWeek, 2)} kg/week, so the body burned about ${fmt(met.measured)} kcal/day. Expected for ${esc(P().name)}: ${fmt(met.expected)} (${met.expectedSource === 'garmin' ? 'Garmin' : 'age, height, weight, activity'}). Confidence: ${met.confidence}.">
       <div class="k">Metabolism</div><div class="v" style="font-size:24px;margin-top:6px;color:${col}">${esc(met.label)}</div>
       <div class="d">Burns ~${fmt(met.measured)} kcal/day · ${met.pct >= 0 ? '+' : ''}${fmt(met.pct)}% vs expected${met.confidence === 'early' ? ' · early estimate' : ''}</div></div>`;
@@ -1592,7 +1632,6 @@
     else if (act === 'f-back') { F.view = null; F.data = null; render(); }
     else if (act === 'f-day') { F.day = addDays(F.day, Number(a.dataset.d)); if (F.day > todayKey()) F.day = todayKey(); F.data = null; render(); }
     else if (act === 'copy-code') { const c = window.MH_ME && window.MH_ME.friend_code; if (c) { try { await navigator.clipboard.writeText(c); toast('Friend ID copied: ' + c); } catch (_) { toast('Your friend ID is ' + c); } } }
-    else if (act === 'set-color') { P().color = a.dataset.c; save(); render(); }
     else if (act === 'goal-restart') { const l = latestWeight(); P().profile.goalStart = l && l.date === todayKey() ? { date: todayKey(), kg: l.kg, real: true } : { date: todayKey(), kg: null }; save(); render(); toast(l && l.date === todayKey() ? 'Ranking restarted from today\'s weight.' : 'Ranking restarts from your next weigh-in.'); }
     else if (act === 'signout') { if (confirm('Sign out on this device? Your data stays in your account.')) social.signOut(); }
     else if (act === 'push-enable') { const r = await social.enablePush(); if (r.ok) { toast('Notifications are on.'); render(); } else { const m = $('#pushMsg'); if (m) { m.textContent = r.error; m.className = 'small err'; } } }
@@ -1776,7 +1815,7 @@
           <div class="form-grid" style="grid-template-columns:1fr">
             <label class="field"><span>Name (what friends see)</span><input type="text" id="pName" value="${esc(P().name)}" maxlength="40"></label>
           </div>
-          <div class="swatches">${colors.map(c => `<button class="sw-btn ${P().color === c ? 'on' : ''}" style="background:${c}" data-action="set-color" data-c="${c}" aria-label="Colour ${c}"></button>`).join('')}</div>
+          
           <div class="kv" style="margin-top:14px"><span>Friend ID</span><span><b class="code-pill" data-action="copy-code" title="Tap to copy">${esc(me.friend_code || '…')}</b></span><span>Signed in as</span><span>${esc((window.MH_EMAIL) || '')}</span></div>
           <button class="btn ghost danger" style="margin-top:12px" data-action="signout">Sign out</button>
         </div>
@@ -1818,12 +1857,6 @@
         </div>
 
         <div class="stack">
-          <div class="panel">
-            <h2>Notifications on this device</h2>
-            <p class="muted small" style="margin-top:0">Get a notification when a friend logs food (if they allow it) or sends you a friend request.${/iPhone|iPad/.test(navigator.userAgent) ? ' On iPhone this works from the Home Screen app.' : ''}</p>
-            ${pushState === 'granted' ? '<p class="small"><b>On.</b></p><button class="btn" data-action="push-test">Send me a test</button>' : pushState === 'denied' ? '<p class="small err">Blocked. Allow notifications for this app in your phone or browser settings.</p>' : '<button class="btn primary" data-action="push-enable">Turn on notifications</button>'}
-            <div id="pushMsg" class="small" style="margin-top:8px"></div>
-          </div>
           ${window.desktop ? `<div class="panel">
             <h2>Daily reminder</h2>
             <label class="check" style="margin-bottom:8px"><input type="checkbox" data-rem="me" ${P().reminderOn ? 'checked' : ''}> Remind me to log food</label>

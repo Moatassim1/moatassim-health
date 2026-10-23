@@ -25,3 +25,41 @@ window.BUILTIN_FOODS = [{"id":"b1","name":"Egg, whole (raw)","cat":"Eggs & dairy
     mk('j17', 'Ice cubes', 'Drinks', 'g', 100, 'a few cubes', { ...z })
   );
 })();
+// Ryanair onboard menu (Getaway Café). Ryanair doesn't publish nutrition, so these are
+// typical values for each item (per 100 g / 100 ml), sized like the onboard portions.
+// Built in so they can be logged on the plane with no internet.
+(function () {
+  const K = ['kcal', 'p', 'c', 'f', 'fib', 'sug', 'sat', 'na', 'k', 'ca', 'fe', 'mg', 'zn', 'va', 'vc', 'vd', 've', 'vk', 'b6', 'b12', 'fol', 'se', 'io', 'ph', 'cu', 'b1', 'b2', 'b3', 'ch', 'epa', 'la', 'ala'];
+  const R = (id, name, unit, portion, label, v) => { const n = {}; for (const k of K) n[k] = v[k] ?? null; return { id: 'ry' + id, name: name + ' (Ryanair)', cat: 'Ryanair', portion, portionLabel: label, n, ...(unit === 'ml' ? { unit: 'ml' } : {}) }; };
+  window.BUILTIN_FOODS.push(
+    R(1, 'Three cheese toastie', 'g', 200, '1 toastie', { kcal: 280, p: 12.5, c: 29, f: 12.5, fib: 1.8, sug: 3, sat: 7.2, na: 620, ca: 260 }),
+    R(2, 'Ham & cheese panini', 'g', 190, '1 panini', { kcal: 248, p: 13.5, c: 30, f: 8, fib: 1.7, sug: 2.6, sat: 4.2, na: 720, ca: 170 }),
+    R(3, 'Chicken & mozzarella panini', 'g', 200, '1 panini', { kcal: 242, p: 14.5, c: 28, f: 8, fib: 2, sug: 2.5, sat: 3.6, na: 560, ca: 150 }),
+    R(4, 'Hot bacon baguette', 'g', 160, '1 baguette', { kcal: 272, p: 13, c: 33, f: 9.5, fib: 1.6, sug: 2.5, sat: 3.5, na: 920 }),
+    R(5, 'Premium fresh sandwich', 'g', 180, '1 sandwich', { kcal: 245, p: 11.5, c: 25, f: 11, fib: 2.2, sug: 3.2, sat: 2.8, na: 480 }),
+    R(6, 'Beef lasagne', 'g', 350, '1 meal', { kcal: 145, p: 7.5, c: 13.5, f: 6.6, fib: 1, sug: 3, sat: 3.2, na: 310, ca: 90, fe: 0.9 }),
+    R(7, 'Vegan lasagne', 'g', 350, '1 meal', { kcal: 122, p: 4.2, c: 15, f: 5, fib: 2, sug: 3.5, sat: 1.4, na: 290 }),
+    R(8, 'Thai green curry with rice', 'g', 350, '1 meal', { kcal: 138, p: 6.2, c: 18, f: 4.6, fib: 1, sug: 2, sat: 2.8, na: 280 }),
+    R(9, 'Margherita pizza', 'g', 180, '1 pizza', { kcal: 262, p: 11, c: 32, f: 9.6, fib: 2, sug: 3.5, sat: 5, na: 560, ca: 200 }),
+    R(10, 'Crinkle fries', 'g', 110, '1 portion', { kcal: 232, p: 3.4, c: 30, f: 10.5, fib: 2.8, sug: 0.5, sat: 1.1, na: 260, k: 520 }),
+    R(11, 'Ham & cheese croissant', 'g', 110, '1 croissant', { kcal: 330, p: 12, c: 28, f: 19, fib: 1.5, sug: 4.5, sat: 10, na: 760 }),
+    R(12, 'Chocolate muffin', 'g', 110, '1 muffin', { kcal: 410, p: 5.5, c: 48, f: 22, fib: 2, sug: 28, sat: 5, na: 330 }),
+    R(13, 'Pringles Original', 'g', 40, '1 small tube', { kcal: 536, p: 4.6, c: 51, f: 34, fib: 3, sug: 1.4, sat: 3, na: 520 }),
+    R(14, 'KitKat 4 finger', 'g', 41.5, '1 bar', { kcal: 518, p: 6.6, c: 61.6, f: 26.6, fib: 2, sug: 48.6, sat: 15.4, na: 40 }),
+    R(15, 'Cadbury Dairy Milk', 'g', 45, '1 bar', { kcal: 534, p: 7.3, c: 57, f: 30, fib: 2.1, sug: 56, sat: 18, na: 96, ca: 220 }),
+    R(16, 'Mini cheddars / savoury snack', 'g', 45, '1 bag', { kcal: 512, p: 10, c: 53, f: 28, fib: 2.5, sug: 3.5, sat: 3, na: 1000 }),
+    R(17, 'Coca-Cola', 'ml', 330, '1 can', { kcal: 42, p: 0, c: 10.6, f: 0, sug: 10.6, sat: 0, na: 0 }),
+    R(18, 'Coca-Cola Zero', 'ml', 330, '1 can', { kcal: 0.3, p: 0, c: 0, f: 0, sug: 0, sat: 0, na: 10 }),
+    R(19, 'Sprite / Fanta', 'ml', 330, '1 can', { kcal: 19, p: 0, c: 4.6, f: 0, sug: 4.6, sat: 0, na: 5 }),
+    R(20, 'Tonic water', 'ml', 150, '1 small can', { kcal: 20, p: 0, c: 4.8, f: 0, sug: 4.8, sat: 0, na: 6 }),
+    R(21, 'Still or sparkling water', 'ml', 500, '1 bottle', { kcal: 0, p: 0, c: 0, f: 0, sug: 0, sat: 0, na: 1 }),
+    R(22, 'Heineken / Birra Moretti', 'ml', 330, '1 can', { kcal: 42, p: 0.4, c: 3.2, f: 0, sug: 0, sat: 0, na: 4 }),
+    R(23, 'Red or white wine', 'ml', 187, '1 small bottle', { kcal: 84, p: 0.1, c: 2.6, f: 0, sug: 0.9, sat: 0, na: 5 }),
+    R(24, 'Prosecco', 'ml', 200, '1 small bottle', { kcal: 76, p: 0.1, c: 1.5, f: 0, sug: 1.5, sat: 0, na: 5 }),
+    R(25, 'Spirit (vodka, gin, whiskey)', 'ml', 25, '1 measure', { kcal: 222, p: 0, c: 0, f: 0, sug: 0, sat: 0, na: 0 }),
+    R(26, 'Tea with milk', 'ml', 250, '1 cup', { kcal: 7, p: 0.4, c: 0.6, f: 0.3, sug: 0.6, sat: 0.2, na: 5, ca: 15 }),
+    R(27, 'Lavazza coffee, black', 'ml', 250, '1 cup', { kcal: 2, p: 0.1, c: 0, f: 0, sug: 0, sat: 0, na: 2, k: 50 }),
+    R(28, 'Cappuccino', 'ml', 250, '1 cup', { kcal: 40, p: 2.3, c: 3.4, f: 1.6, sug: 3.4, sat: 1, na: 30, ca: 80 }),
+    R(29, 'Hot chocolate', 'ml', 250, '1 cup', { kcal: 72, p: 2.2, c: 11.5, f: 2, fib: 0.6, sug: 10, sat: 1.2, na: 50, ca: 70 })
+  );
+})();

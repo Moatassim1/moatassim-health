@@ -1,7 +1,7 @@
 // @ts-nocheck
-// Moatassim Health: phone notifications (runs on Supabase as the "push" function).
+// Mabrouka Tracker: in-app notifications (runs on Supabase as the "push" function).
+// Saves notices to public.notifications; the app shows them under the bell. No phone push.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import webpush from 'npm:web-push@3.6.7';
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
@@ -27,8 +27,7 @@ Deno.serve(async (req) => {
     if (kind === 'food') {
       const friends = await friendsOf();
       if (!friends.length) return json({ ok: true, sent: 0 });
-      const { data: perms } = await admin.from('friend_perms').select('friend').eq('owner', me).eq('notify_logs', true).in('friend', friends);
-      recipients = (perms || []).map(p => p.friend);
+      recipients = friends; // every friend is told (sharing is part of being friends)
       const foods = (Array.isArray(body.foods) ? body.foods : []).slice(0, 6).map(f => String(f).slice(0, 60));
       if (!foods.length) return json({ ok: true, sent: 0 });
       title = myName;
@@ -46,18 +45,7 @@ Deno.serve(async (req) => {
 
     await admin.from('notifications').insert(recipients.map(r => ({ recipient: r, actor: me, kind, title, body: text })));
 
-    webpush.setVapidDetails(Deno.env.get('VAPID_SUBJECT') || 'mailto:admin@example.com', Deno.env.get('VAPID_PUBLIC_KEY'), Deno.env.get('VAPID_PRIVATE_KEY'));
-    const { data: subs } = await admin.from('push_subscriptions').select('*').in('user_id', recipients);
-    let sent = 0;
-    for (const s of subs || []) {
-      try {
-        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, JSON.stringify({ title, body: text, kind }), { TTL: 3600 });
-        sent++;
-      } catch (e) {
-        if (e && (e.statusCode === 404 || e.statusCode === 410)) await admin.from('push_subscriptions').delete().eq('endpoint', s.endpoint);
-      }
-    }
-    return json({ ok: true, sent });
+    return json({ ok: true, sent: recipients.length });
   } catch (e) {
     return json({ ok: false, error: 'Server error: ' + (e && e.message) }, 500);
   }

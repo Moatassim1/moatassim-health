@@ -574,7 +574,7 @@
           <div class="picker-search">
             <div class="search-row"><input type="text" id="mq" placeholder="Search foods, e.g. chicken breast, banana" autocomplete="off" spellcheck="false"><button class="btn scan-inline" data-m="scan" aria-label="Scan a barcode"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 9v6M10 9v6M13 9v6M17 9v6"/></svg><span>Scan</span></button></div>
             <div class="seg" id="mtabs"><button data-tab="all" class="on">Food list</button><button data-tab="recent">Recent</button><button data-tab="fav">★ Favourites</button><button data-tab="sup">💊 Supplements</button><button data-tab="shop">Shops</button><button data-tab="online">Search online</button></div>
-            <div class="maker-row"><button class="juice-btn" data-m="juice"><span class="jb-ico">🥤</span><span><b>Juice or smoothie</b><small>Liquid, fruit and extras you blended</small></span></button><button class="juice-btn" data-m="soup"><span class="jb-ico">🍲</span><span><b>Soup</b><small>What went in the pot, then how much you had</small></span></button></div>
+            <div class="maker-row"><button class="juice-btn" data-m="juice"><span class="jb-ico">🥤</span><span><b>Juice or smoothie</b><small>Liquid, fruit and extras you blended</small></span></button><button class="juice-btn" data-m="soup"><span class="jb-ico">🍲</span><span><b>Soup</b><small>What went in the pot, then how much you had</small></span></button><button class="juice-btn" data-m="bowl"><span class="jb-ico">🥣</span><span><b>Yoghurt bowl</b><small>Your yoghurt plus fruit, nuts, protein and toppings</small></span></button></div>
             <div class="shop-pick" id="mshops" hidden>${SHOP_LIST.map(([id, nm]) => `<button class="chip" data-shop="${id}">${esc(nm)}</button>`).join('')}</div>
           </div>
           <div class="results" id="mres"></div>
@@ -871,11 +871,18 @@
     ['Protein', 'Meat, fish, lentils and beans', ['Chicken breast, raw', 'Chicken thigh, skinless, raw', 'Diced beef, raw', 'Beef mince 5% fat, raw', 'Lamb mince, raw', 'Red lentils, dry', 'Chickpeas, canned (drained)', 'Kidney beans, canned (drained)', 'Cod, cooked', 'Prawns, cooked', 'Egg, whole (raw)']],
     ['Extras', 'Oil, pasta, rice, thickeners, seasoning', ['Olive oil', 'Butter', 'Vermicelli, dry', 'Pasta, dry', 'White / basmati rice, uncooked', 'Pearl barley, dry', 'Plain flour', 'Parmesan', 'Harissa paste', 'Ground cumin', 'Stock cube', 'Salt']]
   ];
+  const YOG_SETS = [
+    ['Yoghurt', 'The base of your bowl', ['Greek yogurt, 0% fat', 'Greek-style yogurt, full fat', 'Natural yogurt, whole milk', 'Skyr, plain', 'High-protein yogurt, plain (typical)', 'Quark, plain fat-free', 'Kefir, plain', 'Fruit yogurt', 'Soya yogurt, plain (fortified)', 'Coconut yogurt alternative, plain']],
+    ['Fruit', 'Fresh, frozen or dried', ['Banana', 'Strawberries', 'Blueberries', 'Raspberries', 'Blackberries', 'Frozen mixed berries', 'Mango', 'Kiwi', 'Apple', 'Peach / nectarine', 'Cherries', 'Pomegranate seeds', 'Grapes', 'Passion fruit', 'Figs, fresh', 'Dates, medjool', 'Raisins', 'Dried apricots', 'Goji berries, dried']],
+    ['Crunch', 'Granola, oats, nuts and seeds', ['Granola', 'Muesli', 'Oats, rolled (dry)', 'Almonds', 'Walnuts', 'Cashews', 'Pistachios', 'Hazelnuts', 'Pecans', 'Brazil nuts', 'Mixed nuts', 'Chia seeds', 'Flaxseed, ground', 'Pumpkin seeds', 'Sunflower seeds', 'Hemp seeds, hulled', 'Desiccated coconut', 'Cacao nibs', 'Dark chocolate (70-85%)']],
+    ['Protein & toppings', 'Powder, nut butter and drizzles', ['Whey protein powder (typical)', 'Peanut butter', 'Almond butter', 'Chocolate hazelnut spread', 'Honey', 'Maple syrup', 'Jam', 'Cocoa powder, unsweetened', 'Cinnamon, ground']]
+  ];
   const BOWL_ML = 500;
   const foodByName = nm => BUILTIN.find(f => f.name === nm) || null;
   let J = null;
   const isSoup = () => J && J.kind === 'soup';
-  const builderSets = () => isSoup() ? SOUP_SETS : JUICE_SETS;
+  const isYog = () => J && J.kind === 'bowl';
+  const builderSets = () => isSoup() ? SOUP_SETS : isYog() ? YOG_SETS : JUICE_SETS;
   // Soup: the whole pot's nutrition is shared out per ml of finished soup.
   function soupPot() { const raw = juiceTotals().g; return Number(J.potMl) > 0 ? Number(J.potMl) : Math.round(raw); }
   function soupPortion() { return Number(J.portionMl) > 0 ? Number(J.portionMl) : 0; }
@@ -885,6 +892,12 @@
       if (f.each) return f.each.g;
       if (setIdx === 2) return /lentil|barley/i.test(f.name) ? 150 : 250;
       return f.portion ? Math.round(f.portion) : 100;
+    }
+    if (isYog()) {
+      if (setIdx === 0) return 200;
+      if (setIdx === 1) return f.each && f.each.g <= 150 ? f.each.g : 80;
+      if (/protein powder/i.test(f.name)) return 30;
+      return Math.min(f.portion || 15, setIdx === 3 ? 15 : 30);
     }
     if (setIdx === 0) return f.name === 'Water' || unitOf(f) === 'ml' ? 250 : 200;
     if (f.each) return f.each.g;
@@ -915,6 +928,10 @@
   function juiceName() {
     if (J.name.trim()) return J.name.trim();
     const fr = J.items.filter(i => !/^(Water|Milk|Almond milk|Oat milk|Soya milk|Coconut milk|Ice)/.test(i.food.name)).map(i => i.food.name.split(/[,(]/)[0].trim().toLowerCase());
+    if (isYog()) {
+      const top = J.items.filter(i => !/yogurt|yoghurt|skyr|quark|kefir|honey|syrup|cinnamon/i.test(i.food.name)).map(i => i.food.name.split(/[,(]/)[0].trim().toLowerCase());
+      return top.length ? 'Yoghurt bowl: ' + top.slice(0, 3).join(', ') + (top.length > 3 ? ' +' + (top.length - 3) : '') : 'Yoghurt bowl';
+    }
     if (isSoup()) {
       const main = J.items.filter(i => !/^(Water|Milk|Coconut milk|Double cream|Olive oil|Butter|Salt|Ground cumin|Stock|.* stock|Fresh |Harissa|Plain flour|Tomato purée|Garlic|Onion)/.test(i.food.name)).map(i => i.food.name.split(/[,(]/)[0].replace(/ dry$/, '').trim().toLowerCase());
       return main.length ? 'Soup: ' + main.slice(0, 3).join(', ') + (main.length > 3 ? ' +' + (main.length - 3) : '') : 'Soup';
@@ -941,13 +958,13 @@
         <span class="j-amt"><input type="number" inputmode="decimal" min="0" step="${cnt ? '0.5' : '1'}" value="${esc(cnt ? it.n : it.g)}" data-ji="${i}" aria-label="Amount of ${esc(it.food.name)}">${ea ? `<span class="j-unit"><button class="${cnt ? 'on' : ''}" data-j="mode" data-i="${i}" data-mode="n">${esc(Number(it.n) === 1 ? ea.one : ea.many)}</button><button class="${cnt ? '' : 'on'}" data-j="mode" data-i="${i}" data-mode="g">${u}</button></span>` : `<span>${u}</span>`}</span>
         <button class="btn ghost j-x" data-j="del" data-i="${i}" aria-label="Remove ${esc(it.food.name)}">✕</button></div>`;
     }).join('');
-    const soup = isSoup();
-    card.innerHTML = `<div class="modal-head"><h2>${soup ? (J.editId ? 'Edit saved soup' : 'Soup') : (J.editId ? 'Edit saved juice' : 'Juice or smoothie')}</h2><button class="btn ghost" data-j="close">Close</button></div>
+    const soup = isSoup(), yog = isYog();
+    card.innerHTML = `<div class="modal-head"><h2>${soup ? (J.editId ? 'Edit saved soup' : 'Soup') : yog ? (J.editId ? 'Edit saved yoghurt bowl' : 'Yoghurt bowl') : (J.editId ? 'Edit saved juice' : 'Juice or smoothie')}</h2><button class="btn ghost" data-j="close">Close</button></div>
       <div class="modal-body">
-        <p class="muted small" style="margin-top:0">${soup ? 'Add everything that went into the pot (raw weights), then say how much you had. A bowl is 500 ml.' : 'Tap what went in, then set how much of each. Grams for solids, ml for liquids.'}</p>
+        <p class="muted small" style="margin-top:0">${soup ? 'Add everything that went into the pot (raw weights), then say how much you had. A bowl is 500 ml.' : yog ? 'Pick your yoghurt, then everything you put in or on top. Set how much of each, in grams or by count.' : 'Tap what went in, then set how much of each. Grams for solids, ml for liquids.'}</p>
         ${builderSets().map(([title, sub, names], si) => `<div class="j-set"><div class="j-set-h"><b>${title}</b> <span class="faint small">${sub}</span></div><div class="chips">${names.map(foodByName).filter(Boolean).map(f => `<button class="chip ${have.has(f.id) ? 'on' : ''}" data-j="add" data-id="${esc(f.id)}" data-s="${si}">${have.has(f.id) ? '✓ ' : '+ '}${esc(f.name.replace(/, (unsweetened|fresh|raw|plain|ground|medjool|rolled \(dry\)|cooked)$/, '').replace(' (typical)', ''))}</button>`).join('')}</div></div>`).join('')}
         <div class="j-set"><div class="j-set-h"><b>Something else?</b> <span class="faint small">Search your food list</span></div>
-          <input type="text" id="jq" placeholder="${soup ? 'e.g. chicken thigh, lentils, noodles' : 'e.g. peanut butter, mango, protein'}" value="${esc(J.q)}" autocomplete="off">
+          <input type="text" id="jq" placeholder="${soup ? 'e.g. chicken thigh, lentils, noodles' : yog ? 'e.g. protein granola, peanuts, coconut' : 'e.g. peanut butter, mango, protein'}" value="${esc(J.q)}" autocomplete="off">
           ${results.length ? `<div class="chips" style="margin-top:8px">${results.map(f => `<button class="chip ${have.has(f.id) ? 'on' : ''}" data-j="add" data-id="${esc(f.id)}" data-s="1">${have.has(f.id) ? '✓ ' : '+ '}${esc(f.name)}</button>`).join('')}</div>` : J.q.trim() ? '<p class="faint small">No match in the food list.</p>' : ''}
         </div>
         <div class="j-list">${rows || '<p class="muted small">Nothing added yet.</p>'}</div>
@@ -1019,7 +1036,8 @@
       const idx = J.items.findIndex(i => i.food.id === f.id);
       if (idx >= 0) { J.items.splice(idx, 1); renderJuice(); return; }
       const g0 = juiceDefault(f, Number(a.dataset.s));
-      J.items.push(f.each ? { food: f, mode: 'n', n: Math.max(0.5, Math.round(g0 / f.each.g * 2) / 2), g: Math.max(0.5, Math.round(g0 / f.each.g * 2) / 2) * f.each.g } : { food: f, g: g0, mode: 'g' });
+      const byCount = f.each && !(isYog() && Number(a.dataset.s) === 0);
+      J.items.push(byCount ? { food: f, mode: 'n', n: Math.max(0.5, Math.round(g0 / f.each.g * 2) / 2), g: Math.max(0.5, Math.round(g0 / f.each.g * 2) / 2) * f.each.g } : { food: f, g: g0, mode: 'g' });
       const body = card.querySelector('.modal-body'); const top = body ? body.scrollTop : 0;
       renderJuice();
       const nb = card.querySelector('.modal-body'); if (nb) nb.scrollTop = top;
@@ -1044,7 +1062,7 @@
       const base = isSoup() ? soupPot() : g;
       const n = {}; for (const k of NKEYS) n[k] = tot[k] == null ? null : Math.round(tot[k] / base * 100 * 1000) / 1000;
       Object.assign(f, { name: juiceName(), n, recipe: J.items.map(i => ({ id: i.food.id, name: i.food.name, g: Number(i.g) || 0 })), savedAt: Date.now() },
-        isSoup() ? { unit: 'ml', portion: BOWL_ML, potMl: Number(J.potMl) > 0 ? Number(J.potMl) : null } : { portion: Math.round(g), unit: J.items.some(i => unitOf(i.food) === 'ml') ? 'ml' : 'g' });
+        isSoup() ? { unit: 'ml', portion: BOWL_ML, potMl: Number(J.potMl) > 0 ? Number(J.potMl) : null } : { portion: Math.round(g), unit: !isYog() && J.items.some(i => unitOf(i.food) === 'ml') ? 'ml' : 'g' });
       if (act === 'update') { save(); J = null; closeModal(); render(); toast(`Saved changes to ${f.name}. Past diary entries keep their old values.`); return; }
       J.saveRecipe = false; J.logFoodId = f.id; J.editId = null; // fall through to log it once
     }
@@ -1070,9 +1088,9 @@
       const { tot, g } = juiceTotals(); if (!(g > 0)) return;
       const n = {}; for (const k of NKEYS) n[k] = tot[k] == null ? null : Math.round(tot[k] / g * 100 * 1000) / 1000;
       const name = juiceName();
-      const liquid = J.items.some(i => unitOf(i.food) === 'ml');
-      const food = { id: J.logFoodId || ('mine-' + uid()), name, source: 'Mine', cat: 'Drinks', unit: liquid ? 'ml' : 'g', portion: Math.round(g), portionLabel: '1 serving (as made)', n,
-        recipe: J.items.map(i => ({ id: i.food.id, name: i.food.name, g: Number(i.g) || 0 })), savedAt: Date.now() };
+      const yogB = isYog(), liquid = !yogB && J.items.some(i => unitOf(i.food) === 'ml');
+      const food = { id: J.logFoodId || ('mine-' + uid()), name, source: 'Mine', cat: yogB ? 'Meals & takeaway' : 'Drinks', unit: liquid ? 'ml' : 'g', portion: Math.round(g), portionLabel: yogB ? '1 bowl (as made)' : '1 serving (as made)', n,
+        recipe: J.items.map(i => ({ id: i.food.id, name: i.food.name, g: Number(i.g) || 0 })), ...(yogB ? { recipeKind: 'bowl' } : {}), savedAt: Date.now() };
       if (J.saveRecipe) S.customFoods.unshift(food);
       const list = P().diary[J.date] || (P().diary[J.date] = []);
       list.push({ id: uid(), foodId: food.id, name, grams: Math.round(g), count: null, each: null, unit: food.unit, meal: J.meal, n: { ...n }, portion: food.portion, portionLabel: food.portionLabel, source: 'Mine', at: Date.now(), recipe: food.recipe });
@@ -1152,6 +1170,7 @@
     else if (m === 'quick') { const mm = M.meal, d = M.date; closeModal(); quickAdd(mm, d); }
     else if (m === 'juice') openJuice({ date: M.date, meal: M.meal });
     else if (m === 'soup') openJuice({ date: M.date, meal: M.meal }, null, 'soup');
+    else if (m === 'bowl') openJuice({ date: M.date, meal: M.meal }, null, 'bowl');
     else if (m === 'grams') { M.grams = a.dataset.g; renderRight(); }
     else if (m === 'count') { M.count = Number(a.dataset.c); M.grams = M.count * M.sel.each.g; renderRight(); }
     else if (m === 'mode') {

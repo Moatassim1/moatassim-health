@@ -234,3 +234,21 @@ window.BUILTIN_FOODS = [{"id":"b1","name":"Egg, whole (raw)","cat":"Eggs & dairy
   };
   for (const f of window.BUILTIN_FOODS) { const a = add[f.name]; if (a && a[0] && !f.each) f.each = { g: a[0], one: a[1], many: a[2] }; }
 })();
+// Yoghurt bowl extras (USDA FoodData Central and typical UK labels, per 100 g).
+(function () {
+  const K = ['kcal', 'p', 'c', 'f', 'fib', 'sug', 'sat', 'na', 'k', 'ca', 'fe', 'mg', 'zn', 'va', 'vc', 'vd', 've', 'vk', 'b6', 'b12', 'fol', 'se', 'io', 'ph', 'cu', 'b1', 'b2', 'b3', 'ch', 'epa', 'la', 'ala'];
+  const Y = (id, name, cat, portion, label, v, each) => { const n = {}; for (const k of K) n[k] = v[k] ?? null; return { id: 'yb' + id, name, cat, portion, portionLabel: label, n, ...(each ? { each } : {}) }; };
+  const D = 'Eggs & dairy', N = 'Nuts, seeds & spreads';
+  window.BUILTIN_FOODS.push(
+    Y(1, 'Quark, plain fat-free', D, 150, '1/2 tub', { kcal: 66, p: 12, c: 4, f: 0.2, fib: 0, sug: 4, sat: 0.1, na: 40, k: 130, ca: 100, ph: 160, b12: 0.5, b2: 0.25 }),
+    Y(2, 'High-protein yogurt, plain (typical)', D, 200, '1 pot', { kcal: 60, p: 10, c: 4, f: 0.2, fib: 0, sug: 4, sat: 0.1, na: 45, ca: 120, b12: 0.4 }, { g: 200, one: 'pot', many: 'pots' }),
+    Y(3, 'Soya yogurt, plain (fortified)', D, 125, '1 pot', { kcal: 50, p: 4, c: 2.1, f: 2.3, fib: 1, sug: 2.1, sat: 0.4, na: 30, ca: 120, vd: 0.75, b12: 0.38, b2: 0.21 }),
+    Y(4, 'Coconut yogurt alternative, plain', D, 125, '1 serving', { kcal: 120, p: 0.9, c: 6, f: 10, fib: 0.5, sug: 3, sat: 9, na: 20, ca: 120, vd: 0.75, b12: 0.38 }),
+    Y(5, 'Hazelnuts', N, 30, '1 handful', { kcal: 628, p: 15, c: 16.7, f: 60.8, fib: 9.7, sug: 4.3, sat: 4.5, na: 0, k: 680, ca: 114, fe: 4.7, mg: 163, zn: 2.45, vc: 6.3, ve: 15, vk: 14.2, b6: 0.56, fol: 113, se: 2.4, ph: 290, cu: 1.73, b1: 0.64, b3: 1.8, la: 7.8, ala: 0.09 }),
+    Y(6, 'Pecans', N, 30, '1 handful', { kcal: 691, p: 9.2, c: 13.9, f: 72, fib: 9.6, sug: 4, sat: 6.2, na: 0, k: 410, ca: 70, fe: 2.53, mg: 121, zn: 4.53, vc: 1.1, ve: 1.4, vk: 3.5, b6: 0.21, fol: 22, se: 3.8, ph: 277, cu: 1.2, b1: 0.66, b3: 1.17, la: 20.6, ala: 0.99 }),
+    Y(7, 'Brazil nuts', N, 15, '3 nuts', { kcal: 659, p: 14.3, c: 11.7, f: 67.1, fib: 7.5, sug: 2.3, sat: 15.1, na: 3, k: 659, ca: 160, fe: 2.43, mg: 376, zn: 4.06, vc: 0.7, ve: 5.65, b6: 0.1, fol: 22, se: 1917, ph: 725, cu: 1.74, b1: 0.62, b3: 0.3, la: 23.9, ala: 0.02 }, { g: 5, one: 'Brazil nut', many: 'Brazil nuts' }),
+    Y(8, 'Almond butter', N, 15, '1 tbsp', { kcal: 614, p: 21, c: 18.8, f: 55.5, fib: 10.3, sug: 4.4, sat: 4.2, na: 7, k: 748, ca: 347, fe: 3.5, mg: 279, zn: 3.3, ve: 24.2, b6: 0.1, fol: 53, se: 2.4, ph: 508, cu: 0.93, b2: 0.94, b3: 3.2, la: 13.6, ala: 0 }),
+    Y(9, 'Hemp seeds, hulled', N, 15, '1 tbsp', { kcal: 553, p: 31.6, c: 8.7, f: 48.8, fib: 4, sug: 1.5, sat: 4.6, na: 5, k: 1200, ca: 70, fe: 7.95, mg: 700, zn: 9.9, ve: 0.8, b6: 0.6, fol: 110, ph: 1650, cu: 1.6, b1: 1.28, b3: 9.2, la: 27.5, ala: 8.7 }),
+    Y(10, 'Cacao nibs', N, 10, '1 tbsp', { kcal: 580, p: 12, c: 35, f: 50, fib: 30, sug: 1, sat: 30, na: 10, k: 750, ca: 90, fe: 4, mg: 270, zn: 3.5, cu: 2 })
+  );
+})();

@@ -726,3 +726,9 @@ body { background: radial-gradient(900px 520px at 105% -8%, var(--glow-1), trans
 .own-grid { grid-template-columns: repeat(4, 1fr); }
 .own-kcal { display: block; padding: 10px 0; font-size: 16px; }
 @media (max-width: 760px) { .own-grid { grid-template-columns: repeat(2, 1fr); } .ck-cmp { grid-template-columns: 1fr; } }
+
+.vit-badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: 2px; white-space: nowrap; }
+.vit-badge.none { background: #FDE2E1; color: #B42318; }
+.vit-badge.part { background: #FEF0C7; color: #93370D; }
+:root[data-theme="dark"] .vit-badge.none { background: #4A1714; color: #FDA29B; }
+:root[data-theme="dark"] .vit-badge.part { background: #4A3410; color: #FEC84B; }

@@ -71,6 +71,15 @@
     ] }
   ];
   const ALL_MICROS = MICRO_GROUPS.flatMap(g => g.items);
+  // Vitamins and minerals only (not macros, fibre, sugar, salt). How many does an entry have data for?
+  const VIT_KEYS = ['k', 'ca', 'fe', 'mg', 'zn', 'va', 'vc', 'vd', 've', 'vk', 'b6', 'b12', 'fol', 'se', 'io', 'ph', 'cu', 'b1', 'b2', 'b3', 'ch'];
+  function vitCoverage(e) { const n = e.n || {}; return VIT_KEYS.filter(k => n[k] != null).length / VIT_KEYS.length; }
+  function vitBadge(e) {
+    const c = vitCoverage(e);
+    if (c === 0) return '<span class="vit-badge none" title="No vitamin or mineral data for this item, so it adds nothing to your vitamins below.">no vitamins</span>';
+    if (c < 0.4) return '<span class="vit-badge part" title="Only some vitamin and mineral data for this item, so your vitamin totals below may be a little low.">some vitamins</span>';
+    return '';
+  }
   const NKEYS = ['kcal', 'p', 'c', 'f', 'fib', 'sug', 'sat', 'na', 'k', 'ca', 'fe', 'mg', 'zn', 'va', 'vc', 'vd', 've', 'vk', 'b6', 'b12', 'fol', 'se', 'io', 'ph', 'cu', 'b1', 'b2', 'b3', 'ch', 'epa', 'la', 'ala'];
   const N_LABEL = { kcal: ['Calories', 'kcal'], p: ['Protein', 'g'], c: ['Carbs', 'g'], f: ['Fat', 'g'], fib: ['Fibre', 'g'], sug: ['Sugars', 'g'], sat: ['Saturated fat', 'g'], na: ['Sodium', 'mg'], k: ['Potassium', 'mg'], ca: ['Calcium', 'mg'], fe: ['Iron', 'mg'], mg: ['Magnesium', 'mg'], zn: ['Zinc', 'mg'], va: ['Vitamin A', 'µg'], vc: ['Vitamin C', 'mg'], vd: ['Vitamin D', 'µg'], ve: ['Vitamin E', 'mg'], vk: ['Vitamin K', 'µg'], b6: ['Vitamin B6', 'mg'], b12: ['Vitamin B12', 'µg'], fol: ['Folate', 'µg'], se: ['Selenium', 'µg'], io: ['Iodine', 'µg'], ph: ['Phosphorus', 'mg'], cu: ['Copper', 'mg'], b1: ['Vitamin B1', 'mg'], b2: ['Vitamin B2', 'mg'], b3: ['Vitamin B3', 'mg'], ch: ['Choline', 'mg'], epa: ['Omega-3 EPA + DHA', 'mg'], la: ['Omega-6', 'g'], ala: ['Omega-3 ALA', 'g'] };
 
@@ -491,14 +500,14 @@
     const missingKeys = ALL_MICROS.filter(m => t.missing[m.k === 'salt' ? 'na' : m.k]);
     if (missingKeys.length && count) {
       const worst = Math.max(...missingKeys.map(m => t.missing[m.k === 'salt' ? 'na' : m.k]));
-      missingNote = `<div class="note">${worst} of ${count} logged item${count === 1 ? '' : 's'} ${worst === 1 ? 'has' : 'have'} no data for some vitamins or minerals, so those totals may be a little low.</div>`;
+      missingNote = `<div class="note">${worst} of ${count} logged item${count === 1 ? '' : 's'} ${worst === 1 ? 'has' : 'have'} no data for some vitamins or minerals, so those totals may be a little low. They're tagged <span class="vit-badge none">no vitamins</span> or <span class="vit-badge part">some vitamins</span> in your meals.</div>`;
     }
-    return MICRO_GROUPS.map(g => `<div class="micro-group"><h3>${g.name}</h3><div class="micro-list">${g.items.map(m => {
+    return missingNote + MICRO_GROUPS.map(g => `<div class="micro-group"><h3>${g.name}</h3><div class="micro-list">${g.items.map(m => {
       const v = t[m.k] / divideBy, target = tg[m.k], pct = target ? v / target * 100 : 0;
       const cls = m.limit ? `limit ${pct > 100 ? 'high' : ''}` : (pct < 70 ? 'low' : '');
       const label = m.limit ? `${fmtSmart(v)} / max ${fmtSmart(target)} ${m.unit}` : `${fmtSmart(v)} / ${fmtSmart(target)} ${m.unit}`;
       return `<div class="micro ${cls}"><span class="mn">${m.name}</span><span class="mv">${label} <span class="faint">${fmt(pct)}%</span></span><div class="bar"><i style="width:${Math.min(100, pct)}%"></i></div></div>`;
-    }).join('')}</div></div>`).join('') + missingNote;
+    }).join('')}</div></div>`).join('');
   }
 
   function checkinCard() {
@@ -528,7 +537,7 @@
       return `<section class="meal">
         <div class="meal-head"><h3>${meal}</h3><span class="num">${list.length ? fmt(mt.kcal) + ' kcal' : ''}</span></div>
         <ul class="entries">${list.map(e => `<li class="entry" data-action="edit-entry" data-id="${e.id}" title="Click to change the amount or remove">
-          <span class="ename">${esc(e.name)}</span>
+          <span class="ename">${esc(e.name)}${vitBadge(e)}</span>
           <span class="eg" title="${esc(fmtAmt(e.grams, unitOf(e)))}">${esc(entryAmount(e))}</span>
           <span class="ek">${fmt(e.n.kcal * e.grams / 100)}</span>
           <span class="emac"><span class="p">${fmt((e.n.p || 0) * e.grams / 100, 1)}P</span> · <span class="c">${fmt((e.n.c || 0) * e.grams / 100, 1)}C</span> · <span class="f">${fmt((e.n.f || 0) * e.grams / 100, 1)}F</span></span>

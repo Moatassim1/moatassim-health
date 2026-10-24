@@ -96,7 +96,90 @@
     const c = Math.max(0, Math.round((kcal - pr * 4 - f * 9) / 4));
     return { kcal, p: pr, c, f, bmr: Math.round(bmr) };
   }
-  const targets = () => P().targets.auto ? autoTargets(P().profile) : P().targets;
+  // ---------------------------------------------------------------- targets: automatic, planned or own; training vs rest days
+  const r5 = v => Math.round(v / 5) * 5;
+  const weekday = k => dateOf(k).getDay(); // 0 = Sunday
+  function dayType(k) {
+    const T = P().targets, m = (P().dayMeta[k] || {}).dayType;
+    if (m === 'train' || m === 'rest') return m;
+    if (Array.isArray(T.trainDays) && T.trainDays.length) return T.trainDays.includes(weekday(k)) ? 'train' : 'rest';
+    return 'train';
+  }
+  const splitOn = () => { const T = P().targets; return !T.auto && T.split && T.rest && T.rest.kcal > 0; };
+  function targets(k) {
+    const T = P().targets;
+    if (T.auto) return autoTargets(P().profile);
+    const base = { kcal: T.kcal, p: T.p, c: T.c, f: T.f };
+    if (splitOn() && dayType(k || UI.date || todayKey()) === 'rest') return { ...T.rest };
+    return base;
+  }
+  const macroKcal = m => Math.round(m.p * 4 + m.c * 4 + m.f * 9);
+  // Suggest daily macros for a goal, target weight and time frame.
+  function planMacros({ goal, goalKg, weeks }) {
+    const pr = P().profile, w = currentWeight() || pr.weightKg, met = metabolismModel();
+    const formula = bmrFor(w, pr) * pr.activity;
+    const useLogs = met.ready && met.confidence !== 'early';
+    const maint = Math.round((useLogs ? met.measured : formula) / 10) * 10;
+    const floor = Math.max(pr.sex === 'female' ? 1200 : 1500, Math.round(bmrFor(w, pr) * 0.95 / 10) * 10);
+    const warn = [];
+    let kcal = maint, rate = 0; // kg per week (negative = losing)
+    goalKg = Number(goalKg) || w; weeks = Math.max(1, Number(weeks) || 12);
+    if (goal === 'cut') {
+      const want = Math.max(0, w - goalKg) / weeks, max = w * 0.01;
+      if (want > max) warn.push(`Losing ${fmt(want, 2)} kg a week is faster than the safe maximum of about 1% of your weight (${fmt(max, 2)} kg). The plan uses ${fmt(max, 2)} kg a week, so it takes about ${Math.ceil((w - goalKg) / max)} weeks.`);
+      rate = -Math.min(want, max);
+      kcal = maint + rate * KCAL_PER_KG / 7;
+      if (kcal < floor) { warn.push(`That would need under ${fmt(floor)} kcal a day, which is too low to keep up. The plan stops at ${fmt(floor)} kcal, so it will take longer.`); kcal = floor; rate = (kcal - maint) * 7 / KCAL_PER_KG; }
+    } else if (goal === 'bulk') {
+      const want = Math.max(0, goalKg - w) / weeks, max = w * 0.005;
+      if (want > max) warn.push(`Gaining ${fmt(want, 2)} kg a week would mostly be fat. The plan uses about ${fmt(max, 2)} kg a week (0.5% of your weight), so it takes about ${Math.ceil((goalKg - w) / max)} weeks.`);
+      rate = Math.min(want, max) || w * 0.0025;
+      kcal = maint + rate * KCAL_PER_KG / 7;
+    } else if (goal === 'recomp') { kcal = maint - 200; rate = -0.1; }
+    kcal = Math.round(kcal / 10) * 10;
+    const pf = goal === 'cut' ? 1.9 : goal === 'recomp' ? 2.0 : goal === 'bulk' ? 1.8 : 1.6;
+    const p = r5(Math.min(pf * w, 2.3 * Math.max(goalKg, w * 0.8)));
+    const f = r5(Math.max(kcal * 0.3 / 9, 0.6 * w * 0.8));
+    const c = Math.max(50, r5((kcal - p * 4 - f * 9) / 4));
+    const train = { p, c, f }; train.kcal = macroKcal(train);
+    const rest = { p, c: Math.max(40, c - 40), f: f + 15 }; rest.kcal = macroKcal(rest);
+    const weeksNeeded = rate ? Math.abs((goalKg - w) / rate) : null;
+    return { goal, goalKg, weeks, maint, maintSource: useLogs ? 'logs' : 'formula', rate: Math.round(rate * 100) / 100, train, rest, warn, startKg: w, weeksNeeded };
+  }
+  // Weekly check-in: compare real weight change with the plan and suggest a tweak.
+  function weeklyCheck() {
+    const T = P().targets, plan = T.plan, today = todayKey();
+    if (T.auto || !plan || T.suggestion) return;
+    if (T.lastCheck && (dateOf(today) - dateOf(T.lastCheck)) / 864e5 < 7) return;
+    if ((dateOf(today) - dateOf(plan.start)) / 864e5 < 14) return;
+    const win = rangeKeys(today, 14).filter(k => k !== today);
+    const days = countedDays(win);
+    const weighIns = weightKeys().filter(k => k >= win[0]).length;
+    if (days.length < 7 || weighIns < 4) return;
+    const eaten = days.reduce((a, k) => a + totalsOf(dayEntries(k)).kcal, 0) / days.length;
+    const aimed = days.reduce((a, k) => a + targets(k).kcal, 0) / days.length;
+    const pg = social.progressOf ? social.progressOf(S) : {}, actual = pg.perWeek;
+    if (actual == null) return;
+    const cur = { train: { kcal: T.kcal, p: T.p, c: T.c, f: T.f }, rest: T.rest ? { ...T.rest } : null };
+    let delta = 0, reason = '';
+    const planned = plan.rate || 0;
+    if (eaten > aimed * 1.08) {
+      T.suggestion = { at: today, info: true, reason: `You averaged ${fmt(eaten)} kcal a day over the last 2 weeks, about ${fmt(eaten - aimed)} above your target. Your weight changed ${actual >= 0 ? '+' : ''}${fmt(actual, 2)} kg a week. Try to hit your current targets for another week before changing them.` };
+    } else {
+      const diff = actual - planned;
+      if (plan.goal === 'cut') { if (diff > 0.2) delta = -150; else if (diff < -0.4) delta = 150; }
+      else if (plan.goal === 'bulk') { if (diff < -0.15) delta = 150; else if (diff > 0.25) delta = -150; }
+      else if (Math.abs(actual - planned) > 0.3) delta = actual > planned ? -150 : 150;
+      if (delta) {
+        reason = `Plan: ${planned >= 0 ? '+' : ''}${fmt(planned, 2)} kg a week. Last 2–3 weeks: ${actual >= 0 ? '+' : ''}${fmt(actual, 2)} kg a week, while you ate close to target (${fmt(eaten)} kcal a day). ${delta < 0 ? 'Progress is slower than planned, so eat about 150 kcal less.' : 'You are moving faster than planned, so eat about 150 kcal more to protect muscle and energy.'}`;
+        const adj = m => { if (!m) return null; const o = { ...m, c: Math.max(40, m.c + (delta < 0 ? -25 : 25)), f: Math.max(30, m.f + (delta < 0 ? -5 : 5)) }; o.kcal = macroKcal(o); return o; };
+        T.suggestion = { at: today, reason, delta, to: { train: adj(cur.train), rest: adj(cur.rest) }, from: cur };
+      }
+    }
+    T.lastCheck = today;
+    save();
+    if (T.suggestion) toast(T.suggestion.info ? 'Weekly check-in: see the note on your diary.' : 'Weekly check-in: a macro change is suggested on your diary.');
+  }
 
   let _bbn = null;
   const builtinByName = () => _bbn || (_bbn = Object.fromEntries((window.BUILTIN_FOODS || []).map(f => [f.name, f])));
@@ -134,6 +217,11 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => { saveTimer = null; api.save(S, REV); }, 250);
   }
+  // Save straight away when the app is closed or sent to the background, so the last edit is never lost.
+  const flushSave = () => { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; api.save(S, REV); } };
+  window.addEventListener('pagehide', flushSave);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
+
 
   // Phone sync: new data arrived from the phone (or Garmin) in the main process.
   let SYNC = loaded.sync || { enabled: false };
@@ -413,10 +501,21 @@
     }).join('')}</div></div>`).join('') + missingNote;
   }
 
+  function checkinCard() {
+    const sg = P().targets.suggestion; if (!sg) return '';
+    const row = (lab, m) => m ? `<div class="ck-row"><span>${lab}</span><span class="num">${fmt(m.kcal)} kcal · ${fmt(m.p)}P ${fmt(m.c)}C ${fmt(m.f)}F</span></div>` : '';
+    return `<div class="panel checkin"><div class="ck-head">📊 <b>Weekly check-in</b><span class="faint small">${esc(shortDate(sg.at))}</span></div>
+      <p>${esc(sg.reason)}</p>
+      ${sg.info ? `<div class="ck-btns"><button class="btn primary" data-action="ck-ok">OK</button></div>` : `
+      <div class="ck-cmp"><div><div class="faint small">Now</div>${row('Training', sg.from.train)}${row('Rest', sg.from.rest)}</div><div><div class="faint small">Suggested</div>${row('Training', sg.to.train)}${row('Rest', sg.to.rest)}</div></div>
+      <div class="ck-btns"><button class="btn primary" data-action="ck-yes">Approve and update</button><button class="btn" data-action="ck-no">Keep as it is</button></div>`}
+    </div>`;
+  }
   function renderToday() {
     const k = UI.date, isToday = k === todayKey();
     const entries = dayEntries(k);
-    const t = totalsOf(entries), tg = targets();
+    if (isToday) weeklyCheck();
+    const t = totalsOf(entries), tg = targets(k);
     const kcalFromMacros = t.p * 4 + t.c * 4 + t.f * 9 || 1;
     const remaining = tg.kcal - t.kcal;
     const gd = P().garmin.days[k];
@@ -455,6 +554,8 @@
       </div>
 
       ${garminRenewBanner()}
+      ${checkinCard()}
+      ${splitOn() ? `<div class="daytype"><div class="seg"><button class="${dayType(k) === 'train' ? 'on' : ''}" data-action="daytype" data-v="train">🏋️ Training day</button><button class="${dayType(k) === 'rest' ? 'on' : ''}" data-action="daytype" data-v="rest">😴 Rest day</button></div><span class="faint small">${(P().dayMeta[k] || {}).dayType ? 'set for this day' : Array.isArray(P().targets.trainDays) && P().targets.trainDays.length ? 'from your weekly schedule' : 'tap to change'}</span></div>` : ''}
       ${!P().setupDone ? `<div class="nudge"><span><b>Set up ${esc(P().name)}'s details</b> so the calorie targets and weight projection fit ${esc(P().name)}: age, height, weight and goal.</span><button class="btn primary" data-action="go-settings">Set up</button></div>` : ''}
       <div class="readout">
         <div class="scale ${t.kcal > tg.kcal * 1.05 ? 'over' : ''}">
@@ -513,6 +614,9 @@
     if (act === 'day') { UI.date = addDays(UI.date, Number(a.dataset.d)); render(); }
     else if (act === 'goto-today') { UI.date = todayKey(); render(); }
     else if (act === 'go-settings') nav('settings');
+    else if (act === 'daytype') { const m = P().dayMeta[UI.date] || (P().dayMeta[UI.date] = {}); m.dayType = a.dataset.v; save(); render(); }
+    else if (act === 'ck-ok' || act === 'ck-no') { P().targets.suggestion = null; save(); render(); toast(act === 'ck-no' ? 'Kept your current targets.' : 'Got it.'); }
+    else if (act === 'ck-yes') { const T = P().targets, sg = T.suggestion; if (sg && sg.to) { Object.assign(T, { kcal: sg.to.train.kcal, p: sg.to.train.p, c: sg.to.train.c, f: sg.to.train.f }); if (sg.to.rest) T.rest = sg.to.rest; (T.history = T.history || []).push({ at: todayKey(), delta: sg.delta }); } T.suggestion = null; save(); render(); toast('Targets updated.'); }
     else if (act === 'g-renew') { G.connected = false; G.expired = true; G.checked = true; UI.device = 'garmin'; nav('garmin'); }
     else if (act === 'go-forecast') nav('forecast');
     else if (act === 'add') { openAdd({ meal: a.dataset.meal, date: UI.date }); if (a.dataset.fav) setTab('fav'); else if (a.dataset.meal === 'Supplements') setTab('sup'); }
@@ -2151,6 +2255,60 @@
   }
 
   // ---------------------------------------------------------------- SETTINGS
+  const GOALS = [['cut', 'Lose fat (shred)'], ['recomp', 'Body recomposition'], ['bulk', 'Build muscle (bulk)'], ['maintain', 'Maintain']];
+  const DOW = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
+  function macroTable(train, rest) {
+    const r = (lab, m) => `<div><span class="faint small">${lab}</span><b class="num">${fmt(m.kcal)} kcal</b><span class="num">${fmt(m.p)} g protein · ${fmt(m.c)} g carbs · ${fmt(m.f)} g fat</span></div>`;
+    return `<div class="mac-table">${r(rest ? '🏋️ Training day' : 'Every day', train)}${rest ? r('😴 Rest day', rest) : ''}</div>`;
+  }
+  function trainDaysChips() {
+    const td = P().targets.trainDays || [];
+    return `<div class="j-set-h" style="margin-top:12px"><b>Your usual training days</b> <span class="faint small">the diary picks training or rest by itself; you can still switch any day</span></div>
+      <div class="chips">${DOW.map(([d, l]) => `<button class="chip ${td.includes(d) ? 'on' : ''}" data-action="tday" data-d="${d}">${l}</button>`).join('')}</div>`;
+  }
+  function targetsPanel(at) {
+    const T = P().targets, pr = P().profile;
+    const mode = T.auto ? 'auto' : T.mode === 'plan' && T.plan ? 'plan' : (UI.tmode === 'plan' ? 'plan' : 'own');
+    const seg = `<div class="seg tmode" style="margin-top:16px">${[['auto', 'Automatic'], ['plan', 'Plan for my goal'], ['own', 'Set my own']].map(([v, l]) => `<button class="${(UI.tmode || mode) === v ? 'on' : ''}" data-action="tmode" data-v="${v}">${l}</button>`).join('')}</div>`;
+    const view = UI.tmode || mode;
+    if (view === 'auto') return seg + `<div class="targets-out"><div><b>${fmt(at.kcal)}</b><span>kcal / day</span></div><div><b>${fmt(at.p)} g</b><span>protein</span></div><div><b>${fmt(at.c)} g</b><span>carbs</span></div><div><b>${fmt(at.f)} g</b><span>fat</span></div></div>
+      <p class="muted small">Based on the Mifflin-St Jeor formula: about ${fmt(at.bmr)} kcal at rest, times your activity level${pr.goal !== 'maintain' ? ', adjusted for your goal' : ''}.${T.auto ? '' : ' <b>Tap "Use automatic" to switch to these.</b>'}</p>${T.auto ? '' : '<button class="btn" data-action="tuse-auto">Use automatic</button>'}`;
+    if (view === 'plan') {
+      const plan = T.mode === 'plan' && T.plan;
+      if (plan && !UI.planEdit) {
+        const end = addDays(plan.start, Math.round((plan.weeksNeeded || plan.weeks) * 7));
+        return seg + `<div class="plan-sum"><div><b>${esc((GOALS.find(g => g[0] === plan.goal) || [])[1] || plan.goal)}</b>${plan.goal === 'maintain' || plan.goal === 'recomp' ? '' : ` · ${fmt(plan.startKg, 1)} → ${fmt(plan.goalKg, 1)} kg`}</div>
+          <div class="faint small">Started ${esc(shortDate(plan.start))}${plan.goal === 'cut' || plan.goal === 'bulk' ? ` · aiming for about ${esc(longDate(end))} · ${plan.rate >= 0 ? '+' : ''}${fmt(plan.rate, 2)} kg a week` : ''} · maintenance ${fmt(plan.maint)} kcal (${plan.maintSource === 'logs' ? 'measured from your logs' : 'from the formula'})</div></div>
+          ${macroTable({ kcal: T.kcal, p: T.p, c: T.c, f: T.f }, splitOn() ? T.rest : null)}
+          <p class="muted small">Every week the app compares your weight trend with the plan. If you are off track it suggests a change on your diary, and you approve or decline it.${T.lastCheck ? ' Last check: ' + esc(shortDate(T.lastCheck)) + '.' : ''}</p>
+          ${trainDaysChips()}
+          <div style="margin-top:12px"><button class="btn" data-action="plan-edit">Change plan</button></div>`;
+      }
+      const d = UI.planForm || (UI.planForm = { goal: plan ? plan.goal : (pr.goal === 'gain' ? 'bulk' : pr.goal === 'maintain' ? 'maintain' : 'cut'), goalKg: pr.goalWeightKg || '', weeks: plan ? plan.weeks : 16 });
+      const res = UI.planResult;
+      return seg + `<div class="form-grid" style="margin-top:12px">
+          <label class="field"><span>Goal</span><select id="pgGoal">${GOALS.map(([v, l]) => `<option value="${v}" ${d.goal === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <label class="field"><span>Target weight (kg)</span><input type="number" id="pgKg" value="${esc(d.goalKg)}" step="0.1" min="30" max="250" placeholder="e.g. 85"></label>
+          <label class="field"><span>Time frame (weeks)</span><input type="number" id="pgWeeks" value="${esc(d.weeks)}" min="2" max="104"></label>
+        </div>
+        <div class="chips" style="margin-top:8px">${[8, 12, 16, 20, 26, 52].map(w => `<button class="chip ${Number(d.weeks) === w ? 'on' : ''}" data-action="pg-weeks" data-w="${w}">${w === 26 ? '6 months' : w === 52 ? '1 year' : w + ' weeks'}</button>`).join('')}</div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-action="plan-calc">Suggest my macros</button>${plan ? '<button class="btn ghost" data-action="plan-cancel">Cancel</button>' : ''}</div>
+        ${res ? `<div class="plan-res">
+          <div class="faint small">Maintenance ${fmt(res.maint)} kcal a day (${res.maintSource === 'logs' ? 'measured from what you ate and how your weight moved' : 'from your age, height, weight and activity; it gets measured once you have 2+ weeks of logs and weigh-ins'}).${res.goal === 'cut' || res.goal === 'bulk' ? ` Expected change: <b>${res.rate >= 0 ? '+' : ''}${fmt(res.rate, 2)} kg a week</b>${res.weeksNeeded ? `, reaching ${fmt(res.goalKg, 1)} kg in about ${Math.ceil(res.weeksNeeded)} weeks` : ''}.` : ''}</div>
+          ${res.warn.map(w => `<div class="sup-warn"><p>⚠ ${esc(w)}</p></div>`).join('')}
+          ${macroTable(res.train, res.rest)}
+          <p class="muted small">Eat most of the carbs in the meals before and after training. Rest days move some carbs to fat; your weekly total stays about the same.</p>
+          <button class="btn primary" data-action="plan-use">Use this plan</button></div>` : ''}`;
+    }
+    // own
+    const tr = { kcal: T.kcal, p: T.p, c: T.c, f: T.f }, rs = T.rest || { kcal: T.kcal, p: T.p, c: T.c, f: T.f };
+    const inputs = (attr, m) => `<label class="field"><span>Protein (g)</span><input type="number" ${attr}="p" value="${m.p}"></label><label class="field"><span>Carbs (g)</span><input type="number" ${attr}="c" value="${m.c}"></label><label class="field"><span>Fat (g)</span><input type="number" ${attr}="f" value="${m.f}"></label><div class="field"><span>Calories</span><b class="num own-kcal">${fmt(macroKcal(m))} kcal</b></div>`;
+    return seg + `<label class="check" style="margin-top:12px"><input type="checkbox" id="tsplit" ${T.split ? 'checked' : ''}> Different targets on rest days</label>
+      <div class="j-set-h" style="margin-top:10px"><b>${T.split ? '🏋️ Training day' : 'Every day'}</b></div><div class="form-grid own-grid">${inputs('data-t', tr)}</div>
+      ${T.split ? `<div class="j-set-h" style="margin-top:10px"><b>😴 Rest day</b></div><div class="form-grid own-grid">${inputs('data-r', rs)}</div>` : ''}
+      <p class="muted small">Calories are worked out from your macros (4 kcal per g of protein and carbs, 9 per g of fat). These stay exactly as you set them.</p>
+      ${T.split ? trainDaysChips() : ''}`;
+  }
   function renderSettings() {
     const p = P().profile, at = autoTargets(p), tg = targets(), st = S.settings, me = window.MH_ME || {};
     const act = [[1.2, 'Mostly sitting (desk job, little exercise)'], [1.375, 'Lightly active (exercise 1–3 days a week)'], [1.55, 'Active (exercise 3–5 days a week)'], [1.725, 'Very active (hard exercise 6–7 days)'], [1.9, 'Extremely active (physical job + training)']];
@@ -2195,15 +2353,7 @@
             <label class="field"><span>Protein (g per kg)</span><input type="number" data-p="proteinPerKg" value="${p.proteinPerKg}" min="0.8" max="3" step="0.1"></label>
             <label class="field"><span>Fat (% of calories)</span><input type="number" data-p="fatPct" value="${p.fatPct}" min="15" max="50"></label>
           </div>
-          <label class="check" style="margin-top:16px"><input type="checkbox" id="ownTargets" ${P().targets.auto ? '' : 'checked'}> Set my own calorie and macro targets</label>
-          ${P().targets.auto ? `<div class="targets-out"><div><b>${fmt(at.kcal)}</b><span>kcal / day</span></div><div><b>${fmt(at.p)} g</b><span>protein</span></div><div><b>${fmt(at.c)} g</b><span>carbs</span></div><div><b>${fmt(at.f)} g</b><span>fat</span></div></div>
-            <p class="muted small">Based on the Mifflin-St Jeor formula: about ${fmt(at.bmr)} kcal at rest, times your activity level${p.goal !== 'maintain' ? ', adjusted for your goal' : ''}.</p>`
-            : `<div class="form-grid" style="margin-top:12px">
-              <label class="field"><span>Calories (kcal)</span><input type="number" data-t="kcal" value="${tg.kcal}"></label>
-              <label class="field"><span>Protein (g)</span><input type="number" data-t="p" value="${tg.p}"></label>
-              <label class="field"><span>Carbs (g)</span><input type="number" data-t="c" value="${tg.c}"></label>
-              <label class="field"><span>Fat (g)</span><input type="number" data-t="f" value="${tg.f}"></label></div>
-              <p class="muted small">Your macros add up to ${fmt(tg.p * 4 + tg.c * 4 + tg.f * 9)} kcal.</p>`}
+          ${targetsPanel(at)}
         </div>
         </div>
 
@@ -2261,12 +2411,13 @@
       if (goalChange || (!P().profile.goalStart && (k === 'goal' || k === 'goalWeightKg'))) { const l = latestWeight(); P().profile.goalStart = l && l.date >= addDays(todayKey(), -3) ? { date: l.date, kg: l.kg, real: true } : { date: todayKey(), kg: null }; }
       save(); softRender(renderSettings);
     }));
-    main.querySelectorAll('[data-t]').forEach(el => el.addEventListener('change', () => { const v = Number(el.value); if (v >= 0) { P().targets[el.dataset.t] = v; save(); softRender(renderSettings); } }));
-    $('#ownTargets').addEventListener('change', e => {
-      if (e.target.checked) { const a = autoTargets(P().profile); P().targets = { auto: false, kcal: a.kcal, p: a.p, c: a.c, f: a.f }; }
-      else P().targets.auto = true;
-      save(); softRender(renderSettings);
-    });
+    const ownSet = (key, el) => { const v = Number(el.value); if (!(v >= 0)) return; const T = P().targets; T.auto = false; T.mode = 'own';
+      if (key === 'r') { T.rest = T.rest || { p: T.p, c: T.c, f: T.f }; T.rest[el.dataset.r] = v; T.rest.kcal = macroKcal(T.rest); } else { T[el.dataset.t] = v; T.kcal = macroKcal(T); }
+      save(); softRender(renderSettings); };
+    main.querySelectorAll('[data-t]').forEach(el => el.addEventListener('change', () => ownSet('t', el)));
+    main.querySelectorAll('[data-r]').forEach(el => el.addEventListener('change', () => ownSet('r', el)));
+    const ts = $('#tsplit'); if (ts) ts.addEventListener('change', () => { const T = P().targets; T.auto = false; T.mode = 'own'; T.split = ts.checked; if (ts.checked && !T.rest) { T.rest = { p: T.p, c: Math.max(40, T.c - 40), f: T.f + 15 }; T.rest.kcal = macroKcal(T.rest); } save(); softRender(renderSettings); });
+    ['pgGoal', 'pgKg', 'pgWeeks'].forEach(id => { const el = $('#' + id); if (el) el.addEventListener('change', () => { const d = UI.planForm || (UI.planForm = {}); d.goal = $('#pgGoal').value; d.goalKg = $('#pgKg').value; d.weeks = $('#pgWeeks').value; UI.planResult = null; softRender(renderSettings); }); });
     $('#pName').addEventListener('change', e => { const v = e.target.value.trim(); if (v) { P().name = v; save(); softRender(render); } });
     loadBackupList();
     const rt = $('#remTime'); if (rt) rt.addEventListener('change', () => { $('#remLink').href = 'reminders/' + rt.value + '.ics'; S.settings.reminderTime = rt.value.slice(0, 2) + ':' + rt.value.slice(2); save(); });
@@ -2289,6 +2440,29 @@
     } catch (e) { if ($('#bkList')) $('#bkList').textContent = e.offline ? 'Backups show when you are online.' : (e.status === 404 ? 'Backups are being set up.' : 'Could not load backups.'); }
   }
   async function handleFoodsSettingsAction(act, a) {
+    const T = P().targets;
+    if (act === 'tmode') { UI.tmode = a.dataset.v; UI.planEdit = false; if (a.dataset.v === 'own' && T.auto) { const at = autoTargets(P().profile); Object.assign(T, { auto: false, mode: 'own', kcal: at.kcal, p: at.p, c: at.c, f: at.f }); save(); } else if (a.dataset.v === 'own' && T.mode !== 'own') { T.mode = 'own'; save(); } renderSettings(); return; }
+    if (act === 'tuse-auto') { T.auto = true; T.mode = 'auto'; UI.tmode = null; save(); renderSettings(); toast('Using automatic targets.'); return; }
+    if (act === 'tday') { const d = Number(a.dataset.d), td = new Set(T.trainDays || []); td.has(d) ? td.delete(d) : td.add(d); T.trainDays = [...td].sort(); save(); renderSettings(); return; }
+    if (act === 'pg-weeks') { const d = UI.planForm || (UI.planForm = {}); d.goal = $('#pgGoal').value; d.goalKg = $('#pgKg').value; d.weeks = Number(a.dataset.w); UI.planResult = null; renderSettings(); return; }
+    if (act === 'plan-edit') { UI.planEdit = true; UI.planResult = null; renderSettings(); return; }
+    if (act === 'plan-cancel') { UI.planEdit = false; UI.planResult = null; renderSettings(); return; }
+    if (act === 'plan-calc') {
+      const d = UI.planForm = { goal: $('#pgGoal').value, goalKg: $('#pgKg').value, weeks: Number($('#pgWeeks').value) || 12 };
+      if ((d.goal === 'cut' || d.goal === 'bulk') && !(Number(d.goalKg) > 30)) { toast('Enter your target weight.'); return; }
+      UI.planResult = planMacros(d); renderSettings(); const r = document.querySelector('.plan-res'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'center' }); return;
+    }
+    if (act === 'plan-use' && UI.planResult) {
+      const r = UI.planResult, pr = P().profile;
+      Object.assign(T, { auto: false, mode: 'plan', split: true, kcal: r.train.kcal, p: r.train.p, c: r.train.c, f: r.train.f, rest: r.rest, suggestion: null, lastCheck: todayKey(),
+        plan: { goal: r.goal, goalKg: Number(r.goalKg), weeks: r.weeks, weeksNeeded: r.weeksNeeded, start: todayKey(), startKg: r.startKg, rate: r.rate, maint: r.maint, maintSource: r.maintSource } });
+      const g = r.goal === 'cut' ? 'lose' : r.goal === 'bulk' ? 'gain' : 'maintain';
+      if (g !== pr.goal || (r.goal !== 'maintain' && Number(r.goalKg) !== pr.goalWeightKg)) {
+        pr.goal = g; if (r.goal === 'cut' || r.goal === 'bulk') pr.goalWeightKg = Number(r.goalKg);
+        const l = latestWeight(); pr.goalStart = l && l.date >= addDays(todayKey(), -3) ? { date: l.date, kg: l.kg, real: true } : { date: todayKey(), kg: null };
+      }
+      UI.planEdit = false; UI.planResult = null; UI.tmode = null; save(); renderSettings(); toast('Plan saved. Your targets are set.'); return;
+    }
     if (act === 'sync-connect') {
       const url = $('#syUrl').value, key = $('#syKey').value, email = $('#syEmail').value, pass = $('#syPass').value;
       UI.syncBusy = true; UI.syncErr = ''; renderSettings();

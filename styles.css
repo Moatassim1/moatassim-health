@@ -706,3 +706,23 @@ body { background: radial-gradient(900px 520px at 105% -8%, var(--glow-1), trans
 .limit-warn p { margin: 4px 0; }
 :root[data-theme="dark"] .sup-warn, :root[data-theme="dark"] .limit-warn { background: #2A1D0E; border-color: #6B4A1C; color: #F5C27A; }
 :root[data-theme="dark"] .hi-dose { color: #FDBA74; }
+
+.daytype { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
+.daytype .seg button { padding: 8px 14px; }
+.checkin { border: 1px solid var(--accent); margin-bottom: 14px; }
+.checkin p { margin: 8px 0; }
+.ck-head { display: flex; gap: 8px; align-items: baseline; }
+.ck-head .faint { margin-left: auto; }
+.ck-cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0; }
+.ck-row { display: flex; flex-direction: column; font-size: 13px; padding: 4px 0; }
+.ck-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.tmode { display: flex; flex-wrap: wrap; }
+.tmode button { flex: 1; }
+.mac-table { display: grid; gap: 8px; margin: 12px 0; }
+.mac-table > div { display: flex; flex-direction: column; background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+.mac-table b { font-size: 20px; }
+.plan-sum { margin-top: 12px; }
+.plan-res { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.own-grid { grid-template-columns: repeat(4, 1fr); }
+.own-kcal { display: block; padding: 10px 0; font-size: 16px; }
+@media (max-width: 760px) { .own-grid { grid-template-columns: repeat(2, 1fr); } .ck-cmp { grid-template-columns: 1fr; } }

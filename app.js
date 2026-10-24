@@ -845,6 +845,8 @@
     if (!code) return;
     const ctx = M ? { date: M.date, meal: M.meal } : { date: UI.view === 'today' ? UI.date : todayKey(), meal: guessMeal() };
     let food = S.customFoods.find(x => x.id === 'off:' + code || x.id === 'bc:' + code || x.barcode === code);
+    const linked = (P().profile.barcodeLinks || {})[code]; // barcodes the person linked to a food or supplement before
+    if (!food && linked) food = allFoods().find(x => x.id === linked) || null;
     if (!food) {
       toast('Looking up ' + code + '…');
       try { food = await social.lookupBarcode(code); } catch (e) { toast('Could not reach Open Food Facts. Check your internet, or add the product yourself.'); }
@@ -864,9 +866,32 @@
       toast('Found: ' + food.name + '. Enter how much you had.');
       return;
     }
-    closeModal();
-    toast(`Barcode ${code} isn't in Open Food Facts yet. Add it from the label once and it's saved for next time.`);
-    foodForm(null, { barcode: code, then: (f) => openAdd({ ...ctx, food: f }) });
+    notFoundChooser(code, ctx);
+  }
+  // Barcode not in Open Food Facts: link it once to a supplement or food, or enter it from the label.
+  function notFoundChooser(code, ctx) {
+    M = null; J = null;
+    card.className = 'modal-card narrow';
+    card.innerHTML = `<div class="modal-head"><h2>Not found</h2><button class="btn ghost" data-nf="close">Close</button></div>
+      <div class="modal-body">
+        <p style="margin-top:0">Barcode <b class="num">${esc(code)}</b> isn't in the online product database yet (common for Aldi and Lidl own brands). Tell the app what it is once, and next time it scans straight away.</p>
+        <div class="nf-opts">
+          <button class="juice-btn" data-nf="sup"><span class="jb-ico">💊</span><span><b>It's a supplement</b><small>Pick the closest capsule, tablet or scoop</small></span></button>
+          <button class="juice-btn" data-nf="list"><span class="jb-ico">🔎</span><span><b>Pick it from the food list</b><small>Search the foods already in the app</small></span></button>
+          <button class="juice-btn" data-nf="label"><span class="jb-ico">🏷️</span><span><b>Enter it from the label</b><small>Type the nutrition per 100 g</small></span></button>
+        </div>
+      </div>`;
+    card.onclick = e => {
+      const b = e.target.closest('[data-nf]'); if (!b) return;
+      const a = b.dataset.nf;
+      if (a === 'close') { closeModal(); return; }
+      if (a === 'label') { closeModal(); foodForm(null, { barcode: code, then: (f) => openAdd({ ...ctx, food: f }) }); return; }
+      openAdd(a === 'sup' ? { ...ctx, meal: 'Supplements' } : ctx);
+      M.linkCode = code;
+      setTab(a === 'sup' ? 'sup' : 'all');
+      toast(a === 'sup' ? 'Pick the closest supplement. This barcode will go straight to it next time.' : 'Search and pick the food. This barcode will go straight to it next time.');
+    };
+    modal.hidden = false;
   }
   window.MHScanIntoLog = () => { closeModal(); openAdd({ date: UI.view === 'today' ? UI.date : todayKey(), meal: guessMeal() }); scanIntoModal(); };
 
@@ -1165,6 +1190,7 @@
       const f = lastList.find(x => x.id === a.dataset.id);
       if (!f) return;
       M.sel = f;
+      if (M.linkCode) { const links = P().profile.barcodeLinks || (P().profile.barcodeLinks = {}); links[M.linkCode] = f.id; M.linkCode = null; save(); toast(`Linked. Scanning this barcode now goes straight to ${f.name}.`); }
       if (!M.entry && f.cat === 'Supplements') M.meal = 'Supplements';
       if (!M.entry) {
         if (f.each) { M.mode = 'count'; M.count = 1; M.grams = f.each.g; }

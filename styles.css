@@ -696,3 +696,4 @@ body { background: radial-gradient(900px 520px at 105% -8%, var(--glow-1), trans
 .g-acts li { grid-template-columns: 1fr auto; }
 .walk-kcal { color: var(--accent); white-space: nowrap; }
 .walk-kcal b { font-size: 18px; }
+.nf-opts { display: grid; gap: 8px; margin-top: 12px; }

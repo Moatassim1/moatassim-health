@@ -5,7 +5,7 @@
   const social = window.social;
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
+  const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snacks', 'Supplements'];
   const COLORS = () => {
     const cs = getComputedStyle(document.documentElement);
     return { pro: cs.getPropertyValue('--pro').trim(), carb: cs.getPropertyValue('--carb').trim(), fat: cs.getPropertyValue('--fat').trim(), leaf: cs.getPropertyValue('--leaf').trim(), ok: cs.getPropertyValue('--ok').trim(), low: cs.getPropertyValue('--low').trim(), muted: cs.getPropertyValue('--faint').trim(), ink: cs.getPropertyValue('--ink').trim() };
@@ -512,7 +512,7 @@
     else if (act === 'go-settings') nav('settings');
     else if (act === 'g-renew') { G.connected = false; G.expired = true; G.checked = true; UI.device = 'garmin'; nav('garmin'); }
     else if (act === 'go-forecast') nav('forecast');
-    else if (act === 'add') { openAdd({ meal: a.dataset.meal, date: UI.date }); if (a.dataset.fav) setTab('fav'); }
+    else if (act === 'add') { openAdd({ meal: a.dataset.meal, date: UI.date }); if (a.dataset.fav) setTab('fav'); else if (a.dataset.meal === 'Supplements') setTab('sup'); }
     else if (act === 'quick-add') quickAdd(a.dataset.meal, UI.date);
     else if (act === 'water') {
       const m = P().dayMeta[UI.date] || (P().dayMeta[UI.date] = {});
@@ -850,7 +850,7 @@
       try { food = await social.lookupBarcode(code); } catch (e) { toast('Could not reach Open Food Facts. Check your internet, or add the product yourself.'); }
       if (food && food.supplement) {
         if (!M) openAdd(ctx);
-        M.supHint = food.name; setTab('sup');
+        M.supHint = food.name; M.meal = 'Supplements'; setTab('sup');
         toast(`${food.name || 'This'} is a supplement. Pick the closest one: it's logged per capsule or tablet.`);
         return;
       }
@@ -1165,6 +1165,7 @@
       const f = lastList.find(x => x.id === a.dataset.id);
       if (!f) return;
       M.sel = f;
+      if (!M.entry && f.cat === 'Supplements') M.meal = 'Supplements';
       if (!M.entry) {
         if (f.each) { M.mode = 'count'; M.count = 1; M.grams = f.each.g; }
         else { M.mode = 'grams'; M.grams = f.portion ? Math.round(f.portion) : 100; }

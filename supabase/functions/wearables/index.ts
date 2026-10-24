@@ -132,9 +132,7 @@ class PersonalApi {
           km: dist ? Math.round(dist / 10) / 100 : null, avgHr: pick(x, 'averageHR', 'averageHr') });
       }
     } catch (e) { if (e.status === 401 || e.status === 403) throw e; raw.activitiesError = e.message; }
-    console.log('garmin shapes', JSON.stringify({ sumErr: raw.summariesError || null, stepsErr: raw.stepsError || null, actErr: raw.activitiesError || null,
-      sumKeys: summaries[0] ? Object.keys(summaries[0]) : null, sumSample: summaries[0] ? JSON.stringify(summaries[0]).slice(0, 1500) : null,
-      stepsSample: Object.values(stepsBy)[0] || null, acts: Object.values(actsBy).flat().length }));
+    console.log('garmin activities', dates[0], dates[dates.length - 1], raw.activitiesError || '', Object.values(actsBy).flat().map(x => x.type + ' ' + x.min + 'min').join(', '));
 
     for (let i = 0; i < dates.length; i++) {
       const date = dates[i];
@@ -157,28 +155,33 @@ class PersonalApi {
 
 function summarise(date, st, sl, hr, hv) {
   const day = { date, source: 'personal-api' };
-  day.steps = pick(st, 'totalSteps', 'steps');
-  day.stepGoal = pick(st, 'dailyStepGoal', 'stepGoal');
-  const dist = pick(st, 'totalDistanceMeters', 'distanceInMeters');
+  // Newer daily summaries group values: movement.steps {value, goal, distanceInMeters}, calories {burnedTotal...},
+  // heartRate {minValue, maxValue, restingValue}, stress {avgLevel}, bodyBattery {...}, intensityMinutes {...}.
+  const sub = k => { const v = st && st[k]; return v && typeof v === 'object' ? v : {}; };
+  const mv = sub('movement'), stp = mv.steps && typeof mv.steps === 'object' ? mv.steps : {}, cal2 = sub('calories'), hr2 = sub('heartRate'),
+    ss2 = sub('stress'), bb2 = sub('bodyBattery'), im2 = sub('intensityMinutes'), ox2 = sub('pulseOx');
+  day.steps = pick(stp, 'value') ?? pick(st, 'totalSteps', 'steps');
+  day.stepGoal = pick(stp, 'goal') ?? pick(st, 'dailyStepGoal', 'stepGoal');
+  const dist = pick(stp, 'distanceInMeters') ?? pick(st, 'totalDistanceMeters', 'distanceInMeters');
   day.distanceKm = dist !== null ? Math.round(dist / 10) / 100 : null;
   const cal = find(st, 'calories');
   const calObj = cal && typeof cal === 'object' ? cal : {};
-  day.kcalTotal = pick(st, 'totalKilocalories') ?? pick(calObj, 'total', 'totalKilocalories', 'burned');
-  day.kcalActive = pick(st, 'activeKilocalories') ?? pick(calObj, 'active', 'activeKilocalories');
-  day.kcalBmr = pick(st, 'bmrKilocalories') ?? pick(calObj, 'bmr', 'resting', 'bmrKilocalories');
-  day.restingHr = pick(st, 'restingHeartRate') ?? pick(hr, 'restingHeartRate') ?? pick(sl, 'restingHeartRate');
-  day.minHr = pick(st, 'minHeartRate') ?? pick(hr, 'minHeartRate');
-  day.maxHr = pick(st, 'maxHeartRate') ?? pick(hr, 'maxHeartRate');
-  day.stressAvg = pick(st, 'averageStressLevel');
-  day.bbHigh = pick(st, 'bodyBatteryHighestValue');
-  day.bbLow = pick(st, 'bodyBatteryLowestValue');
-  day.bbNow = pick(st, 'bodyBatteryMostRecentValue');
-  day.bbCharged = pick(st, 'bodyBatteryChargedValue');
-  day.bbDrained = pick(st, 'bodyBatteryDrainedValue');
-  const mod = pick(st, 'moderateIntensityMinutes'), vig = pick(st, 'vigorousIntensityMinutes');
+  day.kcalTotal = pick(cal2, 'burnedTotal') ?? pick(st, 'totalKilocalories') ?? pick(calObj, 'total', 'totalKilocalories', 'burned');
+  day.kcalActive = pick(cal2, 'burnedActive') ?? pick(st, 'activeKilocalories') ?? pick(calObj, 'active', 'activeKilocalories');
+  day.kcalBmr = pick(cal2, 'burnedResting') ?? pick(st, 'bmrKilocalories') ?? pick(calObj, 'bmr', 'resting', 'bmrKilocalories');
+  day.restingHr = pick(hr2, 'restingValue') ?? pick(st, 'restingHeartRate') ?? pick(hr, 'restingHeartRate') ?? pick(sl, 'restingHeartRate');
+  day.minHr = pick(hr2, 'minValue') ?? pick(st, 'minHeartRate') ?? pick(hr, 'minHeartRate');
+  day.maxHr = pick(hr2, 'maxValue') ?? pick(st, 'maxHeartRate') ?? pick(hr, 'maxHeartRate');
+  day.stressAvg = pick(ss2, 'avgLevel') ?? pick(st, 'averageStressLevel');
+  day.bbHigh = pick(bb2, 'maxValue') ?? pick(st, 'bodyBatteryHighestValue');
+  day.bbLow = pick(bb2, 'minValue') ?? pick(st, 'bodyBatteryLowestValue');
+  day.bbNow = pick(bb2, 'latestValue') ?? pick(st, 'bodyBatteryMostRecentValue');
+  day.bbCharged = pick(bb2, 'chargedValue') ?? pick(st, 'bodyBatteryChargedValue');
+  day.bbDrained = pick(bb2, 'drainedValue') ?? pick(st, 'bodyBatteryDrainedValue');
+  const mod = pick(im2, 'moderate') ?? pick(st, 'moderateIntensityMinutes'), vig = pick(im2, 'vigorous') ?? pick(st, 'vigorousIntensityMinutes');
   day.intensityMin = mod === null && vig === null ? null : (mod || 0) + 2 * (vig || 0);
-  day.floors = pick(st, 'floorsAscended');
-  day.spo2Avg = pick(st, 'averageSpo2');
+  day.floors = pick(mv.floorsAscended && typeof mv.floorsAscended === 'object' ? mv.floorsAscended : {}, 'value') ?? pick(st, 'floorsAscended');
+  day.spo2Avg = pick(ox2, 'avgValue', 'averageValue') ?? pick(st, 'averageSpo2');
 
   const ds = find(sl, 'dailySleepDTO') || sl;
   const scores = find(ds, 'sleepScores');

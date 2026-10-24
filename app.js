@@ -325,6 +325,14 @@
   // Water and exercise, stored with the day so they sync.
   const EXERCISES = [['Running', 9.8], ['Walking', 3.5], ['Cycling', 7.5], ['Gym / weights', 5], ['HIIT / circuits', 8], ['Swimming', 7], ['Football', 7], ['Padel / tennis', 7], ['Sauna (80°C)', 1.5], ['Other', 5]];
   const waterGoal = () => Math.max(1500, Math.round((currentWeight() || 75) * 35 / 250) * 250);
+  // Walking: about 0.5 kcal per kg of body weight per km above resting (ACSM walking equation).
+  // Distance is Garmin's when it has it, otherwise steps x stride (stride ≈ 41.5% of height).
+  function walkKcal(gd) {
+    const pr = P().profile, kg = currentWeight() || pr.weightKg || 75;
+    const stride = (pr.heightCm || 175) * (pr.sex === 'female' ? 0.413 : 0.415) / 100;
+    const km = gd.distanceKm || (gd.steps * stride / 1000);
+    return { km, kcal: Math.round(0.5 * kg * km) };
+  }
   const actIcon = t => /swim/.test(t) ? '🏊' : /run/.test(t) ? '🏃' : /cycl|bik|ride/.test(t) ? '🚴' : /walk|hik/.test(t) ? '🚶' : /strength|weight|gym|hiit|cardio/.test(t) ? '🏋️' : /yoga|pilates|breath/.test(t) ? '🧘' : '⚡';
   function waterExerciseCard(k) {
     const m = P().dayMeta[k] || {}, ml = m.water || 0, goal = waterGoal();
@@ -337,7 +345,7 @@
         <div class="water-btns"><button class="btn" data-action="water" data-ml="-250" aria-label="Remove a glass">−</button><button class="btn" data-action="water" data-ml="250">+ Glass</button><button class="btn" data-action="water" data-ml="500">+ Bottle</button></div></div>
       <div class="water-bar"><i style="width:${Math.min(100, ml / goal * 100)}%"></i></div>
       <h2 style="margin-top:18px">Exercise</h2>
-      ${gd && gd.steps != null ? `<div class="steps-row"><span>👟 <b class="num">${fmt(gd.steps)}</b> steps${gd.distanceKm ? ` <span class="faint">· ${fmt(gd.distanceKm, 1)} km</span>` : ''}</span>${gd.stepGoal ? `<span class="faint small">goal ${fmt(gd.stepGoal)}</span>` : ''}</div>${gd.stepGoal ? `<div class="water-bar steps-bar"><i style="width:${Math.min(100, gd.steps / gd.stepGoal * 100)}%"></i></div>` : ''}` : ''}
+      ${gd && gd.steps != null ? (() => { const w = walkKcal(gd); return `<div class="steps-row"><span>👟 <b class="num">${fmt(gd.steps)}</b> steps <span class="faint">· ${fmt(w.km, 1)} km</span></span><span class="walk-kcal" title="Calories burned walking, on top of what your body burns at rest. Worked out from your weight and ${gd.distanceKm ? 'the distance your Garmin measured' : 'your stride length (from your height)'}."><b class="num">${fmt(w.kcal)}</b> kcal</span></div>${gd.stepGoal ? `<div class="water-bar steps-bar"><i style="width:${Math.min(100, gd.steps / gd.stepGoal * 100)}%"></i></div><div class="faint small" style="margin-top:4px">Goal ${fmt(gd.stepGoal)} steps · calories burned walking, from your weight and ${gd.distanceKm ? 'Garmin distance' : 'height'}</div>` : ''}`; })() : ''}
       ${gd && (gd.activities || []).length ? `<div class="faint small" style="margin:10px 0 2px">From your Garmin</div><ul class="ex-list g-acts">${gd.activities.map(x => `<li><span>${actIcon(x.type)} <b>${esc(x.name)}</b> <span class="faint">${[x.start, x.min != null ? fmt(x.min) + ' min' : '', x.km ? fmt(x.km, x.km < 2 ? 2 : 1) + ' km' : ''].filter(Boolean).join(' · ')}</span></span><span class="num">${x.kcal != null ? fmt(x.kcal) + ' kcal' : ''}</span></li>`).join('')}</ul>` : ''}
       ${ex.length ? `<ul class="ex-list">${ex.map(x => `<li><span><b>${esc(x.name)}</b> <span class="faint">${fmt(x.min)} min</span></span><span class="num">${fmt(x.kcal)} kcal</span><button class="btn ghost j-x" data-action="ex-del" data-id="${esc(x.id)}" aria-label="Remove">✕</button></li>`).join('')}</ul><p class="small muted" style="margin:4px 0 10px">${fmt(exK)} kcal burned in workouts${gd && gd.kcalTotal != null ? ' · already part of your Garmin total, so it isn\'t added again' : ''}.</p>` : (gd && (gd.activities || []).length ? '' : '<p class="muted small" style="margin-top:0">Log a workout to keep a record of it. Workouts recorded on your Garmin show up here by themselves.</p>')}
       <div class="ex-form">
@@ -463,7 +471,7 @@
           ${gd ? `<div class="garmin-strip"><span>Garmin</span>
             ${gd.kcalTotal != null ? `<span><b>${fmt(gd.kcalTotal)}</b>kcal burned</span>` : ''}
             ${gd.kcalTotal != null && entries.length ? `<span><b>${fmt(t.kcal - gd.kcalTotal)}</b>net</span>` : ''}
-            ${gd.steps != null ? `<span><b>${fmt(gd.steps)}</b>steps</span>` : ''}
+            ${gd.steps != null ? `<span><b>${fmt(gd.steps)}</b>steps</span><span><b>${fmt(walkKcal(gd).kcal)}</b>kcal walking</span>` : ''}
             ${gd.sleepScore != null ? `<span><b>${fmt(gd.sleepScore)}</b>sleep score</span>` : ''}
             ${gd.restingHr != null ? `<span><b>${fmt(gd.restingHr)}</b>resting bpm</span>` : ''}</div>` : ''}
         </div>

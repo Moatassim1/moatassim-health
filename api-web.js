@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.16';
+  const APP_VERSION = '2.0.17';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -189,6 +189,9 @@
     let na = x('sodium', 1000);
     if (na === null && g('salt') !== null) na = round(g('salt') * 400, 1);
     const name = (p.product_name_en || p.product_name || '').trim();
+    // Over 10 g salt per 100 g is almost always a typo in the product database (e.g. 20 g for salted nuts),
+    // unless it really is salt, stock, soy sauce or seasoning. Better unknown than 10x too much.
+    if (na !== null && na > 4000 && !/salt|stock|bouillon|soy|seasoning|miso|anchov|gravy|cube|marmite|fish sauce|sauce/i.test(name)) na = null;
     if (!name || kcal === null) return null;
     const brand = (p.brands || '').split(',')[0].trim();
     const liquid = String(p.product_quantity_unit || '').toLowerCase() === 'ml' || /\d\s*(ml|cl|l|litre|liter)s?\b/i.test(String(p.quantity || ''));

@@ -367,6 +367,18 @@
   }
 
   // ---------------------------------------------------------------- TODAY
+  // Diary macro bar: the red line is the target. Going past it turns the extra green
+  // for protein (good) and red for carbs and fat (too much).
+  function macroBar(cls, val, target, overIsGood) {
+    if (!target) return barHtml(cls, val, target);
+    const scale = Math.max(target * 1.25, val * 1.04);
+    const tPct = target / scale * 100, under = Math.min(val, target) / scale * 100, over = val > target ? (val - target) / scale * 100 : 0;
+    return `<div class="bar mbar ${cls} ${over ? (overIsGood ? 'over-good' : 'over-bad') : ''}"><i style="width:${under}%"></i>${over ? `<b class="extra" style="left:${tPct}%;width:${over}%"></b>` : ''}<s class="goal" style="left:${tPct}%"></s></div>`;
+  }
+  const macroVal = (val, target, overIsGood) => {
+    const d = Math.round(val - target);
+    return `${fmt(val)} <span class="faint">/ ${fmt(target)} g</span>${target && d > 0 ? ` <span class="${overIsGood ? 'm-good' : 'm-bad'}">+${fmt(d)}</span>` : ''}`;
+  };
   function barHtml(cls, val, target) {
     const pct = target ? Math.min(100, val / target * 100) : 0;
     return `<div class="bar ${cls}"><i style="width:${pct}%"></i>${target && val > target * 1.02 ? '<span class="over"></span>' : ''}</div>`;
@@ -439,9 +451,9 @@
         </div>
         <div>
           <div class="macro-rows">
-            <div class="mrow"><span class="mname" style="color:${C.pro}">Protein</span>${barHtml('pro', t.p, tg.p)}<span class="mval">${fmt(t.p)} <span class="faint">/ ${fmt(tg.p)} g</span></span></div>
-            <div class="mrow"><span class="mname" style="color:${C.carb}">Carbs</span>${barHtml('carb', t.c, tg.c)}<span class="mval">${fmt(t.c)} <span class="faint">/ ${fmt(tg.c)} g</span></span></div>
-            <div class="mrow"><span class="mname" style="color:${C.fat}">Fat</span>${barHtml('fat', t.f, tg.f)}<span class="mval">${fmt(t.f)} <span class="faint">/ ${fmt(tg.f)} g</span></span></div>
+            <div class="mrow"><span class="mname" style="color:${C.pro}">Protein</span>${macroBar('pro', t.p, tg.p, true)}<span class="mval">${macroVal(t.p, tg.p, true)}</span></div>
+            <div class="mrow"><span class="mname" style="color:${C.carb}">Carbs</span>${macroBar('carb', t.c, tg.c, false)}<span class="mval">${macroVal(t.c, tg.c, false)}</span></div>
+            <div class="mrow"><span class="mname" style="color:${C.fat}">Fat</span>${macroBar('fat', t.f, tg.f, false)}<span class="mval">${macroVal(t.f, tg.f, false)}</span></div>
           </div>
           ${entries.length ? `<div class="plate" title="Where your calories came from"><i style="width:${t.p * 4 / kcalFromMacros * 100}%;background:${C.pro}"></i><i style="width:${t.c * 4 / kcalFromMacros * 100}%;background:${C.carb}"></i><i style="width:${t.f * 9 / kcalFromMacros * 100}%;background:${C.fat}"></i></div>
           <div class="plate-key"><span>Calories from</span><span><i class="sw" style="background:${C.pro}"></i>protein ${fmt(t.p * 4 / kcalFromMacros * 100)}%</span><span><i class="sw" style="background:${C.carb}"></i>carbs ${fmt(t.c * 4 / kcalFromMacros * 100)}%</span><span><i class="sw" style="background:${C.fat}"></i>fat ${fmt(t.f * 9 / kcalFromMacros * 100)}%</span></div>` : ''}

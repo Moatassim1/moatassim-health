@@ -668,3 +668,17 @@ body { background: radial-gradient(900px 520px at 105% -8%, var(--glow-1), trans
 .j-amt input { width: 90px; }
 .j-unit button { max-width: 140px; padding: 8px 12px; font-size: 13px; }
 .j-amt .j-unit { width: auto; color: inherit; font-size: inherit; }
+
+/* Diary macro bars: red target line, extra past the target green (protein) or red (carbs, fat) */
+.bar.mbar { overflow: visible; }
+.bar.mbar > i { border-radius: 6px 0 0 6px; }
+.bar.mbar > .extra { position: absolute; top: 0; bottom: 0; border-radius: 0 6px 6px 0; }
+.bar.mbar.over-good > .extra { background: var(--ok); }
+.bar.mbar.over-bad > .extra { background: repeating-linear-gradient(135deg, #E0263A 0 6px, #B3122A 6px 12px); }
+.bar.mbar > .goal { position: absolute; top: -4px; bottom: -4px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: #E0263A; box-shadow: 0 0 0 1.5px var(--surface); text-decoration: none; }
+.mrow .mval .m-good { color: var(--ok); font-size: 13px; font-weight: 600; }
+.mrow .mval .m-bad { color: #E0263A; font-size: 13px; font-weight: 600; }
+:root[data-theme="dark"] .bar.mbar > .goal { background: #FF4B5C; }
+:root[data-theme="dark"] .mrow .mval .m-bad { color: #FF6B78; }
+.mrow { grid-template-columns: 74px 1fr 150px; }
+@media (max-width: 760px) { .mrow { grid-template-columns: 58px 1fr auto; } }

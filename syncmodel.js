@@ -15,6 +15,18 @@
     return '{' + Object.keys(v).filter(k => v[k] !== undefined).sort().map(k => JSON.stringify(k) + ':' + stable(v[k])).join(',') + '}';
   }
   const hashItem = it => it ? (it.deleted ? 'X' : stable([it.kind, it.profile || null, it.day || null, it.data])) : 'X';
+  // Profiles are merged setting by setting, so one device changing (say) the soup pot
+  // size never sends back another device's out-of-date macro targets.
+  const fieldHashes = it => { const o = {}; for (const k of Object.keys((it && it.data) || {})) o[k] = stable(it.data[k]); return o; };
+  function mergeProfile(local, remote, base) {
+    const L = local.data || {}, R = remote.data || {}, out = {};
+    for (const k of new Set([...Object.keys(L), ...Object.keys(R)])) {
+      const changedHere = base ? stable(L[k]) !== (base[k] === undefined ? 'null' : base[k]) : R[k] === undefined;
+      const v = changedHere ? L[k] : R[k];
+      if (v !== undefined) out[k] = v;
+    }
+    return { ...remote, data: out };
+  }
 
   const PROFILE_FIELDS = ['name', 'color', 'setupDone', 'profile', 'targets', 'reminderOn'];
   const GARMIN_SKIP = ['hrCurve'];
@@ -135,6 +147,11 @@
   // ---------------------------------------------------------------- engine
   // adapter: { getState(), setState(state, changedByRemote), loadMeta(), saveMeta(meta) }
   // meta: { shadow: {id: hash}, cursor, session }
+  function setShadow(meta, id, it, h) {
+    meta.shadow[id] = h;
+    if (it && it.kind === 'profile') meta.fshadow[id] = fieldHashes(it); else delete meta.fshadow[id];
+  }
+
   class SyncEngine {
     constructor(supa, adapter) { this.supa = supa; this.a = adapter; this.busy = null; this.lastError = null; this.lastSync = null; }
 
@@ -147,6 +164,7 @@
     async _run() {
       const meta = this.a.loadMeta() || {};
       meta.shadow = meta.shadow || {};
+      meta.fshadow = meta.fshadow || {};
       if (meta.session && !this.supa.session) this.supa.session = meta.session;
       if (!this.supa.session) throw Object.assign(new Error('Not signed in'), { status: 401 });
       try {
@@ -158,14 +176,41 @@
           const items0 = toItems(st0);
           let got = 0;
           for (const r of all) {
-            if (r.deleted) { meta.shadow[r.id] = 'X'; delete items0[r.id]; }
-            else { const it = { kind: r.kind, profile: r.profile, day: r.day, data: r.data }; items0[r.id] = it; meta.shadow[r.id] = hashItem(it); got++; }
+            if (r.deleted) { setShadow(meta, r.id, null, 'X'); delete items0[r.id]; }
+            else { const it = { kind: r.kind, profile: r.profile, day: r.day, data: r.data }; items0[r.id] = it; setShadow(meta, r.id, it, hashItem(it)); got++; }
             if (!meta.cursor || r.updated_at > meta.cursor) meta.cursor = r.updated_at;
           }
           if (got) this.a.setState(rebuild(st0, items0), true);
+          if (!meta.cursor) meta.cursor = '1970-01-01T00:00:00.000Z'; // empty account: still counts as synced
         }
-        // 1) Push local changes.
+        // 1) Pull everything changed since last time (with a 5-minute overlap), merging
+        //    profile settings, so what goes up next already includes the other devices' changes.
+        const cursor = meta.cursor ? new Date(new Date(meta.cursor).getTime() - 5 * 60000).toISOString() : null;
+        const remote = await this.supa.since(cursor);
         let state = this.a.getState();
+        const cur = toItems(state);
+        let changed = 0;
+        const items = { ...cur };
+        for (const r of remote) {
+          const it = r.deleted ? null : { kind: r.kind, profile: r.profile, day: r.day, data: r.data };
+          const rh = r.deleted ? 'X' : hashItem(it);
+          const lh = hashItem(cur[r.id]);
+          if (lh !== (meta.shadow[r.id] ?? 'X') && lh !== rh) { // edited here since last push
+            if (it && it.kind === 'profile' && cur[r.id]) { // merge: settings changed here win, the rest come from the server
+              const m = mergeProfile(cur[r.id], it, meta.fshadow[r.id]);
+              if (hashItem(m) !== lh) { items[r.id] = m; changed++; }
+              setShadow(meta, r.id, it, rh);
+              if (!meta.cursor || r.updated_at > meta.cursor) meta.cursor = r.updated_at;
+            }
+            continue; // anything else: keep local, it goes up next
+          }
+          if (lh !== rh) { if (it) items[r.id] = it; else delete items[r.id]; changed++; }
+          setShadow(meta, r.id, it, rh);
+          if (!meta.cursor || r.updated_at > meta.cursor) meta.cursor = r.updated_at;
+        }
+        if (changed) this.a.setState(rebuild(state, items), true);
+        // 2) Push local changes.
+        state = this.a.getState();
         const local = toItems(state);
         const rows = [];
         const uid = this.supa.session.user_id;
@@ -178,25 +223,8 @@
         }
         if (rows.length) {
           await this.supa.upsert(rows.map(({ _h, ...r }) => r));
-          for (const r of rows) meta.shadow[r.id] = r._h;
+          for (const r of rows) setShadow(meta, r.id, r.deleted ? null : local[r.id], r._h);
         }
-        // 2) Pull everything changed since last time (with a 5-minute overlap).
-        const cursor = meta.cursor ? new Date(new Date(meta.cursor).getTime() - 5 * 60000).toISOString() : null;
-        const remote = await this.supa.since(cursor);
-        state = this.a.getState();
-        const cur = toItems(state);
-        let changed = 0;
-        const items = { ...cur };
-        for (const r of remote) {
-          const it = r.deleted ? null : { kind: r.kind, profile: r.profile, day: r.day, data: r.data };
-          const rh = r.deleted ? 'X' : hashItem(it);
-          const lh = hashItem(cur[r.id]);
-          if (lh !== (meta.shadow[r.id] ?? 'X') && lh !== rh) { continue; } // edited here since last push: keep local, it goes up next time
-          if (lh !== rh) { if (it) items[r.id] = it; else delete items[r.id]; changed++; }
-          meta.shadow[r.id] = rh;
-          if (!meta.cursor || r.updated_at > meta.cursor) meta.cursor = r.updated_at;
-        }
-        if (changed) this.a.setState(rebuild(state, items), true);
         meta.session = this.supa.session;
         this.a.saveMeta(meta);
         this.lastSync = new Date().toISOString();
@@ -211,5 +239,5 @@
     }
   }
 
-  return { toItems, rebuild, hashItem, stable, Supa, SyncEngine };
+  return { toItems, rebuild, hashItem, stable, mergeProfile, Supa, SyncEngine };
 });

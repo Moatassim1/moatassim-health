@@ -160,17 +160,19 @@
   const BUILTIN = (window.BUILTIN_FOODS || []).map(f => ({ ...f, source: 'Built-in' }));
   const allFoods = () => [...S.customFoods, ...BUILTIN];
   function searchFoods(q, list = allFoods()) {
-    q = q.trim().toLowerCase();
+    const norm = x => x.toLowerCase().replace(/['’`]/g, '');
+    q = norm(q.trim());
     if (!q) return [];
     const toks = q.split(/\s+/);
     const scored = [];
     for (const f of list) {
-      const hay = (f.name + ' ' + (f.cat || '')).toLowerCase();
+      const hay = norm(f.name + ' ' + (f.cat || ''));
       if (!toks.every(t => hay.includes(t))) continue;
-      const nm = f.name.toLowerCase();
+      const nm = norm(f.name), words = nm.split(/[\s,()/-]+/);
       let s = 0;
       if (nm.startsWith(q)) s += 50;
-      if (nm.split(/[\s,()/-]+/).some(w => w.startsWith(toks[0]))) s += 20;
+      if (words.some(w => w.startsWith(toks[0]))) s += 20;
+      s += 30 * toks.filter(t => words.includes(t)).length / toks.length; // whole-word match: "b1" beats "b12"
       if (P().recent.some(r => r.id === f.id)) s += 15;
       if (f.source !== 'Built-in') s += 5;
       s -= nm.length / 20;

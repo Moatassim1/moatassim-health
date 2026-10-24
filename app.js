@@ -494,6 +494,7 @@
           ${waterExerciseCard(k)}
           <div class="panel vit-panel">
             <h2>Vitamins & minerals</h2>
+            ${(() => { const w = dayLimitWarnings(entries); return w.length ? `<div class="limit-warn"><b>⚠ Above a safe upper limit</b>${w.map(x => `<p>${x}</p>`).join('')}<p class="faint small">Limits are EFSA adult safe upper levels. Check with a pharmacist or GP before taking high doses long-term.</p></div>` : ''; })()}
             ${entries.length ? microsHtml(t, 1, entries.length) : '<p class="muted">Your vitamins, minerals and fibre for the day show here once you log food.</p>'}
           </div>
         </div>
@@ -657,6 +658,45 @@
   }
 
   // "per capsule: Vitamin D 25 µg · Omega-3 300 mg"
+  // Safe daily upper limits for adults (EFSA 2024). supOnly: the limit is for supplements/added forms,
+  // not what's naturally in food (folic acid, magnesium salts, preformed vitamin A).
+  const UL = {
+    b6: { lim: 12, u: 'mg', name: 'Vitamin B6' }, fol: { lim: 1000, u: 'µg', name: 'Folic acid', supOnly: true },
+    vd: { lim: 100, u: 'µg', name: 'Vitamin D' }, ve: { lim: 300, u: 'mg', name: 'Vitamin E' },
+    mg: { lim: 250, u: 'mg', name: 'Magnesium (supplements)', supOnly: true }, zn: { lim: 25, u: 'mg', name: 'Zinc' },
+    fe: { lim: 40, u: 'mg', name: 'Iron', note: 'safe level' }, cu: { lim: 5, u: 'mg', name: 'Copper' },
+    se: { lim: 255, u: 'µg', name: 'Selenium' }, io: { lim: 600, u: 'µg', name: 'Iodine' },
+    ca: { lim: 2500, u: 'mg', name: 'Calcium' }, va: { lim: 3000, u: 'µg', name: 'Vitamin A (retinol)', supOnly: true }
+  };
+  const isSupEntry = e => /^sup\d/.test(String(e.foodId || '')) || e.meal === 'Supplements';
+  // Warnings for a supplement at an amount (grams of product).
+  function supWarnings(f, g) {
+    if (!f || f.cat !== 'Supplements') return [];
+    const out = [];
+    for (const [k, L] of Object.entries(UL)) {
+      const v = (f.n[k] || 0) * g / 100;
+      if (v > L.lim) out.push(`${L.name}: ${fmtSmart(v)} ${L.u} is above the ${L.note || 'safe daily upper limit'} of ${fmtSmart(L.lim)} ${L.u}.`);
+    }
+    const nm = f.name.toLowerCase();
+    if (/niacin\b.*flush|nicotinic/.test(nm)) out.push('Nicotinic acid (flush niacin): the safe daily limit is 10 mg. High doses can harm the liver, so take only on medical advice.');
+    if (/beta-carotene/.test(nm)) out.push('Smokers and ex-smokers should not take beta-carotene supplements.');
+    if (/vitamin a \(retinol\)|cod liver oil/.test(nm)) out.push('If you are pregnant or trying to be, avoid vitamin A (retinol) and cod liver oil supplements.');
+    if (/prescription|ferrous|5 mg/.test(nm) && /folic|ferrous/.test(nm)) out.push('This is a prescription-strength dose. Take it only as advised by your doctor or pharmacist.');
+    if (/melatonin/.test(nm)) out.push('Melatonin is prescription-only in the UK.');
+    if (/manganese/.test(nm)) out.push('Manganese: the safe intake is about 8 mg a day in total, including food.');
+    if (/caffeine/.test(nm)) out.push('Keep caffeine under about 400 mg a day in total, including coffee and energy drinks.');
+    return out;
+  }
+  // Day totals above a safe upper limit.
+  function dayLimitWarnings(entries) {
+    const all = totalsOf(entries), sup = totalsOf(entries.filter(isSupEntry));
+    const out = [];
+    for (const [k, L] of Object.entries(UL)) {
+      const v = (L.supOnly ? sup[k] : all[k]) || 0;
+      if (v > L.lim) out.push(`<b>${L.name}</b> ${fmtSmart(v)} ${L.u} today${L.supOnly ? ' from supplements' : ''}: above the ${L.note || 'safe daily upper limit'} of ${fmtSmart(L.lim)} ${L.u}.`);
+    }
+    return out;
+  }
   function supSummary(f) {
     const parts = NKEYS.filter(k => !['kcal', 'p', 'c', 'f', 'sat', 'sug', 'na', 'fib'].includes(k) && f.n[k] > 0).map(k => `${N_LABEL[k][0].replace('Omega-3 EPA + DHA', 'Omega-3')} ${fmtSmart(f.n[k] * f.each.g / 100)} ${N_LABEL[k][1]}`);
     return `per ${esc(f.each.one)}: ` + (parts.slice(0, 4).join(' · ') || 'no vitamins or minerals');
@@ -669,7 +709,7 @@
     return `<div class="result ${sel ? 'sel' : ''}" tabindex="0" data-m="pick" data-id="${esc(f.id)}">
       <span class="rn">${esc(f.name)}</span><span class="rk">${fmt(f.cat === 'Supplements' && f.each ? n.kcal * f.each.g / 100 : n.kcal)} kcal</span>
       ${f.cat === 'Supplements' ? '' : `<span class="rm">${esc(meta)}${f.size ? ' · pack ' + esc(f.size) : ''}${f.portionLabel && f.portion ? ' · ' + esc(f.portionLabel) + ' ≈ ' + fmtAmt(f.portion, u) : ''}</span>`}
-      ${f.cat === 'Supplements' && f.each ? `<span class="rm-sup">${supSummary(f)}</span>` : `<span class="rm2">per 100 ${u} · ${fmt(n.p, 1)}P ${fmt(n.c, 1)}C ${fmt(n.f, 1)}F</span>`}</div>`;
+      ${f.cat === 'Supplements' && f.each ? `<span class="rm-sup">${supSummary(f)}${Object.entries(UL).some(([k, L]) => (f.n[k] || 0) * f.each.g / 100 > L.lim) || /flush|manganese/i.test(f.name) ? ' <span class="hi-dose">⚠ high dose</span>' : ''}</span>` : `<span class="rm2">per 100 ${u} · ${fmt(n.p, 1)}P ${fmt(n.c, 1)}C ${fmt(n.f, 1)}F</span>`}</div>`;
   }
 
   let lastList = [];
@@ -772,6 +812,7 @@
       ${u === 'ml' && g >= 1000 ? `<div class="muted small" style="margin:-4px 0 8px">= ${fmtAmt(g, 'ml')}</div>` : ''}
       ${f.each ? `<div class="muted small" style="margin:-4px 0 10px"><a href="#" data-m="mode" data-mode="count">count ${esc(f.each.many)} instead</a></div>` : ''}
       <div class="chips">${chips.map(([v, l]) => `<button class="chip" data-m="grams" data-g="${v}">${esc(l)}</button>`).join('')}</div>`}
+      <div class="sup-warn">${supWarnings(f, g).map(w => `<p>⚠ ${esc(w)}</p>`).join('')}</div>
       <div class="preview">
         <div class="pk num">${fmt(x('kcal'))}<small>kcal</small></div>
         <div class="pmac"><div class="p"><b>${fmt(x('p'), 1)} g</b><span>Protein</span></div><div class="c"><b>${fmt(x('c'), 1)} g</b><span>Carbs</span></div><div class="f"><b>${fmt(x('f'), 1)} g</b><span>Fat</span></div></div>

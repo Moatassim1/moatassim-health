@@ -697,3 +697,12 @@ body { background: radial-gradient(900px 520px at 105% -8%, var(--glow-1), trans
 .walk-kcal { color: var(--accent); white-space: nowrap; }
 .walk-kcal b { font-size: 18px; }
 .nf-opts { display: grid; gap: 8px; margin-top: 12px; }
+
+.hi-dose { color: #C2410C; font-weight: 600; white-space: nowrap; }
+.sup-warn:empty { display: none; }
+.sup-warn { background: #FFF4E5; border: 1px solid #F5C27A; color: #7A4100; border-radius: 10px; padding: 8px 12px; margin: 10px 0; font-size: 13px; }
+.sup-warn p { margin: 4px 0; }
+.limit-warn { background: #FFF4E5; border: 1px solid #F5C27A; color: #7A4100; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px; }
+.limit-warn p { margin: 4px 0; }
+:root[data-theme="dark"] .sup-warn, :root[data-theme="dark"] .limit-warn { background: #2A1D0E; border-color: #6B4A1C; color: #F5C27A; }
+:root[data-theme="dark"] .hi-dose { color: #FDBA74; }

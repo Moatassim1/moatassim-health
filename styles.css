@@ -689,3 +689,8 @@ body { background: radial-gradient(900px 520px at 105% -8%, var(--glow-1), trans
   .maker-row .juice-btn b { font-size: 13px; line-height: 1.2; }
   .maker-row .juice-btn small { display: none; }
 }
+
+.steps-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.steps-row b { font-size: 18px; }
+.steps-bar { margin-top: 6px; }
+.g-acts li { grid-template-columns: 1fr auto; }

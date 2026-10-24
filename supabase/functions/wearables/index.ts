@@ -108,7 +108,33 @@ class PersonalApi {
       if (!Array.isArray(summaries)) summaries = [];
     } catch (e) { if (e.status === 401 || e.status === 403) throw e; raw.summariesError = e.message; }
     const byDate = {};
-    for (const it of summaries) { const d = pickStr(it, 'calendarDate', 'date'); if (d) byDate[String(d).slice(0, 10)] = it; }
+    for (const it of summaries) { const d = pickStr(it, 'calendarDate', 'date', 'summaryDate'); if (d) byDate[String(d).slice(0, 10)] = it; }
+    // Steps also have their own endpoint; used when the daily summary has none.
+    const stepsBy = {};
+    try {
+      const s2 = await this.get(`/usersummary-service/stats/steps/daily/${dates[0]}/${dates[dates.length - 1]}`);
+      const arr = Array.isArray(s2) ? s2 : (find(s2, 'values') || find(s2, 'data') || []);
+      if (Array.isArray(arr)) for (const it of arr) { const d = pickStr(it, 'calendarDate', 'date'); if (d) stepsBy[String(d).slice(0, 10)] = it; }
+    } catch (e) { if (e.status === 401 || e.status === 403) throw e; raw.stepsError = e.message; }
+    // Workouts (swims, runs, gym...) in the range.
+    const actsBy = {};
+    try {
+      const a = await this.get('/activitylist-service/activities/search/activities', { start: 0, limit: 100, startDate: dates[0], endDate: dates[dates.length - 1] });
+      const list = Array.isArray(a) ? a : (find(a, 'activityList') || find(a, 'activities') || find(a, 'data') || []);
+      if (Array.isArray(list)) for (const x of list) {
+        const start = String(pickStr(x, 'startTimeLocal', 'startTimeGMT') || '');
+        const d = start.slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+        const type = String(pickStr(find(x, 'activityType') || {}, 'typeKey') || pickStr(x, 'activityTypeKey') || 'other');
+        const dur = pick(x, 'duration', 'elapsedDuration', 'movingDuration');
+        const dist = pick(x, 'distance');
+        (actsBy[d] = actsBy[d] || []).push({ id: String(pickStr(x, 'activityId') ?? start), name: String(pickStr(x, 'activityName') || type.replace(/_/g, ' ')), type,
+          start: start.slice(11, 16), min: dur !== null ? Math.round(dur / 60) : null, kcal: pick(x, 'calories', 'activeCalories') !== null ? Math.round(pick(x, 'calories', 'activeCalories')) : null,
+          km: dist ? Math.round(dist / 10) / 100 : null, avgHr: pick(x, 'averageHR', 'averageHr') });
+      }
+    } catch (e) { if (e.status === 401 || e.status === 403) throw e; raw.activitiesError = e.message; }
+    console.log('garmin shapes', JSON.stringify({ sumErr: raw.summariesError || null, stepsErr: raw.stepsError || null, actErr: raw.activitiesError || null,
+      sumKeys: summaries[0] ? Object.keys(summaries[0]) : null, sumSample: summaries[0] ? JSON.stringify(summaries[0]).slice(0, 1500) : null,
+      stepsSample: Object.values(stepsBy)[0] || null, acts: Object.values(actsBy).flat().length }));
 
     for (let i = 0; i < dates.length; i++) {
       const date = dates[i];
@@ -119,6 +145,9 @@ class PersonalApi {
       ]);
       if (i === dates.length - 1) Object.assign(raw, { sleep: sl, heartRate: hr, hrv: hv, summary: byDate[date] || null, date });
       days[date] = summarise(date, byDate[date] || {}, sl || {}, hr || {}, hv || {});
+      const sd = stepsBy[date];
+      if (days[date].steps === null && sd) { days[date].steps = pick(sd, 'totalSteps', 'steps', 'value'); if (days[date].stepGoal === null) days[date].stepGoal = pick(sd, 'stepGoal', 'dailyStepGoal'); if (days[date].distanceKm === null) { const m = pick(sd, 'totalDistance', 'distance'); days[date].distanceKm = m !== null ? Math.round(m / 10) / 100 : null; } }
+      days[date].activities = actsBy[date] || [];
       progress(i + 1, dates.length);
       await new Promise(r => setTimeout(r, 120));
     }
@@ -132,9 +161,11 @@ function summarise(date, st, sl, hr, hv) {
   day.stepGoal = pick(st, 'dailyStepGoal', 'stepGoal');
   const dist = pick(st, 'totalDistanceMeters', 'distanceInMeters');
   day.distanceKm = dist !== null ? Math.round(dist / 10) / 100 : null;
-  day.kcalTotal = pick(st, 'totalKilocalories');
-  day.kcalActive = pick(st, 'activeKilocalories');
-  day.kcalBmr = pick(st, 'bmrKilocalories');
+  const cal = find(st, 'calories');
+  const calObj = cal && typeof cal === 'object' ? cal : {};
+  day.kcalTotal = pick(st, 'totalKilocalories') ?? pick(calObj, 'total', 'totalKilocalories', 'burned');
+  day.kcalActive = pick(st, 'activeKilocalories') ?? pick(calObj, 'active', 'activeKilocalories');
+  day.kcalBmr = pick(st, 'bmrKilocalories') ?? pick(calObj, 'bmr', 'resting', 'bmrKilocalories');
   day.restingHr = pick(st, 'restingHeartRate') ?? pick(hr, 'restingHeartRate') ?? pick(sl, 'restingHeartRate');
   day.minHr = pick(st, 'minHeartRate') ?? pick(hr, 'minHeartRate');
   day.maxHr = pick(st, 'maxHeartRate') ?? pick(hr, 'maxHeartRate');

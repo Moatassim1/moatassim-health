@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.17';
+  const APP_VERSION = '2.0.18';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -282,8 +282,13 @@
     if (!(j && j.status === 1 && j.product)) return null;
     const p = j.product;
     const name = ((p.product_name_en || p.product_name || '') + ' ' + (p.brands || '').split(',')[0]).trim();
-    const supplement = (p.categories_tags || []).some(t => /supplement|vitamin/.test(t)) || SUPP_RE.test(p.product_name_en || p.product_name || '');
+    const nm = p.product_name_en || p.product_name || '';
     const food = offToFood({ ...p, code });
+    // Pills, capsules and oils are supplements. Protein shakes, bars and powders are often filed under
+    // "supplements" in the product database too, but they have real calories, so they are logged as food.
+    const pill = /capsule|softgel|tablet|gumm(y|ies)|multivit|cod.?liver|fish.?oil|omega.?3|krill|probiotic|effervescent/i.test(nm);
+    const realFood = food && food.n && food.n.kcal >= 15 && !pill;
+    const supplement = !realFood && (pill || (p.categories_tags || []).some(t => /supplement|vitamin/.test(t)) || SUPP_RE.test(nm));
     // Supplements are logged per capsule from the built-in list, not as a food with macros.
     if (supplement) return { supplement: true, name, food: null };
     return food;

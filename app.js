@@ -314,9 +314,18 @@
   function openMore() {
     card.className = 'modal-card narrow sheet-card';
     const items = [['settings', 'Settings', 'Account, goal, targets, notifications'], ['photos', 'Transformation', 'Daily progress photos and videos'], ['garmin', 'Devices', 'Garmin and other watches'], ['foods', 'Food list', 'All foods, and your own'], ['forecast', 'Weight projection', 'Where your weight is heading']];
-    card.innerHTML = `<div class="modal-head"><h2>More</h2><button class="btn ghost" data-f="close">Close</button></div><div class="modal-body more-list">${items.map(([v, t, d]) => `<button data-f="go" data-v="${v}"><b>${t}</b><span>${d}</span></button>`).join('')}</div>`;
+    const who = ME().username ? '@' + ME().username : (window.MH_EMAIL || '');
+    card.innerHTML = `<div class="modal-head"><h2>Menu</h2><button class="btn ghost" data-f="close">Close</button></div><div class="modal-body more-list">${items.map(([v, t, d]) => `<button data-f="go" data-v="${v}"><b>${t}</b><span>${d}</span></button>`).join('')}
+      <button class="more-signout" data-f="signout"><b>Sign out</b><span>${esc(who ? 'Signed in as ' + who : 'Your data stays in your account')}</span></button></div>`;
     modal.hidden = false;
-    card.onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; closeModal(); if (b.dataset.f === 'go') nav(b.dataset.v); };
+    card.onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; closeModal(); if (b.dataset.f === 'go') nav(b.dataset.v); if (b.dataset.f === 'signout') confirmSignOut(); };
+  }
+  function confirmSignOut() {
+    card.className = 'modal-card narrow';
+    card.innerHTML = `<div class="modal-head"><h2>Sign out?</h2></div><div class="modal-body"><p class="muted" style="margin-top:0">Your diary, ranking and friends stay safe in your account. Sign back in any time.</p>
+      <div class="so-btns"><button class="btn" data-so="no">Cancel</button><button class="btn danger-solid" data-so="yes">Sign out</button></div></div>`;
+    modal.hidden = false;
+    card.onclick = e => { const b = e.target.closest('[data-so]'); if (!b) return; if (b.dataset.so === 'yes') social.signOut(); else closeModal(); };
   }
   $('#sideAdd').addEventListener('click', () => openAdd({ meal: guessMeal(), date: UI.view === 'today' ? UI.date : todayKey() }));
   api.onNav(v => {
@@ -2104,7 +2113,7 @@
     else if (act === 'f-day') { F.day = addDays(F.day, Number(a.dataset.d)); if (F.day > todayKey()) F.day = todayKey(); F.data = null; render(); }
     else if (false && act === 'copy-code') { const c = window.MH_ME && window.MH_ME.friend_code; if (c) { try { await navigator.clipboard.writeText(c); toast('Friend ID copied: ' + c); } catch (_) { toast('Your friend ID is ' + c); } } }
     else if (act === 'goal-restart') { const l = latestWeight(); P().profile.goalStart = l && l.date === todayKey() ? { date: todayKey(), kg: l.kg, real: true } : { date: todayKey(), kg: null }; save(); render(); toast(l && l.date === todayKey() ? 'Ranking restarted from today\'s weight.' : 'Ranking restarts from your next weigh-in.'); }
-    else if (act === 'signout') { if (confirm('Sign out on this device? Your data stays in your account.')) social.signOut(); }
+    else if (act === 'signout') { confirmSignOut(); }
     else if (act === 'push-enable') { const r = await social.enablePush(); if (r.ok) { toast('Notifications are on.'); render(); } else { const m = $('#pushMsg'); if (m) { m.textContent = r.error; m.className = 'small err'; } } }
     else if (act === 'push-test') { const r = await social.testPush(); toast(r.ok ? (r.sent ? 'Test sent. It should pop up in a moment.' : 'No device is set up for notifications yet.') : (r.error || 'Could not send.')); }
     else if (act === 'dev-pick') { UI.device = a.dataset.id || null; G.err = ''; render(); }
@@ -2333,7 +2342,7 @@
     const pts = myPoints(), gs = social.startOf(S), gsSet = !!p.goalStart;
     const pushState = social.pushState();
     main.innerHTML = `<div class="page">
-      <div class="page-head"><div><h1>Settings</h1><p class="sub">Changes save automatically and sync to your other devices.</p></div></div>
+      <div class="page-head"><div><h1>Settings</h1><p class="sub">Changes save automatically and sync to your other devices.</p></div><button class="btn ghost sm danger" data-action="signout">Sign out</button></div>
       <div class="settings-grid">
         <div class="stack">
         <div class="panel">

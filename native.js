@@ -47,6 +47,14 @@
       await L.schedule({ notifications: [{ id: 1001, title: 'GG Gains', body: 'Log today\'s food to keep your streak 🔥', schedule: { on: { hour: h, minute: m }, allowWhileIdle: true } }] });
       return { ok: true };
     },
+    // Sign in with Apple (iPhone only): returns { idToken, name, email }.
+    async appleSignIn() { const G = plug('GGNative'); if (!G) throw new Error('Not available'); return G.signInWithApple({}); },
+    // Apple Health: steps, walking km and active calories per day.
+    health: {
+      async available() { const G = plug('GGNative'); if (!G || N.platform !== 'ios') return false; try { return !!(await G.healthAvailable()).available; } catch (_) { return false; } },
+      async authorize() { const G = plug('GGNative'); return G.healthAuthorize(); },
+      async days(n) { const G = plug('GGNative'); return ((await G.healthDays({ days: n || 7 })) || {}).days || {}; }
+    },
     onAppUrl(cb) { const A = plug('App'); if (A) A.addListener('appUrlOpen', e => cb(e && e.url)); },
     onResume(cb) { const A = plug('App'); if (A) A.addListener('resume', cb); }
   };

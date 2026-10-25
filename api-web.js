@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.40';
+  const APP_VERSION = '2.0.41';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -704,17 +704,37 @@
     const box = $('#aSocial'); if (!box || window.desktop) return; // Google blocks sign-in inside desktop app windows
     try {
       if (!providerCache) { const r = await fetch(CFG.url + '/auth/v1/settings', { headers: { apikey: CFG.key } }); providerCache = ((await r.json()) || {}).external || {}; }
-      const on = PROVIDERS.filter(([id]) => providerCache[id]);
+      const app = window.MHNative && window.MHNative.isApp, ios = app && window.MHNative.platform === 'ios';
+      // Apple sign-in is native on iPhone; on the web it isn't set up, so it's hidden there.
+      const on = PROVIDERS.filter(([id]) => providerCache[id] && (id !== 'apple' || ios)).sort((a, b) => (b[0] === 'apple') - (a[0] === 'apple'));
       if (!on.length || !$('#aSocial')) return;
       box.innerHTML = on.map(([id, label, ic]) => `<button class="social-btn sb-${id}" data-prov="${id}"><b>${ic}</b><span>${label}</span></button>`).join('') + `<div class="auth-or"><span>or use your email</span></div>`;
       box.onclick = e => {
         const b = e.target.closest('[data-prov]'); if (!b) return;
+        if (b.dataset.prov === 'apple' && window.MHNative && window.MHNative.isApp) return appleNative(b);
         const N = window.MHNative, app = N && N.isApp;
         const back = app ? N.authRedirect : location.origin + location.pathname;
         const url = `${CFG.url}/auth/v1/authorize?provider=${encodeURIComponent(b.dataset.prov)}&redirect_to=${encodeURIComponent(back)}`;
         if (app) N.openUrl(url); else location.href = url;
       };
     } catch (_) {}
+  }
+  // Sign in with Apple on iPhone: Apple gives us a signed token, Supabase swaps it for a session.
+  async function appleNative(btn) {
+    btn.disabled = true;
+    try {
+      const r = await window.MHNative.appleSignIn();
+      const s = makeSupa();
+      const sess = await s._req('/auth/v1/token?grant_type=id_token', { method: 'POST', body: JSON.stringify({ provider: 'apple', id_token: r.idToken }) }, false);
+      s._keep(sess);
+      LS.set('mh2.session', s.session);
+      const name = (r.name || '').trim(), u = sess.user || {}, isNew = u.created_at && Date.now() - new Date(u.created_at).getTime() < 3 * 60 * 1000;
+      await startApp(s, isNew && name && nameOk(name) ? name : null);
+    } catch (e) {
+      btn.disabled = false;
+      if (e && (e.code === 'CANCELLED' || /cancel/i.test(e.message || ''))) return;
+      authScreen('signin', 'Apple sign-in didn\'t finish: ' + ((e && e.message) || 'unknown error'));
+    }
   }
   // Coming back from Google/X: the session arrives in the address bar (#access_token=…).
   async function finishOAuth() {

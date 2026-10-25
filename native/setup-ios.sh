@@ -16,6 +16,14 @@ pb "Add :CFBundleURLTypes:0 dict"
 pb "Add :CFBundleURLTypes:0:CFBundleURLName string com.gggains.app"
 pb "Add :CFBundleURLTypes:0:CFBundleURLSchemes array"
 pb "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string com.gggains.app"
+pb "Delete :NSHealthShareUsageDescription"; pb "Add :NSHealthShareUsageDescription string GG Gains reads your steps, walking distance and active calories from Apple Health to show them in your diary and count them towards your step goal."
+pb "Delete :NSHealthUpdateUsageDescription"; pb "Add :NSHealthUpdateUsageDescription string GG Gains does not write to Apple Health."
+# Native features (Sign in with Apple, Apple Health)
+cp native/ios/GGNativePlugin.swift native/ios/GGViewController.swift native/ios/App.entitlements "$APP/"
+gem list -i xcodeproj >/dev/null 2>&1 || sudo gem install xcodeproj --no-document
+ruby native/ios/add-files.rb
+sed -i '' 's/customClass="CAPBridgeViewController" customModule="Capacitor"/customClass="GGViewController" customModule="App" customModuleProvider="target"/' "$APP/Base.lproj/Main.storyboard"
+grep -o 'customClass="[A-Za-z]*"[^>]*' "$APP/Base.lproj/Main.storyboard" | head -3
 # Icon and splash
 ICON=$(ls "$APP"/Assets.xcassets/AppIcon.appiconset/*.png | head -1)
 cp native/AppIcon-1024.png "$ICON"

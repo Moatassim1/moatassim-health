@@ -463,7 +463,7 @@
         <div class="water-btns"><button class="btn" data-action="water" data-ml="-250" aria-label="Remove a glass">−</button><button class="btn" data-action="water" data-ml="250">+ Glass</button><button class="btn" data-action="water" data-ml="500">+ Bottle</button></div></div>
       <div class="water-bar"><i style="width:${Math.min(100, ml / goal * 100)}%"></i></div>
       <h2 style="margin-top:18px">Exercise</h2>
-      ${gd && gd.steps != null ? (() => { const w = walkKcal(gd); return `<div class="steps-row"><span>👟 <b class="num">${fmt(gd.steps)}</b> steps <span class="faint">· ${fmt(w.km, 1)} km</span></span><span class="walk-kcal" title="Calories burned walking, on top of what your body burns at rest. Worked out from your weight and ${gd.distanceKm ? 'the distance your Garmin measured' : 'your stride length (from your height)'}."><b class="num">${fmt(w.kcal)}</b> kcal</span></div>${gd.stepGoal ? `<div class="water-bar steps-bar"><i style="width:${Math.min(100, gd.steps / gd.stepGoal * 100)}%"></i></div><div class="faint small" style="margin-top:4px">Goal ${fmt(gd.stepGoal)} steps · calories burned walking, from your weight and ${gd.distanceKm ? 'Garmin distance' : 'height'}</div>` : ''}`; })() : ''}
+      ${gd && gd.steps != null ? (() => { const w = walkKcal(gd); return `<div class="steps-row"><span>👟 <b class="num">${fmt(gd.steps)}</b> steps <span class="faint">· ${fmt(w.km, 1)} km</span></span><span class="walk-kcal" title="Calories burned walking, on top of what your body burns at rest. Worked out from your weight and ${gd.distanceKm ? 'the distance your Garmin measured' : 'your stride length (from your height)'}."><b class="num">${fmt(w.kcal)}</b> kcal</span></div>${gd.stepGoal ? `<div class="water-bar steps-bar"><i style="width:${Math.min(100, gd.steps / gd.stepGoal * 100)}%"></i></div><div class="faint small" style="margin-top:4px">Goal ${fmt(gd.stepGoal)} steps · calories burned walking, from your weight and ${gd.distanceKm ? 'Garmin distance' : 'height'}</div>` : ''}`; })() : healthOffer()}
       ${gd && (gd.activities || []).length ? `<div class="faint small" style="margin:10px 0 2px">From your Garmin</div><ul class="ex-list g-acts">${gd.activities.map(x => `<li><span>${actIcon(x.type)} <b>${esc(x.name)}</b> <span class="faint">${[x.start, x.min != null ? fmt(x.min) + ' min' : '', x.km ? fmt(x.km, x.km < 2 ? 2 : 1) + ' km' : ''].filter(Boolean).join(' · ')}</span></span><span class="num">${x.kcal != null ? fmt(x.kcal) + ' kcal' : ''}</span></li>`).join('')}</ul>` : ''}
       ${ex.length ? `<ul class="ex-list">${ex.map(x => `<li><span><b>${esc(x.name)}</b> <span class="faint">${fmt(x.min)} min</span></span><span class="num">${fmt(x.kcal)} kcal</span><button class="btn ghost j-x" data-action="ex-del" data-id="${esc(x.id)}" aria-label="Remove">✕</button></li>`).join('')}</ul><p class="small muted" style="margin:4px 0 10px">${fmt(exK)} kcal burned in workouts${gd && gd.kcalTotal != null ? ' · already part of your Garmin total, so it isn\'t added again' : ''}.</p>` : (gd && (gd.activities || []).length ? '' : '<p class="muted small" style="margin-top:0">Log a workout to keep a record of it. Workouts recorded on your Garmin show up here by themselves.</p>')}
       <div class="ex-form">
@@ -1944,6 +1944,51 @@
     if (lab) lab.textContent = `Fetching day ${p.done} of ${p.total}…`;
   });
 
+  // ---------------------------------------------------------------- Apple Health (iPhone app)
+  const HL = { on: (() => { try { return localStorage.getItem('gg.health.on') === '1'; } catch (_) { return false; } })(), busy: false, last: null, avail: null };
+  const healthCan = () => !!(window.MHNative && window.MHNative.isApp && window.MHNative.platform === 'ios');
+  function healthOffer() {
+    if (!healthCan() || HL.on || P().garmin.displayName) return '';
+    return `<button class="btn ghost sm health-offer" data-action="health-connect">👟 Show my steps from Apple Health</button>`;
+  }
+  function healthPanel() {
+    if (!healthCan()) return '';
+    return `<div class="panel health-panel"><div class="hp-row"><span class="hp-ic">❤️</span><div><b>Apple Health</b><span class="muted small">${HL.on ? `Connected · steps, walking distance and active calories${HL.last ? ' · synced ' + new Date(HL.last).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}` : 'Use the steps your iPhone or Apple Watch already counts. No extra device needed.'}</span></div></div>
+      <div class="hp-btns">${HL.on ? `<button class="btn" data-action="health-sync" ${HL.busy ? 'disabled' : ''}>${HL.busy ? 'Syncing…' : 'Sync now'}</button><button class="btn ghost" data-action="health-off">Disconnect</button>` : `<button class="btn primary" data-action="health-connect" ${HL.busy ? 'disabled' : ''}>Connect Apple Health</button>`}</div></div>`;
+  }
+  async function healthSync(days, quiet) {
+    if (!healthCan() || !HL.on || HL.busy) return;
+    HL.busy = true;
+    try {
+      const data = await window.MHNative.health.days(days || 7);
+      let changed = 0;
+      for (const [k, v] of Object.entries(data || {})) {
+        if (!v || v.steps == null) continue;
+        const d = P().garmin.days[k];
+        if (P().garmin.displayName && d && d.steps != null && d.src !== 'health') continue; // a connected Garmin wins
+        const nd = { ...(d || {}), steps: Math.round(v.steps), src: 'health' };
+        if (v.km != null) nd.distanceKm = Math.round(v.km * 100) / 100;
+        if (v.activeKcal != null) nd.activeKcal = Math.round(v.activeKcal);
+        if (!d || d.steps !== nd.steps || d.distanceKm !== nd.distanceKm) { P().garmin.days[k] = nd; changed++; }
+      }
+      HL.last = Date.now();
+      if (changed) save();
+      if (!quiet) toast(changed ? 'Steps updated from Apple Health.' : 'Apple Health is up to date.');
+    } catch (e) { if (!quiet) toast('Apple Health: ' + (e.message || 'could not read steps')); }
+    HL.busy = false; render();
+  }
+  async function healthConnect() {
+    if (!healthCan()) return;
+    HL.busy = true; render();
+    try { await window.MHNative.health.authorize(); HL.on = true; try { localStorage.setItem('gg.health.on', '1'); } catch (_) {} }
+    catch (e) { HL.busy = false; toast('Apple Health: ' + (e.message || 'not allowed')); render(); return; }
+    HL.busy = false; await healthSync(30, true);
+    toast('Apple Health connected. Your steps now show in the diary.');
+  }
+  if (healthCan()) {
+    setTimeout(() => healthSync(7, true), 1500);
+    window.MHNative.onResume(() => healthSync(2, true));
+  }
   function renderGarmin() {
     garminCheck();
     if (!G.connected) {
@@ -1961,6 +2006,7 @@
       if (!dev) {
         body = `<h2>Which device do you use?</h2>
           <p class="muted" style="margin-top:-4px">Only devices that let apps read your data are listed.</p>
+          ${healthPanel()}
           <div class="dev-grid">${DEVICES.map(d => `<button class="dev ${d.ready ? '' : 'soon'}" data-action="dev-pick" data-id="${d.id}"><b>${esc(d.name)}</b><span>${esc(d.what)}</span>${d.ready ? '' : '<em>Coming soon</em>'}</button>`).join('')}</div>`;
       } else if (dev !== 'garmin') {
         const d = DEVICES.find(x => x.id === dev);
@@ -2081,6 +2127,7 @@
         ${P().garmin.mode !== 'apikey' ? '<button class="btn" data-action="g-usekey">Switch to a Personal API key</button>' : '<button class="btn" data-action="g-usekey">Replace the API key</button>'}
         <button class="btn ghost" data-action="g-logout">Disconnect Garmin</button>
       </div>
+      ${healthCan() ? `<div style="margin-top:18px">${healthPanel()}</div>` : ''}
     </div>`;
     const gd = $('#gdate'); if (gd) gd.addEventListener('change', e => { if (e.target.value) { UI.date = e.target.value; render(); } });
   }
@@ -2108,6 +2155,9 @@
     else if (act === 'blocks-show') { await showBlocks(); }
     else if (act === 'u-unblock') { try { await social.unblock(a.dataset.id); toast('Unblocked.'); } catch (e) { toast(e.message); } await showBlocks(); }
     else if (act === 'acct-delete') { deleteAccountFlow(); }
+    else if (act === 'health-connect') { await healthConnect(); }
+    else if (act === 'health-sync') { await healthSync(30); }
+    else if (act === 'health-off') { HL.on = false; try { localStorage.removeItem('gg.health.on'); } catch (_) {} toast('Apple Health disconnected. Steps already synced stay in your diary.'); render(); }
     else if (act === 'f-view') { F.view = a.dataset.id; F.day = todayKey(); F.data = null; render(); main.scrollTop = 0; }
     else if (act === 'f-back') { F.view = null; F.data = null; render(); }
     else if (act === 'f-day') { F.day = addDays(F.day, Number(a.dataset.d)); if (F.day > todayKey()) F.day = todayKey(); F.data = null; render(); }

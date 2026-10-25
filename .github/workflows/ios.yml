@@ -116,8 +116,15 @@ jobs:
             grep -E "error:|error -|No profiles|No Account|requires a provisioning|Signing" "$RUNNER_TEMP/archive.log" | sort -u | head -15 | while IFS= read -r l; do echo "::error::${l:0:400}"; done
             tail -60 "$RUNNER_TEMP/archive.log"; exit 1
           fi
-      - name: Send to TestFlight
-        if: ${{ inputs.upload && !inputs.test_only }}
+      - name: Add entitlements to the build
+        if: ${{ !inputs.test_only }}
+        run: |
+          APPB="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
+          if [ -d "$APPB/Frameworks" ]; then find "$APPB/Frameworks" -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) -exec codesign --force --sign - --timestamp=none {} \; ; fi
+          codesign --force --sign - --entitlements ios/App/App/App.entitlements --timestamp=none "$APPB"
+          codesign -d --entitlements :- "$APPB" 2>/dev/null | grep -o 'com.apple.developer[a-z.]*' | sort -u | tr '\n' ' ' | sed 's/^/::notice::Archive entitlements: /'; echo
+      - name: Sign for the App Store and send to TestFlight
+        if: ${{ !inputs.test_only }}
         env:
           TEAM: ${{ secrets.APPLE_TEAM_ID }}
           KID: ${{ secrets.ASC_KEY_ID }}
@@ -128,7 +135,7 @@ jobs:
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict>
             <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>upload</string>
+            <key>destination</key><string>export</string>
             <key>teamID</key><string>$TEAM</string>
             <key>signingStyle</key><string>automatic</string>
             <key>uploadSymbols</key><true/>
@@ -141,8 +148,17 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey.p8 -authenticationKeyID "$KID" -authenticationKeyIssuerID "$ISS" > "$RUNNER_TEMP/export.log" 2>&1
           rc=$?; set -e
           tail -40 "$RUNNER_TEMP/export.log"
+          IPA=$(ls "$RUNNER_TEMP"/out/*.ipa 2>/dev/null | head -1 || true)
+          if [ -n "$IPA" ]; then mkdir -p "$RUNNER_TEMP/ipa" && cd "$RUNNER_TEMP/ipa" && unzip -q -o "$IPA" && codesign -d --entitlements :- Payload/App.app 2>/dev/null | grep -o 'com.apple.developer[a-z.]*' | sort -u | tr '\n' ' ' | sed 's/^/::notice::Uploaded app entitlements: /'; echo; cd - >/dev/null; fi
           if [ $rc -ne 0 ]; then grep -iE "error|fail" "$RUNNER_TEMP/export.log" | sort -u | head -15 | while IFS= read -r l; do echo "::error::${l:0:400}"; done; exit 1; fi
-          echo "Uploaded build ${{ github.run_number }} to App Store Connect. It shows in TestFlight after Apple finishes processing (5-30 min)."
+          [ -n "$IPA" ] || { echo "::error::No .ipa was produced"; exit 1; }
+          cp ~/private_keys/AuthKey.p8 ~/private_keys/AuthKey_$KID.p8
+          set +e
+          xcrun altool --upload-app --type ios --file "$IPA" --apiKey "$KID" --apiIssuer "$ISS" > "$RUNNER_TEMP/upload.log" 2>&1; urc=$?
+          set -e
+          tail -20 "$RUNNER_TEMP/upload.log"
+          if [ $urc -ne 0 ]; then grep -iE "error|fail" "$RUNNER_TEMP/upload.log" | sort -u | head -10 | while IFS= read -r l; do echo "::error::${l:0:400}"; done; exit 1; fi
+          echo "::notice::Uploaded build ${{ github.run_number }} to App Store Connect."
       - name: Clean up key
         if: always()
         run: rm -rf ~/private_keys

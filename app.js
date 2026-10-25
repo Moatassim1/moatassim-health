@@ -2692,7 +2692,7 @@
       rival = `<div class="rival">⚔️ This week's rival: <b>${esc(rv.name)}</b> · ${gap > 0 ? `${fmt(gap)} CP ahead of you` : gap < 0 ? `${fmt(-gap)} CP behind you` : 'level with you'}</div>`;
     }
     const sub = tab === 'week' ? `Consistency points (CP) this week. Resets every Monday. Earn CP for logging, hitting calories and protein, steps, training, water, weigh-ins, your progress photo and quests.` :
-      tab === 'season' ? `Season ${c.season} runs ${esc(shortDate(c.seasonStart))} to ${esc(shortDate(c.seasonEnd))}. Your final season tier is kept as a badge.` :
+      tab === 'season' ? `Consistency points in Season ${c.season} (the whole of ${c.season}). A new season starts every 1 January.` :
       'How far each person has got from their start weight to their goal (7-day average weight).';
     const leader = Math.max(1, ...list.map(r => val(r) || 0));
     return `<div class="panel">${head}<p class="muted small" style="margin:6px 0 10px">${sub}</p>${rival}

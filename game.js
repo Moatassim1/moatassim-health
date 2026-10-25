@@ -5,8 +5,7 @@
   'use strict';
 
   // ---------------------------------------------------------------- constants
-  const SEASON_EPOCH = '2026-10-19';          // Monday: Season 1 starts here
-  const SEASON_WEEKS = 8;
+  // A season is a calendar year: Season 2026, Season 2027, …
   const TIERS = [
     { id: 'bronze', name: 'Bronze', min: 0, color: '#B4723C' },
     { id: 'silver', name: 'Silver', min: 300, color: '#9AA4AE' },
@@ -130,8 +129,8 @@
   function hash(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   function rng(seed) { let s = hash(seed) || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
   const weekId = k => mondayOf(k);
-  const seasonOf = k => Math.max(1, Math.floor(diffDays(SEASON_EPOCH, mondayOf(k)) / (SEASON_WEEKS * 7)) + 1);
-  const seasonStart = n => addD(SEASON_EPOCH, (n - 1) * SEASON_WEEKS * 7);
+  const seasonOf = k => Number(k.slice(0, 4));
+  const seasonStart = n => `${n}-01-01`;
   const tierFor = rating => { let t = TIERS[0]; for (const x of TIERS) if (rating >= x.min) t = x; return t; };
   const nextTier = t => TIERS[TIERS.indexOf(t) + 1] || null;
   // XP needed to go from level n to n+1, and level from total XP (level 1..100).
@@ -225,8 +224,9 @@
       const lastWeekPts = sum(lastWk, addD(wk, -1)) + weekBonus(lastWk, days);
       const season = seasonOf(today), sStart = seasonStart(season);
       let seasonPts = sum(sStart > start ? sStart : start, today);
-      for (let w = sStart; w < wk; w = addD(w, 7)) seasonPts += weekBonus(w, days);
-      seasonPts += weekBonus(wk, days);
+      // weekly weight bonuses count for the season the week starts in
+      const firstMon = mondayOf(sStart) === sStart ? sStart : addD(mondayOf(sStart), 7);
+      for (let w = firstMon; w <= wk; w = addD(w, 7)) seasonPts += weekBonus(w, days);
       const rating = sum(addD(today, -(RATING_DAYS - 1)), today);
       const tier = tierFor(rating);
       // XP never drops: all CP ever + weekly quest, event and friend bonuses
@@ -255,7 +255,7 @@
       const earned = new Set(g.titlesEarned || []), fresh = [];
       for (const t of TITLES) if (!earned.has(t.id) && (st[t.stat] || 0) >= t.need) { earned.add(t.id); fresh.push(t); }
       if (fresh.length) { g.titlesEarned = [...earned]; ctx.save(); }
-      const out = { today, days, todayS, weekPts, lastWeekPts, wk, season, seasonStart: sStart, seasonEnd: addD(seasonStart(season + 1), -1), seasonPts, rating, tier, next: nextTier(tier),
+      const out = { today, days, todayS, weekPts, lastWeekPts, wk, season, seasonStart: sStart, seasonEnd: `${season}-12-31`, seasonPts, rating, tier, next: nextTier(tier),
         xp, ...lv, logStreak: curLog, protStreak: curProt, freezes: Math.max(0, (g.freezesEarned || 0) - used.size),
         onFire: [0, 1, 2].every(i => { const x = days[addD(today, -i - (todayS && todayS.d.full ? 0 : 1))]; return x && x.pts >= 65; }),
         weekly: weeklyQuest(wk, days), events: eventsFor(today, days), comebackActive: todayS && todayS.mult === 2, stats: st, titlesEarned: earned, newTitles: fresh };

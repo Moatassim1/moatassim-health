@@ -1,6 +1,7 @@
 #!/bin/bash
 # Applies GG Gains settings to the generated iOS project (runs on the Mac build machine).
 set -euo pipefail
+trap 'echo "::error::setup-ios.sh line $LINENO failed: $BASH_COMMAND"' ERR
 APP=ios/App/App
 PL="$APP/Info.plist"
 pb() { /usr/libexec/PlistBuddy -c "$1" "$PL" 2>/dev/null || true; }
@@ -21,9 +22,9 @@ pb "Delete :NSHealthUpdateUsageDescription"; pb "Add :NSHealthUpdateUsageDescrip
 # Native features (Sign in with Apple, Apple Health)
 cp native/ios/GGNativePlugin.swift native/ios/GGViewController.swift native/ios/App.entitlements "$APP/"
 gem list -i xcodeproj >/dev/null 2>&1 || sudo gem install xcodeproj --no-document
-ruby native/ios/add-files.rb
+ruby native/ios/add-files.rb 2>&1 | tail -5 | sed 's/^/::notice::ruby: /'
 sed -i '' 's/customClass="CAPBridgeViewController" customModule="Capacitor"/customClass="GGViewController" customModule="App" customModuleProvider="target"/' "$APP/Base.lproj/Main.storyboard"
-grep -o 'customClass="[A-Za-z]*"[^>]*' "$APP/Base.lproj/Main.storyboard" | head -3
+echo "::notice::Storyboard: $(grep -o 'customClass="[A-Za-z]*"' "$APP/Base.lproj/Main.storyboard" | head -3 | tr '\n' ' ')"
 # Icon and splash
 ICON=$(ls "$APP"/Assets.xcassets/AppIcon.appiconset/*.png | head -1)
 cp native/AppIcon-1024.png "$ICON"

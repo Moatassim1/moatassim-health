@@ -34,45 +34,118 @@
   const loadImg = url => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
 
   // Camera with a see-through "ghost" of the last photo, so every photo lines up.
+  // Shows the whole camera frame (no crop/zoom), lets you flip, set a timer, zoom out on phones with a wide lens,
+  // review the shot (Retake / Use photo), and close with X, Cancel or the phone's back gesture.
+  const IC = {
+    x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    flip: '<svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><path d="M9.5 13.5a2.8 2.8 0 0 1 5-1.6M14.5 12.2V10M14.6 14a2.8 2.8 0 0 1-5 1.6M9.5 15.8V18"/></svg>',
+    up: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 16l5-5 4 4 2-2 5 5"/><circle cx="15.5" cy="8.5" r="1.5"/></svg>',
+    timer: '<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>'
+  };
   function capture({ ghost } = {}) {
     return new Promise(resolve => {
-      let stream = null, facing = 'user', timer = 0, done = false;
+      let stream = null, facing = 'user', timer = 0, done = false, cams = [], busy = false, shot = null, countdown = null;
       const box = document.createElement('div'); box.className = 'pcam';
-      box.innerHTML = `<video playsinline muted autoplay></video>${ghost ? `<img class="pcam-ghost" src="${ghost}" alt="">` : ''}
-        <div class="pcam-top"><button data-p="close">Cancel</button><span>Progress photo</span><button data-p="flip">Flip</button></div>
+      box.innerHTML = `<div class="pcam-stage"><video playsinline muted autoplay></video>${ghost ? `<img class="pcam-ghost" src="${ghost}" alt="">` : ''}<img class="pcam-review" alt="" hidden></div>
+        <div class="pcam-top"><button class="pcam-ic" data-p="close" aria-label="Close">${IC.x}</button><span class="pcam-title">Progress photo</span><button class="pcam-ic" data-p="timer" aria-label="Timer">${IC.timer}<small>Off</small></button></div>
         <div class="pcam-count" hidden></div>
-        <div class="pcam-bottom">${ghost ? '<label class="pcam-gh"><input type="checkbox" checked data-p="ghost"> Line up with last photo</label>' : ''}
-          <div class="pcam-row"><button data-p="timer" class="pcam-t">⏱ Off</button><button data-p="shoot" class="pcam-shoot" aria-label="Take photo"></button><label class="pcam-t">Upload<input type="file" accept="image/*" hidden data-p="file"></label></div></div>`;
+        <div class="pcam-bottom">
+          <div class="pcam-chips">${ghost ? '<button class="pcam-chip on" data-p="ghost">Line up with last photo</button>' : ''}<span class="pcam-zoom" hidden></span></div>
+          <div class="pcam-row pcam-live"><label class="pcam-ic big" aria-label="Upload a photo">${IC.up}<input type="file" accept="image/*" hidden data-p="file"></label><button data-p="shoot" class="pcam-shoot" aria-label="Take photo"><i></i></button><button class="pcam-ic big" data-p="flip" aria-label="Switch camera">${IC.flip}</button></div>
+          <div class="pcam-row pcam-done" hidden><button class="pcam-txt" data-p="retake">Retake</button><button class="pcam-use" data-p="use">Use photo</button></div>
+          <button class="pcam-cancel pcam-live" data-p="close">Cancel</button>
+        </div>`;
       document.body.appendChild(box);
-      const video = box.querySelector('video');
-      const stop = () => { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; };
-      const finish = b => { if (done) return; done = true; stop(); box.remove(); resolve(b); };
+      document.documentElement.classList.add('pcam-open');
+      const video = box.querySelector('video'), review = box.querySelector('.pcam-review'), zoomBox = box.querySelector('.pcam-zoom');
+      const title = t => { box.querySelector('.pcam-title').textContent = t; };
+      const stop = () => { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; video.srcObject = null; };
+      const onPop = () => finish(null, true);
+      try { history.pushState({ pcam: 1 }, ''); window.addEventListener('popstate', onPop); } catch (_) {}
+      const finish = (b, fromBack) => {
+        if (done) return; done = true; stop(); clearInterval(countdown);
+        window.removeEventListener('popstate', onPop);
+        if (!fromBack) { try { if (history.state && history.state.pcam) history.back(); } catch (_) {} }
+        document.documentElement.classList.remove('pcam-open');
+        if (review.src) URL.revokeObjectURL(review.src);
+        box.remove(); resolve(b);
+      };
+      async function open(face) {
+        const base = { width: { ideal: 1280 }, height: { ideal: 960 } };
+        const tries = [];
+        const dev = cams.find(c => face === 'user' ? /front|user|facetime/i.test(c.label) : /back|rear|environment/i.test(c.label));
+        tries.push({ ...base, facingMode: { exact: face } });
+        if (dev) tries.push({ ...base, deviceId: { exact: dev.deviceId } });
+        tries.push({ ...base, facingMode: face });
+        tries.push(true);
+        for (const v of tries) { try { return await navigator.mediaDevices.getUserMedia({ audio: false, video: v }); } catch (_) {} }
+        throw new Error('no camera');
+      }
+      const setupZoom = () => {
+        zoomBox.hidden = true; zoomBox.innerHTML = '';
+        const tr = stream && stream.getVideoTracks()[0]; if (!tr || !tr.getCapabilities) return;
+        const cap = tr.getCapabilities(); if (!cap.zoom || cap.zoom.max <= cap.zoom.min) return;
+        const opts = [...new Set([cap.zoom.min, 1, 2].filter(z => z >= cap.zoom.min && z <= cap.zoom.max))];
+        if (opts.length < 2) return;
+        const cur = (tr.getSettings && tr.getSettings().zoom) || 1;
+        zoomBox.innerHTML = opts.map(z => `<button data-p="zoom" data-z="${z}" class="${Math.abs(z - cur) < .01 ? 'on' : ''}">${z < 1 ? '.' + String(Math.round(z * 10)) : z}×</button>`).join('');
+        zoomBox.hidden = false;
+      };
       const start = async () => {
+        if (busy) return; busy = true;
         stop();
-        try { stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: facing, width: { ideal: 1440 }, height: { ideal: 1920 } } }); video.srcObject = stream; video.classList.toggle('mirror', facing === 'user'); await video.play().catch(() => {}); }
-        catch (_) { box.querySelector('.pcam-top span').textContent = 'Camera unavailable: use Upload'; }
+        try {
+          stream = await open(facing);
+          video.srcObject = stream;
+          const tr = stream.getVideoTracks()[0], st = tr.getSettings ? tr.getSettings() : {};
+          if (st.facingMode) facing = st.facingMode === 'environment' ? 'environment' : 'user';
+          video.classList.toggle('mirror', facing === 'user');
+          await video.play().catch(() => {});
+          if (!cams.length && navigator.mediaDevices.enumerateDevices) { try { cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (_) {} }
+          box.querySelector('[data-p="flip"]').hidden = cams.length === 1;
+          setupZoom(); title('Progress photo');
+        } catch (_) { title('Camera unavailable: upload a photo'); }
+        busy = false;
+      };
+      const showReview = blob => {
+        shot = blob; review.src = URL.createObjectURL(blob); review.hidden = false; video.hidden = true;
+        const g = box.querySelector('.pcam-ghost'); if (g) g.style.visibility = 'hidden';
+        box.querySelectorAll('.pcam-live').forEach(e => e.hidden = true); box.querySelector('.pcam-done').hidden = false;
+        box.querySelector('.pcam-chips').hidden = true; box.querySelector('[data-p="timer"]').hidden = true; title('Looking good?');
+      };
+      const backToLive = () => {
+        if (review.src) URL.revokeObjectURL(review.src); review.removeAttribute('src'); review.hidden = true; video.hidden = false; shot = null;
+        const g = box.querySelector('.pcam-ghost'); if (g) g.style.visibility = '';
+        box.querySelectorAll('.pcam-live').forEach(e => e.hidden = false); box.querySelector('.pcam-done').hidden = true;
+        box.querySelector('.pcam-chips').hidden = false; box.querySelector('[data-p="timer"]').hidden = false; title('Progress photo');
+        box.querySelector('[data-p="flip"]').hidden = cams.length === 1;
       };
       const shoot = () => {
         if (!video.videoWidth) return;
         const c = document.createElement('canvas'); c.width = video.videoWidth; c.height = video.videoHeight;
         const x = c.getContext('2d'); if (facing === 'user') { x.translate(c.width, 0); x.scale(-1, 1); }
-        x.drawImage(video, 0, 0); c.toBlob(async b => finish(await shrink(b)), 'image/jpeg', 0.9);
+        x.drawImage(video, 0, 0); box.classList.add('flash'); setTimeout(() => box.classList.remove('flash'), 180);
+        c.toBlob(async b => showReview(await shrink(b)), 'image/jpeg', 0.9);
       };
-      box.addEventListener('click', e => {
-        const b = e.target.closest('[data-p]'); if (!b) return;
+      box.addEventListener('click', async e => {
+        const b = e.target.closest('[data-p]'); if (!b || b.tagName === 'INPUT') return;
         const a = b.dataset.p;
         if (a === 'close') finish(null);
-        if (a === 'flip') { facing = facing === 'user' ? 'environment' : 'user'; start(); }
-        if (a === 'timer') { timer = timer === 0 ? 3 : timer === 3 ? 10 : 0; b.textContent = '⏱ ' + (timer ? timer + 's' : 'Off'); }
+        if (a === 'flip') { facing = facing === 'user' ? 'environment' : 'user'; b.classList.add('spin'); setTimeout(() => b.classList.remove('spin'), 400); await start(); }
+        if (a === 'timer') { timer = timer === 0 ? 3 : timer === 3 ? 10 : 0; b.querySelector('small').textContent = timer ? timer + 's' : 'Off'; b.classList.toggle('on', !!timer); }
+        if (a === 'ghost') { b.classList.toggle('on'); const g = box.querySelector('.pcam-ghost'); if (g) g.hidden = !b.classList.contains('on'); }
+        if (a === 'zoom') { const tr = stream && stream.getVideoTracks()[0]; if (tr) { try { await tr.applyConstraints({ advanced: [{ zoom: Number(b.dataset.z) }] }); zoomBox.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); } catch (_) {} } }
+        if (a === 'retake') backToLive();
+        if (a === 'use' && shot) finish(shot);
         if (a === 'shoot') {
+          if (countdown) return;
           if (!timer) return shoot();
           let n = timer; const cd = box.querySelector('.pcam-count'); cd.hidden = false; cd.textContent = n;
-          const iv = setInterval(() => { n--; if (n <= 0) { clearInterval(iv); cd.hidden = true; shoot(); } else cd.textContent = n; }, 1000);
+          countdown = setInterval(() => { n--; if (n <= 0) { clearInterval(countdown); countdown = null; cd.hidden = true; shoot(); } else cd.textContent = n; }, 1000);
         }
       });
       box.addEventListener('change', async e => {
-        if (e.target.dataset.p === 'ghost') { const g = box.querySelector('.pcam-ghost'); if (g) g.hidden = !e.target.checked; }
-        if (e.target.dataset.p === 'file' && e.target.files[0]) finish(await shrink(e.target.files[0]));
+        if (e.target.dataset.p === 'file' && e.target.files[0]) showReview(await shrink(e.target.files[0]));
       });
       start();
     });

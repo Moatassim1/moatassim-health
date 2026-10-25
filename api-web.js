@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.33';
+  const APP_VERSION = '2.0.34';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -541,21 +541,34 @@
   function authScreen(mode, err, info) {
     const box = $('#auth');
     box.hidden = false;
+    const prevEmail = ($('#aEmail') || {}).value || '', prevName = ($('#aName') || {}).value || '';
     const signup = mode === 'signup';
     if (!info && !err && /[?&]deleted=1/.test(location.search)) info = 'Your account and all its data were deleted.';
-    box.innerHTML = `<div class="auth-card">
-      <img class="auth-logo" src="icons/icon-180.png" alt="">
-      <h1>GG Gains</h1>
-      <p class="muted">${signup ? 'Create your account. Pick the name your friends will see.' : 'Sign in to your account.'}</p>
-      ${signup ? '<label class="field"><span>Your name</span><input type="text" id="aName" autocomplete="nickname" maxlength="40"></label>' : ''}
-      <label class="field"><span>Email</span><input type="email" id="aEmail" autocomplete="username" autocapitalize="off"></label>
-      <label class="field"><span>Password${signup ? ' (at least 8 characters)' : ''}</span><input type="password" id="aPass" autocomplete="${signup ? 'new-password' : 'current-password'}"></label>
-      <button class="btn primary" id="aGo">${signup ? 'Create account' : 'Sign in'}</button>
-      <div id="aSocial" class="auth-social"></div>
-      ${err ? `<div class="err">${esc(err)}</div>` : ''}${info ? `<div class="note">${esc(info)}</div>` : ''}
-      <p class="small" style="margin-top:18px">${signup ? 'Already have an account? <a href="#" id="aSwap">Sign in</a>' : 'New here? <a href="#" id="aSwap">Create an account</a>'}</p>
-      ${!signup ? '<p class="small"><a href="#" id="aForgot">Forgot password?</a></p>' : ''}
+    box.innerHTML = `<div class="au">
+      <section class="au-hero">
+        <div class="au-glow"></div>
+        <img class="au-logo" src="icons/icon-512.png" alt="GG Gains">
+        <h1 class="au-brand">GG <span>Gains</span></h1>
+        <blockquote class="au-quote"><p>Consistency isn’t measured in days or weeks.<br><b>It’s measured in years.</b></p></blockquote>
+        <ul class="au-perks"><li><i>🔥</i>Streaks</li><li><i>🏆</i>Ranked</li><li><i>📸</i>Transformations</li></ul>
+      </section>
+      <section class="au-card">
+        <div class="au-seg" role="tablist"><button class="${signup ? '' : 'on'}" data-mode="signin" role="tab">Sign in</button><button class="${signup ? 'on' : ''}" data-mode="signup" role="tab">Create account</button></div>
+        <h2 class="au-h">${signup ? 'Start your climb' : 'Welcome back'}</h2>
+        <p class="au-sub">${signup ? 'Pick the name your friends will see on the ladder.' : 'Sign in to pick up where you left off.'}</p>
+        ${err ? `<div class="au-msg err">${esc(err)}</div>` : ''}${info ? `<div class="au-msg note">${esc(info)}</div>` : ''}
+        <div id="aSocial" class="auth-social"></div>
+        ${signup ? '<label class="au-field"><span>Your name</span><input type="text" id="aName" autocomplete="nickname" maxlength="40" placeholder="e.g. Sara"></label>' : ''}
+        <label class="au-field"><span>Email</span><input type="email" id="aEmail" autocomplete="username" autocapitalize="off" placeholder="you@example.com"></label>
+        <label class="au-field"><span>Password${signup ? ' <em>· at least 8 characters</em>' : ''}</span><input type="password" id="aPass" autocomplete="${signup ? 'new-password' : 'current-password'}" placeholder="${signup ? 'Create a password' : 'Your password'}"></label>
+        ${!signup ? '<a href="#" id="aForgot" class="au-forgot">Forgot password?</a>' : ''}
+        <button class="au-go" id="aGo">${signup ? 'Create account' : 'Sign in'}</button>
+        <p class="au-swap">${signup ? 'Already have an account? <a href="#" id="aSwap">Sign in</a>' : 'New to GG Gains? <a href="#" id="aSwap">Create an account</a>'}</p>
+        <p class="au-legal">By continuing you agree to our <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+      </section>
     </div>`;
+    if (prevEmail) $('#aEmail').value = prevEmail; if (prevName && $('#aName')) $('#aName').value = prevName;
+    box.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { if (b.dataset.mode !== mode) authScreen(b.dataset.mode); });
     $('#aSwap').onclick = e => { e.preventDefault(); authScreen(signup ? 'signin' : 'signup'); };
     socialButtons();
     const forgot = $('#aForgot');
@@ -680,7 +693,11 @@
 
   // ---------------------------------------------------------------- sign in with Google / X / Apple / Facebook
   // Buttons only show for the providers switched on in Supabase (Authentication › Providers).
-  const PROVIDERS = [['google', 'Continue with Google', 'G'], ['apple', 'Continue with Apple', ''], ['x', 'Continue with X', '𝕏'], ['twitter', 'Continue with X (Twitter)', '𝕏'], ['facebook', 'Continue with Facebook', 'f']];
+  const GLOGO = '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 7l7.5 5.8c4.4-4 6.8-10 6.8-17.3z"/><path fill="#FBBC05" d="M10.5 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.9 2.3-8.4 2.3-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>';
+  const XLOGO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.9 2H22l-6.8 7.8L23 22h-6.2l-4.8-6.3L6.4 22H3.3l7.3-8.3L1 2h6.3l4.4 5.8L18.9 2zm-1.1 18h1.7L6.3 3.9H4.5L17.8 20z"/></svg>';
+  const FLOGO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.7 4.5-4.7 1.3 0 2.7.2 2.7.2v3h-1.5c-1.5 0-2 .9-2 1.9V12h3.4l-.5 3.5h-2.9v8.4A12 12 0 0 0 24 12z"/></svg>';
+  const ALOGO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9 0 0-2.7-1-2.7-4.1zM13.9 5c.7-.9 1.2-2 1.1-3.2-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.1 1.1.1 2.3-.6 3-1.5z"/></svg>';
+  const PROVIDERS = [['google', 'Continue with Google', GLOGO], ['apple', 'Continue with Apple', ALOGO], ['x', 'Continue with X', XLOGO], ['twitter', 'Continue with X', XLOGO], ['facebook', 'Continue with Facebook', FLOGO]];
   let providerCache = null;
   async function socialButtons() {
     const box = $('#aSocial'); if (!box || window.desktop) return; // Google blocks sign-in inside desktop app windows
@@ -688,7 +705,7 @@
       if (!providerCache) { const r = await fetch(CFG.url + '/auth/v1/settings', { headers: { apikey: CFG.key } }); providerCache = ((await r.json()) || {}).external || {}; }
       const on = PROVIDERS.filter(([id]) => providerCache[id]);
       if (!on.length || !$('#aSocial')) return;
-      box.innerHTML = `<div class="auth-or"><span>or</span></div>` + on.map(([id, label, ic]) => `<button class="btn social-btn sb-${id}" data-prov="${id}"><b>${ic}</b>${label}</button>`).join('');
+      box.innerHTML = on.map(([id, label, ic]) => `<button class="social-btn sb-${id}" data-prov="${id}"><b>${ic}</b><span>${label}</span></button>`).join('') + `<div class="auth-or"><span>or use your email</span></div>`;
       box.onclick = e => {
         const b = e.target.closest('[data-prov]'); if (!b) return;
         const back = location.origin + location.pathname;

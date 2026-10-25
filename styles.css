@@ -1055,7 +1055,6 @@ html.pcam-open, html.pcam-open body { overflow: hidden; }
 .ph-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .ph-btns .btn { flex: 1 1 auto; justify-content: center; cursor: pointer; }
 .photo-card .ph-btns { justify-content: flex-start; }
-.cp-ic { display: inline-block; width: 1.55em; height: 1.55em; vertical-align: -0.42em; margin: 0 .15em 0 .05em; background: url(icons/cp-light.png) center / contain no-repeat; font-style: normal; }
-:root[data-theme="dark"] .cp-ic, .au .cp-ic { background-image: url(icons/cp-dark.png); }
+.cp-ic { display: inline-block; width: 1.55em; height: 1.55em; vertical-align: -0.42em; margin: 0 .15em 0 .05em; background: url(icons/cp.png) center / contain no-repeat; font-style: normal; }
 .gg-score span .cp-ic { width: 1.8em; height: 1.8em; vertical-align: -0.6em; }
 .res-list b .cp-ic, .rk-pts .cp-ic { margin: 0 0 0 .2em; }

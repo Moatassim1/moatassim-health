@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Mabrouka Tracker: food search relay (runs on Supabase as the "foods" function).
+// GG Gains: food search relay (runs on Supabase as the "foods" function).
 // Open Food Facts doesn't let browsers on other sites call its search, so the app asks
 // this function. Answers are kept for a day in public.food_cache and shared by everyone,
 // which keeps the app well inside Open Food Facts' limit of ~10 searches a minute.
@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
 
     let r, text;
     try {
-      r = await fetch(url, { headers: { 'User-Agent': 'MabroukaTracker/2.0 (moatassime1310@gmail.com)', Accept: 'application/json' }, signal: AbortSignal.timeout(25000) });
+      r = await fetch(url, { headers: { 'User-Agent': 'GGGains/2.0 (moatassime1310@gmail.com)', Accept: 'application/json' }, signal: AbortSignal.timeout(25000) });
       text = await r.text();
     } catch (e) {
       if (hit) return raw(hit.body); // older answer is better than none

@@ -1545,25 +1545,22 @@
     const pr = P().profile;
     const needGoal = !pr.goalStart || (pr.goal !== 'maintain' && pr.goalWeightKg == null);
     main.innerHTML = `<div class="page">
-      <div class="page-head"><div><h1>Ranked</h1><p class="sub">Your friend ID is <b class="code-pill" title="Tap to copy" data-action="copy-code">${esc(code)}</b>. Share it so friends can add you.</p></div></div>
+      <div class="page-head"><div><h1>Ranked</h1><p class="sub">${ME().username ? `You're <b>@${esc(ME().username)}</b> ${flagOf(ME().country)}. Friends can find you by searching it.` : '<button class="link-btn" data-action="u-change">Choose your username</button> so friends can find you.'}</p></div><button class="btn icon search-btn" data-action="u-find" aria-label="Find friends">🔍</button></div>
       ${needGoal ? `<div class="nudge"><span><b>Set your goal to join the ranking.</b> Choose lose, gain or maintain and a goal weight in Settings. Your points start from your weight on that day.</span><button class="btn primary" data-action="go-settings">Set goal</button></div>` : ''}
       <div class="grid-2">
         ${ggLadderPanel()}
         <div class="stack">
-          <div class="panel">
-            <h2>Add a friend</h2>
-            <div class="row-inline"><input type="text" id="fCode" placeholder="Their friend ID, e.g. MH-7K3Q9P" value="${esc(F.code)}" autocapitalize="characters" spellcheck="false"><button class="btn primary" data-action="f-add" ${F.busy ? 'disabled' : ''}>${F.busy ? 'Adding…' : 'Add'}</button></div>
-            ${F.msg ? `<p class="small ${F.msgErr ? 'err' : 'muted'}">${esc(F.msg)}</p>` : ''}
-          </div>
-          ${incoming.length ? `<div class="panel"><h2>Friend requests</h2>${incoming.map(f => `<div class="frow"><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)}</span><button class="btn primary" data-action="f-accept" data-id="${esc(f.id)}">Accept</button><button class="btn ghost" data-action="f-remove" data-id="${esc(f.id)}">Decline</button></div>`).join('')}</div>` : ''}
-          ${outgoing.length ? `<div class="panel"><h2>Waiting for them to accept</h2>${outgoing.map(f => `<div class="frow"><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)}</span><button class="btn ghost" data-action="f-remove" data-id="${esc(f.id)}">Cancel</button></div>`).join('')}</div>` : ''}
+          ${searchPanel()}
+          ${incoming.length ? `<div class="panel"><h2>Friend requests</h2>${incoming.map(f => `<div class="frow"><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)} ${flagOf(f.profile.country)}${f.profile.username ? `<small class="faint">@${esc(f.profile.username)}</small>` : ''}</span><button class="btn primary" data-action="f-accept" data-id="${esc(f.id)}">Accept</button><button class="btn ghost" data-action="f-remove" data-id="${esc(f.id)}">Decline</button></div>`).join('')}</div>` : ''}
+          ${outgoing.length ? `<div class="panel"><h2>Waiting for them to accept</h2>${outgoing.map(f => `<div class="frow"><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)} ${flagOf(f.profile.country)}${f.profile.username ? `<small class="faint">@${esc(f.profile.username)}</small>` : ''}</span><button class="btn ghost" data-action="f-remove" data-id="${esc(f.id)}">Cancel</button></div>`).join('')}</div>` : ''}
           ${friends.length ? `<div class="panel"><h2>Your friends</h2><p class="muted small" style="margin-top:-6px">Friends can see your ranking points, what you eat each day and your weight history, and get told in the app when you log food. To stop sharing with someone, remove them as a friend.</p>
-            ${friends.map(f => `<div class="frow"><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)}</span><button class="btn" data-action="f-view" data-id="${esc(f.id)}">View</button></div>`).join('')}</div>` : ''}
+            ${friends.map(f => `<div class="frow"><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)} ${flagOf(f.profile.country)}${f.profile.username ? `<small class="faint">@${esc(f.profile.username)}</small>` : ''}</span><button class="btn" data-action="f-view" data-id="${esc(f.id)}">View</button></div>`).join('')}</div>` : ''}
           ${F.err ? `<div class="panel flat"><span class="err">${esc(F.err)}</span></div>` : ''}
         </div>
       </div>
     </div>`;
-    const fc = $('#fCode'); if (fc) { fc.addEventListener('input', () => { F.code = fc.value; }); fc.addEventListener('keydown', e => { if (e.key === 'Enter') $('[data-action="f-add"]').click(); }); }
+    wireSearch();
+    const cs = $('#ctySel'); if (cs) cs.addEventListener('change', async () => { try { await social.setCountry(cs.value); toast(cs.value ? `Flag set to ${window.MHCountries.flag(cs.value)} ${window.MHCountries.nameOf(cs.value)}.` : 'Flag removed.'); render(); } catch (e) { toast('Could not save: ' + e.message); } });
   }
 
   async function loadFriendData(f, day) {
@@ -1602,7 +1599,7 @@
     const meals = MEALS.map(m => { const list = (d.entries || []).filter(e => e.meal === m); return list.length ? `<div class="cmp-meal"><b>${m}</b> <span class="faint num">${fmt(totalsOf(list).kcal)} kcal</span><ul>${list.map(e => `<li><span>${esc(e.name)}</span><span class="faint num">${esc(entryAmount(e))} · ${fmt(e.n.kcal * e.grams / 100)}</span></li>`).join('')}</ul></div>` : ''; }).join('');
     const g = d.garmin;
     main.innerHTML = `<div class="page">
-      <div class="page-head"><div><button class="btn primary back-friends" data-action="f-back">‹ Back to Friends</button><h1 style="display:flex;align-items:center;gap:10px"><span class="avatar big" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span>${esc(f.profile.name)}</h1>
+      <div class="page-head"><div><button class="btn primary back-friends" data-action="f-back">‹ Back to Friends</button><h1 style="display:flex;align-items:center;gap:10px">${(() => { let st = {}; try { st = JSON.parse(f.profile.game || '{}'); } catch (_) {} return avatarHtml({ name: f.profile.name, color: f.profile.color, avatar: f.profile.avatar, tier: st.t || null }, 'big'); })()}<span>${esc(f.profile.name)} ${flagOf(f.profile.country)}${f.profile.username ? `<small class="faint" style="display:block;font-size:14px;font-weight:600">@${esc(f.profile.username)}</small>` : ''}</span></h1>
         <p class="sub">${goalText(f.profile.goal)} · ${pointsText(f.profile.points)} of the way to goal${f.profile.points_updated ? ' · updated ' + esc(new Date(f.profile.points_updated).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })) : ''}</p></div>
         ${true ? `<div class="datebar"><button class="btn icon" data-action="f-day" data-d="-1" aria-label="Previous day">‹</button><span class="num" style="min-width:110px;text-align:center">${F.day === todayKey() ? 'Today' : esc(shortDate(F.day))}</span><button class="btn icon" data-action="f-day" data-d="1" ${F.day >= todayKey() ? 'disabled' : ''} aria-label="Next day">›</button></div>` : ''}
       </div>
@@ -2071,6 +2068,15 @@
   }
 
   async function handleViewAction(act, a) {
+    if (act === 'u-find') { const p = $('#findPanel'); if (p) { p.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => { const i = $('#uSearch'); if (i) i.focus(); }, 300); } return; }
+    if (act === 'u-change') { usernameGate(true); return; }
+    if (act === 'u-add') {
+      a.disabled = true; a.textContent = 'Sending…';
+      try { const r = await social.addFriend(a.dataset.code); if (r && r.ok === false) throw new Error(r.error || 'Could not add'); SR.sent.add(a.dataset.id); toast(r && r.status === 'accepted' ? 'You\'re now friends!' : 'Friend request sent.'); loadFriends(true); }
+      catch (er) { toast('Could not add: ' + er.message); }
+      const box = $('#uResults'); if (box) box.innerHTML = searchResults(id => SR.sent.has(id) ? 'sent' : '');
+      return;
+    }
     if (act === 'f-add') {
       const code = ($('#fCode').value || '').trim();
       if (!code) { F.msg = 'Type their friend ID first.'; F.msgErr = true; return render(); }
@@ -2548,6 +2554,81 @@
   }
   if (window.MHPhotos) window.MHPhotos.days().then(s => { PHOTO_DAYS = s; game().invalidate(); if (UI.view === 'today' && modal.hidden) softRender(render); }).catch(() => {});
 
+
+  // ---------------------------------------------------------------- usernames, search and country flags
+  const ME = () => window.MH_ME || {};
+  const flagOf = c => window.MHCountries && c ? `<span class="flag" title="${esc(window.MHCountries.nameOf(c))}">${window.MHCountries.flag(c)}</span>` : '';
+  const USERNAME_RE = /^[a-z0-9_.]{3,20}$/;
+  function suggestUsername() { return (P().name || 'gamer').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9_.]+/g, '').slice(0, 16) || 'gamer'; }
+  // Everyone needs a unique username: shown once, right after signing in.
+  function usernameGate(force) {
+    const me = ME(); if (!me.id || (me.username && !force)) return;
+    let checkT = null, ok = false;
+    card.className = 'modal-card narrow';
+    card.innerHTML = `<div class="modal-head"><h2>${me.username ? 'Change your username' : 'Choose your username'}</h2>${me.username ? '<button class="btn ghost" data-u="close">Close</button>' : ''}</div>
+      <div class="modal-body"><p class="muted" style="margin-top:0">Friends find you by searching your username. It has to be unique: 3–20 letters, numbers, dots or underscores.</p>
+        <div class="un-in"><span>@</span><input id="unIn" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="20" value="${esc(me.username || suggestUsername())}"></div>
+        <p class="small" id="unMsg">&nbsp;</p>
+        <button class="btn primary" data-u="save" disabled>Save username</button></div>`;
+    modal.hidden = false;
+    const inp = $('#unIn'), msg = $('#unMsg'), btn = card.querySelector('[data-u="save"]');
+    const check = async () => {
+      const v = inp.value.trim().toLowerCase(); ok = false; btn.disabled = true;
+      if (v === me.username) { msg.textContent = 'That\'s your current username.'; msg.className = 'small muted'; return; }
+      if (!USERNAME_RE.test(v)) { msg.textContent = 'Use 3–20 letters, numbers, dots or underscores (no spaces).'; msg.className = 'small err'; return; }
+      msg.textContent = 'Checking…'; msg.className = 'small muted';
+      try { const free = await social.usernameFree(v); if (inp.value.trim().toLowerCase() !== v) return; ok = free; msg.textContent = free ? `✓ @${v} is free` : `✗ @${v} is taken. Try another.`; msg.className = 'small ' + (free ? 'ok-txt' : 'err'); btn.disabled = !free; }
+      catch (e) { msg.textContent = e.offline ? 'You\'re offline. Connect to check names.' : 'Could not check: ' + e.message; msg.className = 'small err'; }
+    };
+    inp.addEventListener('input', () => { inp.value = inp.value.toLowerCase().replace(/\s/g, ''); clearTimeout(checkT); checkT = setTimeout(check, 350); });
+    check();
+    card.onclick = async e => {
+      const b = e.target.closest('[data-u]'); if (!b) return;
+      if (b.dataset.u === 'close') { closeModal(); return; }
+      if (b.dataset.u === 'save' && ok) {
+        b.disabled = true; b.textContent = 'Saving…';
+        try { await social.setUsername(inp.value.trim().toLowerCase()); closeModal(); toast(`You're @${ME().username}. Friends can find you now.`); render(); }
+        catch (er) { b.textContent = 'Save username'; msg.textContent = er.message; msg.className = 'small err'; ok = false; }
+      }
+    };
+  }
+  // Default flag: where the phone says you are. Change it any time in Ranked › Locker.
+  function defaultCountry() {
+    const me = ME(); if (!me.id || me.country || !window.MHCountries) return;
+    const c = window.MHCountries.guess(); if (c) social.setCountry(c).catch(() => {});
+  }
+  function countrySelect(id) {
+    const cur = ME().country || '';
+    return `<select id="${id}"><option value="">No flag</option>${window.MHCountries.all().map(c => `<option value="${c.code}" ${c.code === cur ? 'selected' : ''}>${window.MHCountries.flag(c.code)} ${esc(c.name)}</option>`).join('')}</select>`;
+  }
+  const SR = { q: '', list: null, busy: false, err: '', sent: new Set() };
+  function searchPanel() {
+    const rel = id => { const f = (F.list || []).find(x => x.id === id); return f ? (f.status === 'accepted' ? 'friends' : f.outgoing ? 'sent' : f.incoming ? 'incoming' : '') : (SR.sent.has(id) ? 'sent' : ''); };
+    return `<div class="panel" id="findPanel"><h2>Find friends</h2>
+      <div class="search-row"><span class="s-ic">🔍</span><input type="search" id="uSearch" placeholder="Search a username or name" value="${esc(SR.q)}" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+      <div id="uResults">${searchResults(rel)}</div></div>`;
+  }
+  function searchResults(rel) {
+    if (SR.err) return `<p class="small err">${esc(SR.err)}</p>`;
+    if (!SR.q.trim() || SR.q.trim().length < 2) return '<p class="muted small">Type at least 2 letters of their username.</p>';
+    if (SR.busy && !SR.list) return '<p class="muted small">Searching…</p>';
+    if (!SR.list || !SR.list.length) return `<p class="muted small">Nobody found for “${esc(SR.q)}”.</p>`;
+    return SR.list.map(u => { const r = rel(u.id); return `<div class="frow">${avatarHtml({ name: u.name, color: u.color, avatar: u.avatar })}<span class="fname">${esc(u.name)} ${flagOf(u.country)}<small class="faint">@${esc(u.username)}</small></span>
+      ${r === 'friends' ? '<span class="faint small">Friends ✓</span>' : r === 'sent' ? '<span class="faint small">Request sent</span>' : r === 'incoming' ? `<button class="btn primary" data-action="f-accept" data-id="${esc(u.id)}">Accept</button>` : `<button class="btn primary" data-action="u-add" data-code="${esc(u.friend_code)}" data-id="${esc(u.id)}">Add</button>`}</div>`; }).join('');
+  }
+  let searchT = null;
+  function wireSearch() {
+    const si = $('#uSearch'); if (!si) return;
+    si.addEventListener('input', () => {
+      SR.q = si.value; clearTimeout(searchT);
+      if (SR.q.trim().length < 2) { SR.list = null; $('#uResults').innerHTML = searchResults(() => ''); return; }
+      SR.busy = true; searchT = setTimeout(async () => {
+        const q = SR.q.trim();
+        try { const l = await social.searchUsers(q); if (q !== SR.q.trim()) return; SR.list = l; SR.err = ''; } catch (e) { SR.err = e.offline ? 'You\'re offline.' : 'Search failed: ' + e.message; }
+        SR.busy = false; const box = $('#uResults'); if (box) { const f = F.list || []; box.innerHTML = searchResults(id => { const x = f.find(y => y.id === id); return x ? (x.status === 'accepted' ? 'friends' : x.outgoing ? 'sent' : x.incoming ? 'incoming' : '') : (SR.sent.has(id) ? 'sent' : ''); }); }
+      }, 300);
+    });
+  }
   // ---------------------------------------------------------------- local notifications (ranked events)
   function ggNotes() { return S.settings.ggNotes || (S.settings.ggNotes = []); }
   function ggNote(id, title, body, opts = {}) {
@@ -2573,6 +2654,7 @@
       r.lastWeek = st.lwk === lastWk ? st.lwp || 0 : st.wk === lastWk ? st.wp || 0 : 0;
       r.season = st.s === c.season ? st.sp || 0 : 0;
       r.tier = tierById(st.t); r.level = st.lv || 1; r.fire = !!st.fire; r.title = st.ti || '';
+      r.country = r.me ? ME().country : (r.friend.profile.country || null); r.username = r.me ? ME().username : r.friend.profile.username;
       r.hideWeight = !!st.hw;
     }
     const mvp = rows.length > 1 ? rows.slice().sort((a, b) => b.lastWeek - a.lastWeek)[0] : null;
@@ -2616,13 +2698,13 @@
     return `<div class="panel">${head}<p class="muted small" style="margin:6px 0 10px">${sub}</p>${rival}
       <ol class="rank gg-rank">${list.map((r, i) => `<li class="${r.me ? 'me' : ''}" ${r.friend ? `data-action="f-view" data-id="${esc(r.id)}"` : ''}>
         <span class="rk-pos num">${i + 1}${arrow(r.id)}</span>${avatarHtml({ name: r.name, color: r.color, avatar: r.avatar, tier: r.tier.id })}
-        <span class="rk-name"><span class="rk-line"><span style="color:${esc(r.color || 'inherit')}">${esc(r.name)}</span>${r.crown ? ' <span title="Last week\'s MVP">👑</span>' : ''}${r.fire ? ' <span title="On fire: 3 great days in a row">🔥</span>' : ''}${r.me ? ' <span class="faint">(you)</span>' : ''}</span>
+        <span class="rk-name"><span class="rk-line"><span style="color:${esc(r.color || 'inherit')}">${esc(r.name)}</span> ${flagOf(r.country)}${r.crown ? ' <span title="Last week\'s MVP">👑</span>' : ''}${r.fire ? ' <span title="On fire: 3 great days in a row">🔥</span>' : ''}${r.me ? ' <span class="faint">(you)</span>' : ''}</span>
           <small>${tierBadge(r.tier, true)} · Lv ${fmt(r.level)}${r.title ? ' · ' + titleHtml(r.title) : ''}</small></span>
         <span class="rk-pts num">${tab === 'overall' ? pointsText(r.points) : fmt(val(r) || 0) + ' CP'}</span>
         ${tab === 'overall' ? '' : `<div class="rk-prog rk-cp"><div class="rk-track"><i style="width:${Math.max(2, (val(r) || 0) / leader * 100)}%"></i></div></div>`}
         ${r.hideWeight && !r.me ? '<div class="faint small rk-hidden">Weight hidden · ' + esc(pointsText(r.points)) + ' to goal</div>' : progressBar(r)}
       </li>`).join('')}</ol>
-      ${!others.length ? '<p class="muted small">Add a friend below to start competing.</p>' : ''}</div>`;
+      ${!others.length ? '<p class="muted small">Find friends below (or tap 🔍) to start competing.</p>' : ''}</div>`;
   }
   function myRankHtml(c) {
     const g = gst(), nx = c.next;
@@ -2633,7 +2715,7 @@
     const badges = (g.badges || []).map(id => (game().EVENTS.find(e => e.id === id) || { name: id }).name);
     return `<div class="myrank">
       <div class="mr-top">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, tier: c.tier.id }, 'big')}
-        <div><div class="mr-name" style="color:${esc(P().color)}">${esc(P().name)}</div><div class="small">${(g.equipped || {}).title ? titleHtml(g.equipped.title) : '<span class="faint">No title equipped: earn them in the Locker</span>'}</div></div></div>
+        <div><div class="mr-name" style="color:${esc(P().color)}">${esc(P().name)} ${flagOf(ME().country)}</div>${ME().username ? `<div class="faint small">@${esc(ME().username)}</div>` : ''}<div class="small">${(g.equipped || {}).title ? titleHtml(g.equipped.title) : '<span class="faint">No title equipped: earn them in the Locker</span>'}</div></div></div>
       <div class="mr-block"><div class="mr-h"><b>Level ${c.level}</b><span class="faint small">${c.need ? `${fmt(c.into)} / ${fmt(c.need)} XP` : 'Max level'}</span></div><div class="xpbar"><i style="width:${lvPct}%"></i></div><div class="faint small">XP never goes down. Every consistency point you earn is also XP. ${fmt(c.titlesEarned.size)} of ${game().TITLES.length} titles earned.</div></div>
       <div class="mr-block"><div class="mr-h">${tierBadge(c.tier)}<span class="faint small">${fmt(c.rating)} CP in the last 14 days</span></div><div class="xpbar tierbar" style="--tc:${c.tier.color}"><i style="width:${tierPct}%"></i></div>
         <div class="faint small">${nx ? `${fmt(nx.min - c.rating)} CP to ${TIER_ICON[nx.id]} ${esc(nx.name)}.` : 'Top tier. Stay here!'}${dropTo && c.rating - c.tier.min < 60 ? ` <b class="warn-txt">Careful: ${fmt(c.rating - c.tier.min)} CP above ${esc(dropTo.name)}. A couple of bad days and you drop.</b>` : ''} Your tier uses your last 14 days, so it can go up or down.</div></div>
@@ -2654,6 +2736,8 @@
       <div class="lk-sec"><b>Profile picture</b><div class="lk-av">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, tier: c.tier.id }, 'big')}
         <label class="btn">Choose a photo<input type="file" accept="image/*" hidden data-action="gg-avatar-file"></label>${P().avatar ? '<button class="btn ghost" data-action="gg-avatar-remove">Remove</button>' : ''}</div>
         <div class="faint small">Friends see it on the ladder. It's shrunk to a tiny image so the app stays light.</div></div>
+      <div class="lk-sec"><b>Username and flag</b><div class="lk-av"><span>${ME().username ? '@' + esc(ME().username) : '<span class="faint">No username yet</span>'}</span><button class="btn ghost sm" data-action="u-change">Change</button></div>
+        <label class="field" style="margin-top:6px"><span>Country flag next to your name</span>${countrySelect('ctySel')}</label></div>
       <div class="lk-sec"><b>Frame</b><div class="faint small" style="margin-top:4px">Your frame is your rank: ${tierBadge(c.tier, true)}. Climb to a higher tier to get its frame, and drop a tier and the frame drops with you.</div>
         <div class="lk-tiers">${game().TIERS.map(t => `<span class="${t.id === c.tier.id ? 'on' : ''}">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, tier: t.id })}<small>${esc(t.name)}</small></span>`).join('')}</div></div>
       <div class="lk-sec"><b>Titles</b> <span class="faint small">${fmt(c.titlesEarned.size)} / ${game().TITLES.length} earned · tap one you've earned to wear it</span>
@@ -2918,6 +3002,7 @@
   });
 
   render();
+  setTimeout(() => { defaultCountry(); usernameGate(); }, 400);
   // Quietly bring in the latest Garmin days when the app opens, then every 3 hours.
   const connectedPids = () => Object.values(S.profiles).filter(p => p.garmin.displayName || p.garmin.lastSync).map(p => p.id);
   setTimeout(async () => { for (const pid of connectedPids()) await quietSync(pid, 3); }, 1500);

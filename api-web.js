@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.29';
+  const APP_VERSION = '2.0.30';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -396,6 +396,14 @@
       if (toDay) q += `&day=lte.${toDay}`;
       return (await req(q + '&limit=5000')) || [];
     },
+    async usernameFree(u) { return !!(await req('/rest/v1/rpc/mh_username_free', { method: 'POST', body: JSON.stringify({ u }) })); },
+    async setUsername(u) {
+      try { await req(`/rest/v1/profiles?id=eq.${uid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ username: u }) }); }
+      catch (e) { if (e.status === 409 || /duplicate|unique/i.test(e.message)) throw Object.assign(new Error('That username was just taken. Try another.'), { taken: true }); throw e; }
+      if (window.MH_ME) window.MH_ME.username = u;
+    },
+    async setCountry(c) { await req(`/rest/v1/profiles?id=eq.${uid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ country: c || null }) }); if (window.MH_ME) window.MH_ME.country = c || null; },
+    async searchUsers(q) { return (await req('/rest/v1/rpc/mh_search_users', { method: 'POST', body: JSON.stringify({ q }) })) || []; },
     async notifications() { return (await req(`/rest/v1/notifications?select=*&order=created_at.desc&limit=50`)) || []; },
     async markRead() { return req(`/rest/v1/notifications?recipient=eq.${uid}&read=eq.false`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ read: true }) }); },
     pushSupported: () => !window.desktop && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window,
@@ -515,11 +523,13 @@
       <label class="field"><span>Email</span><input type="email" id="aEmail" autocomplete="username" autocapitalize="off"></label>
       <label class="field"><span>Password${signup ? ' (at least 8 characters)' : ''}</span><input type="password" id="aPass" autocomplete="${signup ? 'new-password' : 'current-password'}"></label>
       <button class="btn primary" id="aGo">${signup ? 'Create account' : 'Sign in'}</button>
+      <div id="aSocial" class="auth-social"></div>
       ${err ? `<div class="err">${esc(err)}</div>` : ''}${info ? `<div class="note">${esc(info)}</div>` : ''}
       <p class="small" style="margin-top:18px">${signup ? 'Already have an account? <a href="#" id="aSwap">Sign in</a>' : 'New here? <a href="#" id="aSwap">Create an account</a>'}</p>
       ${!signup ? '<p class="small"><a href="#" id="aForgot">Forgot password?</a></p>' : ''}
     </div>`;
     $('#aSwap').onclick = e => { e.preventDefault(); authScreen(signup ? 'signin' : 'signup'); };
+    socialButtons();
     const forgot = $('#aForgot');
     if (forgot) forgot.onclick = async e => {
       e.preventDefault();
@@ -639,10 +649,49 @@
     try { const r = await window.desktop.saveBackup(`GG-Gains-backup-${todayKey()}.json`, JSON.stringify(S)); if (r && r.ok) LS.set('mh2.pcBackup.' + uid, Date.now()); } catch (_) {}
   }
 
+  // ---------------------------------------------------------------- sign in with Google / X / Apple / Facebook
+  // Buttons only show for the providers switched on in Supabase (Authentication › Providers).
+  const PROVIDERS = [['google', 'Continue with Google', 'G'], ['apple', 'Continue with Apple', ''], ['x', 'Continue with X', '𝕏'], ['twitter', 'Continue with X (Twitter)', '𝕏'], ['facebook', 'Continue with Facebook', 'f']];
+  let providerCache = null;
+  async function socialButtons() {
+    const box = $('#aSocial'); if (!box || window.desktop) return; // Google blocks sign-in inside desktop app windows
+    try {
+      if (!providerCache) { const r = await fetch(CFG.url + '/auth/v1/settings', { headers: { apikey: CFG.key } }); providerCache = ((await r.json()) || {}).external || {}; }
+      const on = PROVIDERS.filter(([id]) => providerCache[id]);
+      if (!on.length || !$('#aSocial')) return;
+      box.innerHTML = `<div class="auth-or"><span>or</span></div>` + on.map(([id, label, ic]) => `<button class="btn social-btn sb-${id}" data-prov="${id}"><b>${ic}</b>${label}</button>`).join('');
+      box.onclick = e => {
+        const b = e.target.closest('[data-prov]'); if (!b) return;
+        const back = location.origin + location.pathname;
+        location.href = `${CFG.url}/auth/v1/authorize?provider=${encodeURIComponent(b.dataset.prov)}&redirect_to=${encodeURIComponent(back)}`;
+      };
+    } catch (_) {}
+  }
+  // Coming back from Google/X: the session arrives in the address bar (#access_token=…).
+  async function finishOAuth() {
+    const h = new URLSearchParams(location.hash.replace(/^#/, ''));
+    if (h.get('error_description')) { history.replaceState(null, '', location.pathname); authScreen('signin', h.get('error_description').replace(/\+/g, ' ')); return 'shown'; }
+    const at = h.get('access_token'), rt = h.get('refresh_token');
+    if (!at || !rt) return null;
+    history.replaceState(null, '', location.pathname);
+    const s = makeSupa();
+    try {
+      const user = await s._req('/auth/v1/user', { headers: { Authorization: 'Bearer ' + at } }, false);
+      s._keep({ access_token: at, refresh_token: rt, expires_in: Number(h.get('expires_in')) || 3600, user });
+      LS.set('mh2.session', s.session);
+      return s;
+    } catch (e) { authScreen('signin', 'Sign-in did not finish: ' + e.message); return 'shown'; }
+  }
+
   // ---------------------------------------------------------------- boot
   window.MHBoot = async function () {
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
     if (!CFG.url || !CFG.key) { $('#auth').hidden = false; $('#auth').innerHTML = '<div class="auth-card"><h1>Setup needed</h1><p>config.js has no Supabase project.</p></div>'; return; }
+    if (/access_token=|error_description=/.test(location.hash)) {
+      const r = await finishOAuth();
+      if (r === 'shown') return;
+      if (r) return startApp(r, null);
+    }
     const saved = LS.get('mh2.session', null);
     if (saved && saved.refresh_token) {
       const s = makeSupa(); s.session = saved;

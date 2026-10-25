@@ -314,7 +314,7 @@
   });
   function openMore() {
     card.className = 'modal-card narrow sheet-card';
-    const items = [['garmin', 'Devices', 'Garmin and other watches'], ['foods', 'Food list', 'All foods, and your own'], ['forecast', 'Weight projection', 'Where your weight is heading'], ['settings', 'Settings', 'Account, goal, targets, notifications']];
+    const items = [['photos', 'Transformation', 'Daily progress photos and videos'], ['garmin', 'Devices', 'Garmin and other watches'], ['foods', 'Food list', 'All foods, and your own'], ['forecast', 'Weight projection', 'Where your weight is heading'], ['settings', 'Settings', 'Account, goal, targets, notifications']];
     card.innerHTML = `<div class="modal-head"><h2>More</h2><button class="btn ghost" data-f="close">Close</button></div><div class="modal-body more-list">${items.map(([v, t, d]) => `<button data-f="go" data-v="${v}"><b>${t}</b><span>${d}</span></button>`).join('')}</div>`;
     modal.hidden = false;
     card.onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; closeModal(); if (b.dataset.f === 'go') nav(b.dataset.v); };
@@ -341,7 +341,7 @@
   const BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16zM10 20a2 2 0 0 0 4 0"/></svg>';
   function renderMe() {
     const pts = myPoints();
-    const html = `<button class="me-card" data-act2="go-settings"><span class="avatar" style="background:${esc(P().color)}">${esc((P().name || '?').charAt(0).toUpperCase())}</span><span class="pname">${esc(P().name)}<small>${pts == null ? 'Set a goal to rank' : fmt(pts, 1) + '% to goal'}</small></span></button>
+    const html = `<button class="me-card" data-act2="go-settings">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, frame: ((P().game || {}).equipped || {}).frame })}<span class="pname">${esc(P().name)}<small>${pts == null ? 'Set a goal to rank' : fmt(pts, 1) + '% to goal'}</small></span></button>
       <button class="bell" data-act2="notes" aria-label="Notifications">${BELL}${NOTES.unread ? `<i>${NOTES.unread > 9 ? '9+' : NOTES.unread}</i>` : ''}</button>`;
     $('#profiles').innerHTML = html;
     const mt = $('#mtop'); if (mt) mt.innerHTML = `<div class="brand-mini"><img class="brand-mark" src="icons/icon-192.png" alt=""></div>` + html;
@@ -360,8 +360,9 @@
   }
 
   function render() {
+    if (GAME) GAME.invalidate();
     renderMe();
-    document.querySelectorAll('#tabbar button[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === UI.view || (b.dataset.view === 'more' && ['garmin', 'foods', 'forecast', 'settings'].includes(UI.view))));
+    document.querySelectorAll('#tabbar button[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === UI.view || (b.dataset.view === 'more' && ['garmin', 'foods', 'forecast', 'settings', 'photos'].includes(UI.view))));
     renderSideFoot();
     const v = UI.view;
     if (v === 'today') renderToday();
@@ -371,6 +372,7 @@
     else if (v === 'foods') renderFoods();
     else if (v === 'settings') renderSettings();
     else if (v === 'friends') renderFriends();
+    else if (v === 'photos') renderPhotos();
   }
 
   function guessMeal() {
@@ -564,6 +566,7 @@
 
       ${garminRenewBanner()}
       ${checkinCard()}
+      ${gameCard(k)}
       ${splitOn() ? `<div class="daytype"><div class="seg"><button class="${dayType(k) === 'train' ? 'on' : ''}" data-action="daytype" data-v="train">🏋️ Training day</button><button class="${dayType(k) === 'rest' ? 'on' : ''}" data-action="daytype" data-v="rest">😴 Rest day</button></div><span class="faint small">${(P().dayMeta[k] || {}).dayType ? 'set for this day' : Array.isArray(P().targets.trainDays) && P().targets.trainDays.length ? 'from your weekly schedule' : 'tap to change'}</span></div>` : ''}
       ${!P().setupDone ? `<div class="nudge"><span><b>Set up ${esc(P().name)}'s details</b> so the calorie targets and weight projection fit ${esc(P().name)}: age, height, weight and goal.</span><button class="btn primary" data-action="go-settings">Set up</button></div>` : ''}
       <div class="readout">
@@ -601,6 +604,7 @@
         </div>
         <div class="stack">
           ${weightCard(k)}
+          ${photoCard(k)}
           ${waterExerciseCard(k)}
           <div class="panel vit-panel">
             <h2>Vitamins & minerals</h2>
@@ -610,7 +614,7 @@
         </div>
       </div>
     </div>`;
-    wireWeight(k); wireWaterExercise(k);
+    wireWeight(k); wireWaterExercise(k); photoThumbs();
 
     $('#datePick').addEventListener('change', e => { if (e.target.value) { UI.date = e.target.value; render(); } });
   }
@@ -665,12 +669,13 @@
       const en = dayEntries(UI.date).find(x => x.id === a.dataset.id);
       if (en) openAdd({ date: UI.date, entry: en });
     }
+    else if (['go-ranked', 'go-photos', 'rk-tab', 'gg-result', 'gg-chest', 'gg-claim-week', 'gg-claim-event', 'gg-claim-pass', 'gg-equip', 'gg-hidew', 'gg-avatar-remove', 'gg-avatar-file', 'react', 'photo-take', 'photo-view', 'photos-make', 'photos-share'].includes(act)) ggAction(act, a, e);
     else if (act === 'toggle-complete') {
       const m = P().dayMeta[UI.date] || {};
       m.complete = !m.complete;
       P().dayMeta[UI.date] = m;
       save(); render();
-      if (m.complete) toast('Day marked complete.');
+      if (m.complete) { game().invalidate(); showResult(UI.date); }
     }
     else handleViewAction(act, a, e);
   });
@@ -1505,6 +1510,7 @@
     F.loading = false;
     if (UI.view === 'friends' && modal.hidden) softRender(render);
     renderMe();
+    ggCheckEvents().catch(() => {});
   }
   function myPoints() { return social.pointsFor(S); }
   function rankingRows() {
@@ -1539,19 +1545,10 @@
     const pr = P().profile;
     const needGoal = !pr.goalStart || (pr.goal !== 'maintain' && pr.goalWeightKg == null);
     main.innerHTML = `<div class="page">
-      <div class="page-head"><div><h1>Friends</h1><p class="sub">Your friend ID is <b class="code-pill" title="Tap to copy" data-action="copy-code">${esc(code)}</b>. Share it so friends can add you.</p></div></div>
+      <div class="page-head"><div><h1>Ranked</h1><p class="sub">Your friend ID is <b class="code-pill" title="Tap to copy" data-action="copy-code">${esc(code)}</b>. Share it so friends can add you.</p></div></div>
       ${needGoal ? `<div class="nudge"><span><b>Set your goal to join the ranking.</b> Choose lose, gain or maintain and a goal weight in Settings. Your points start from your weight on that day.</span><button class="btn primary" data-action="go-settings">Set goal</button></div>` : ''}
       <div class="grid-2">
-        <div class="panel">
-          <h2>Ranking</h2>
-          <p class="muted small" style="margin-top:-6px">Points are how far each person has got from their start weight to their goal weight: 100% means goal reached. To keep it fair, it uses your average weight over the last 7 days, so a single heavy or light morning doesn't swing the table. If you're maintaining, staying on your weight scores 100%.</p>
-          ${rows.length > 1 || !F.loading ? `<ol class="rank">${rows.map((r, i) => `<li class="${r.me ? 'me' : ''}" ${r.friend ? `data-action="f-view" data-id="${esc(r.id)}"` : ''}>
-            <span class="rk-pos num">${i + 1}</span><span class="avatar" style="background:${esc(r.color || '#E0263A')}">${esc((r.name || '?').charAt(0).toUpperCase())}</span>
-            <span class="rk-name">${esc(r.name)}${r.me ? ' <span class="faint">(you)</span>' : ''}<small>${goalText(r.goal)}</small></span>
-            <span class="rk-pts num">${pointsText(r.points)}</span>
-            ${progressBar(r)}</li>`).join('')}</ol>` : '<p class="muted">Loading…</p>'}
-          ${!friends.length ? '<p class="muted small">Add a friend below to start competing.</p>' : ''}
-        </div>
+        ${ggLadderPanel()}
         <div class="stack">
           <div class="panel">
             <h2>Add a friend</h2>
@@ -1610,6 +1607,7 @@
         ${true ? `<div class="datebar"><button class="btn icon" data-action="f-day" data-d="-1" aria-label="Previous day">‹</button><span class="num" style="min-width:110px;text-align:center">${F.day === todayKey() ? 'Today' : esc(shortDate(F.day))}</span><button class="btn icon" data-action="f-day" data-d="1" ${F.day >= todayKey() ? 'disabled' : ''} aria-label="Next day">›</button></div>` : ''}
       </div>
       ${d.loading ? '<p class="muted">Loading…</p>' : d.error ? `<p class="err">${esc(d.error)}</p>` : nothingShared ? `<div class="panel"><p class="muted" style="margin:0">${esc(f.profile.name)} hasn't shared their food or weight with you. You can still see their ranking points.</p></div>` : `
+      ${reactBar(f, F.day)}
       <div class="grid-2">
         ${true ? `<div class="panel"><h2>What ${esc(f.profile.name)} ate</h2>
           <div class="cmp-kcal"><span class="num">${fmt(t.kcal)}</span><small>kcal${d.dayMeta && d.dayMeta.complete ? ' · day complete' : ''}</small></div>
@@ -1631,7 +1629,7 @@
       const l = await social.notifications();
       const fresh = seenNoteIds ? l.filter(n => !seenNoteIds.has(n.id) && !n.read) : [];
       seenNoteIds = new Set(l.map(n => n.id));
-      NOTES = { list: l, unread: l.filter(n => !n.read).length }; renderMe();
+      SERVER_NOTES = l; mergeNotes();
       if (fresh.length) {
         // Something new arrived while the app is open: show it straight away.
         const n = fresh[0];
@@ -1649,7 +1647,7 @@
       <div class="modal-body">${NOTES.list.length ? NOTES.list.map(n => `<div class="note-row ${n.read ? '' : 'unread'}"><b>${esc(n.title)}</b><span>${esc(n.body)}</span><small class="faint">${esc(new Date(n.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</small></div>`).join('') : '<p class="muted">Nothing yet. When friends log food (and allow it) or send you a friend request, it shows here.</p>'}</div>`;
     modal.hidden = false;
     card.onclick = e => { if (e.target.closest('[data-f="close"]')) closeModal(); };
-    if (NOTES.unread) { social.markRead().catch(() => {}); NOTES.list.forEach(n => n.read = true); NOTES.unread = 0; renderMe(); }
+    if (NOTES.unread) { social.markRead().catch(() => {}); NOTES.list.forEach(n => n.read = true); ggNotes().forEach(n => n.read = true); save(); NOTES.unread = 0; renderMe(); }
   }
 
   // ---------------------------------------------------------------- FORECAST
@@ -2521,6 +2519,434 @@
   }
 
   // ---------------------------------------------------------------- start
+  // ================================================================ GG GAINS: game, social and progress photos
+  let GAME = null, PHOTO_DAYS = new Set(), MY_REACTS = [];
+  const TIER_ICON = { bronze: '🥉', silver: '🥈', gold: '🥇', platinum: '💠', diamond: '💎', elite: '🔮', legend: '👑' };
+  const REACT_ICON = { fire: '🔥', muscle: '💪', gg: 'GG', laugh: '😂' };
+  function game() {
+    if (!GAME) GAME = window.GGGame({
+      P, uid: () => (social && social.me && social.me()) || 'me', today: todayKey, dayEntries, totalsOf, targets, waterGoal, microTargets,
+      garmin: k => ((P().garmin || {}).days || {})[k] || null, photoDays: () => PHOTO_DAYS, BUILTIN, weights: () => P().weights,
+      goal: () => { const g = P().profile.goal || 'maintain'; return g.startsWith('lose') ? 'lose' : g; },
+      firstDay: () => Object.keys(P().diary).filter(k => (P().diary[k] || []).length).sort()[0], sig: () => '', save
+    });
+    return GAME;
+  }
+  const gc = () => game().compute();
+  const gst = () => P().game || (P().game = {});
+  window.GG_PUBLIC = () => game().publicStats(gc());
+  const tierBadge = (t, sm) => `<span class="tier ${sm ? 'sm' : ''}" style="--tc:${t.color}">${TIER_ICON[t.id] || ''} ${esc(t.name)}</span>`;
+  const tierById = id => game().TIERS.find(t => t.id === id) || game().TIERS[0];
+  const colorCss = id => { const c = game().COLORS.find(x => x.id === id); return c ? c.css : ''; };
+  function avatarHtml(o, extra = '') {
+    const fr = o.frame && game().FRAMES.find(f => f.id === o.frame);
+    const inner = o.avatar ? `<img src="${esc(o.avatar)}" alt="">` : esc((o.name || '?').charAt(0).toUpperCase());
+    return `<span class="avatar ${o.avatar ? 'has-img' : ''} ${fr ? 'framed' : ''} ${extra}" style="background:${esc(o.color || '#E0263A')};${fr ? `--frame:${fr.css}` : ''}">${inner}</span>`;
+  }
+  if (window.MHPhotos) window.MHPhotos.days().then(s => { PHOTO_DAYS = s; game().invalidate(); if (UI.view === 'today' && modal.hidden) softRender(render); }).catch(() => {});
+
+  // ---------------------------------------------------------------- local notifications (ranked events)
+  function ggNotes() { return S.settings.ggNotes || (S.settings.ggNotes = []); }
+  function ggNote(id, title, body, opts = {}) {
+    const l = ggNotes(); if (l.some(n => n.id === id)) return;
+    l.unshift({ id, kind: 'gg', title, body, created_at: new Date().toISOString(), read: false });
+    l.splice(40); save(); mergeNotes();
+    if (!opts.quiet) toast(title + (body ? ' · ' + body : ''), 'View', () => nav('friends'));
+  }
+  let SERVER_NOTES = [];
+  function mergeNotes() {
+    const list = [...SERVER_NOTES, ...ggNotes()].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    NOTES = { list, unread: list.filter(n => !n.read).length }; renderMe();
+  }
+
+  // ---------------------------------------------------------------- ladder rows
+  function ggRows() {
+    const c = gc(), wk = c.wk, lastWk = game().addD(wk, -7), rows = rankingRows();
+    for (const r of rows) {
+      if (r.me) { r.st = game().publicStats(c); r.avatar = P().avatar || null; }
+      else { try { r.st = r.friend.profile.game ? JSON.parse(r.friend.profile.game) : null; } catch (_) { r.st = null; } r.avatar = r.friend.profile.avatar || null; }
+      const st = r.st || {};
+      r.week = st.wk === wk ? st.wp || 0 : 0;
+      r.lastWeek = st.lwk === lastWk ? st.lwp || 0 : st.wk === lastWk ? st.wp || 0 : 0;
+      r.season = st.s === c.season ? st.sp || 0 : 0;
+      r.tier = tierById(st.t); r.level = st.lv || 1; r.fire = !!st.fire; r.title = st.ti || ''; r.nameColor = colorCss(st.nc); r.frame = st.fr || null;
+      r.hideWeight = !!st.hw;
+    }
+    const mvp = rows.length > 1 ? rows.slice().sort((a, b) => b.lastWeek - a.lastWeek)[0] : null;
+    if (mvp && mvp.lastWeek > 0) mvp.crown = true;
+    return rows;
+  }
+  function sortedFor(tab, rows) {
+    const key = tab === 'week' ? 'week' : tab === 'season' ? 'season' : 'points';
+    return rows.slice().sort((a, b) => (b[key] ?? -1e9) - (a[key] ?? -1e9));
+  }
+  function weekRank() {
+    const rows = sortedFor('week', ggRows()); if (rows.length < 2) return null;
+    const i = rows.findIndex(r => r.me); return { pos: i + 1, of: rows.length, above: rows[i - 1] || null, me: rows[i] };
+  }
+  // Arrows: change since the first time you looked at the ladder today.
+  function arrowsFor(tab, list) {
+    const snap = S.settings.ladderSnap || (S.settings.ladderSnap = {});
+    const day = todayKey();
+    if (!snap[tab] || snap[tab].day !== day) { snap[tab] = { day, pos: Object.fromEntries(list.map((r, i) => [r.id, i + 1])) }; save(); }
+    return id => { const was = snap[tab].pos[id], now = list.findIndex(r => r.id === id) + 1; if (!was || was === now) return ''; return was > now ? `<span class="rk-mv up">▲${was - now}</span>` : `<span class="rk-mv down">▼${now - was}</span>`; };
+  }
+  function ggLadderPanel() {
+    const tab = UI.rk || 'week', c = gc(), rows = ggRows();
+    const tabs = [['week', 'This week'], ['season', `Season ${c.season}`], ['overall', 'Overall'], ['me', 'My rank'], ['pass', 'Pass'], ['locker', 'Locker']];
+    const pass = game().passState(c);
+    const head = `<div class="rk-tabs">${tabs.map(([v, l]) => `<button class="${tab === v ? 'on' : ''}" data-action="rk-tab" data-v="${v}">${l}${v === 'pass' && pass.claimable ? ` <i class="dot">${pass.claimable}</i>` : ''}</button>`).join('')}</div>`;
+    if (tab === 'me') return `<div class="panel">${head}${myRankHtml(c)}</div>`;
+    if (tab === 'pass') return `<div class="panel">${head}${passHtml(c, pass)}</div>`;
+    if (tab === 'locker') return `<div class="panel">${head}${lockerHtml()}</div>`;
+    const list = sortedFor(tab, rows), arrow = arrowsFor(tab, list);
+    const val = r => tab === 'week' ? r.week : tab === 'season' ? r.season : r.points;
+    const meRow = list.find(r => r.me), others = list.filter(r => !r.me);
+    let rival = '';
+    if (tab === 'week' && others.length) {
+      const rv = others.slice().sort((a, b) => Math.abs(a.week - meRow.week) - Math.abs(b.week - meRow.week))[0];
+      const gap = rv.week - meRow.week;
+      rival = `<div class="rival">⚔️ This week's rival: <b>${esc(rv.name)}</b> · ${gap > 0 ? `${fmt(gap)} pts ahead of you` : gap < 0 ? `${fmt(-gap)} pts behind you` : 'level with you'}</div>`;
+    }
+    const sub = tab === 'week' ? `Resets every Monday. Points for logging, hitting calories and protein, steps, training, water, weigh-ins and quests.` :
+      tab === 'season' ? `Season ${c.season} runs ${esc(shortDate(c.seasonStart))} to ${esc(shortDate(c.seasonEnd))}. Your final season tier is kept as a badge.` :
+      'How far each person has got from their start weight to their goal (7-day average weight).';
+    const leader = Math.max(1, ...list.map(r => val(r) || 0));
+    return `<div class="panel">${head}<p class="muted small" style="margin:6px 0 10px">${sub}</p>${rival}
+      <ol class="rank gg-rank">${list.map((r, i) => `<li class="${r.me ? 'me' : ''}" ${r.friend ? `data-action="f-view" data-id="${esc(r.id)}"` : ''}>
+        <span class="rk-pos num">${i + 1}${arrow(r.id)}</span>${avatarHtml({ name: r.name, color: r.color, avatar: r.avatar, frame: r.frame })}
+        <span class="rk-name"><span class="rk-line"><span style="${r.nameColor ? 'color:' + r.nameColor : ''}">${esc(r.name)}</span>${r.crown ? ' <span title="Last week\'s MVP">👑</span>' : ''}${r.fire ? ' <span title="On fire: 3 great days in a row">🔥</span>' : ''}${r.me ? ' <span class="faint">(you)</span>' : ''}</span>
+          <small>${tierBadge(r.tier, true)} · Lv ${fmt(r.level)}${r.title ? ' · ' + esc(r.title) : ''}</small></span>
+        <span class="rk-pts num">${tab === 'overall' ? pointsText(r.points) : fmt(val(r) || 0) + ' pts'}</span>
+        ${tab === 'overall' ? (r.hideWeight && !r.me ? '<div class="faint small" style="grid-column:1/-1">Weight hidden</div>' : progressBar(r)) : `<div class="rk-prog"><div class="rk-track"><i style="width:${Math.max(2, (val(r) || 0) / leader * 100)}%"></i></div></div>`}
+      </li>`).join('')}</ol>
+      ${!others.length ? '<p class="muted small">Add a friend below to start competing.</p>' : ''}</div>`;
+  }
+  function myRankHtml(c) {
+    const g = gst(), nx = c.next;
+    const dropTo = game().TIERS[game().TIERS.indexOf(c.tier) - 1];
+    const lvPct = c.need ? c.into / c.need * 100 : 100;
+    const tierPct = nx ? (c.rating - c.tier.min) / (nx.min - c.tier.min) * 100 : 100;
+    const wq = c.weekly, wqClaimed = (g.weeklyDone || []).includes(c.wk);
+    const badges = (g.badges || []).map(id => (game().EVENTS.find(e => e.id === id) || { name: id }).name);
+    return `<div class="myrank">
+      <div class="mr-top">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, frame: (g.equipped || {}).frame }, 'big')}
+        <div><div class="mr-name" style="${colorCss((g.equipped || {}).color) ? 'color:' + colorCss(g.equipped.color) : ''}">${esc(P().name)}</div><div class="faint small">${esc((g.equipped || {}).title || 'No title yet: open chests to earn one')}</div></div></div>
+      <div class="mr-block"><div class="mr-h"><b>Level ${c.level}</b><span class="faint small">${c.need ? `${fmt(c.into)} / ${fmt(c.need)} XP` : 'Max level'}</span></div><div class="xpbar"><i style="width:${lvPct}%"></i></div><div class="faint small">XP never goes down. Every point you earn is XP.</div></div>
+      <div class="mr-block"><div class="mr-h">${tierBadge(c.tier)}<span class="faint small">${fmt(c.rating)} pts in the last 14 days</span></div><div class="xpbar tierbar" style="--tc:${c.tier.color}"><i style="width:${tierPct}%"></i></div>
+        <div class="faint small">${nx ? `${fmt(nx.min - c.rating)} pts to ${TIER_ICON[nx.id]} ${esc(nx.name)}.` : 'Top tier. Stay here!'}${dropTo && c.rating - c.tier.min < 60 ? ` <b class="warn-txt">Careful: ${fmt(c.rating - c.tier.min)} pts above ${esc(dropTo.name)}. A couple of bad days and you drop.</b>` : ''} Your tier uses your last 14 days, so it can go up or down.</div></div>
+      <div class="mr-stats"><div><b>🔥 ${fmt(c.logStreak)}</b><span>day logging streak</span></div><div><b>💪 ${fmt(c.protStreak)}</b><span>day protein streak</span></div><div><b>🧊 ${fmt(c.freezes)}</b><span>streak freezes</span></div><div><b>${fmt(c.weekPts)}</b><span>pts this week</span></div></div>
+      <div class="mr-block"><div class="mr-h"><b>Weekly quest</b><span class="faint small">+150 XP and a streak freeze</span></div><div>${esc(wq.text)}: <b>${fmt(Math.min(wq.have, wq.need))} / ${wq.need}</b></div>
+        ${wq.done ? (wqClaimed ? '<div class="faint small">✅ Claimed</div>' : '<button class="btn primary" data-action="gg-claim-week">Claim reward</button>') : `<div class="xpbar"><i style="width:${wq.have / wq.need * 100}%"></i></div>`}</div>
+      ${c.events.map(e => `<div class="mr-block event"><div class="mr-h"><b>${esc(e.name)}</b><span class="faint small">${esc(shortDate(e.from))} – ${esc(shortDate(e.to))}</span></div>
+        <div>${esc(e.text)}${e.live ? `: <b>${fmt(Math.min(e.have, e.need))} / ${e.need}</b>` : ' · starts soon'}</div>
+        ${(g.badges || []).includes(e.id) ? '<div class="faint small">🏅 Badge earned</div>' : e.done ? '<button class="btn primary" data-action="gg-claim-event" data-id="' + e.id + '">Claim badge + 250 XP</button>' : e.live ? `<div class="xpbar"><i style="width:${e.have / e.need * 100}%"></i></div><div class="faint small">Limited time: this badge can't be earned after the event.</div>` : ''}</div>`).join('')}
+      ${badges.length ? `<div class="mr-block"><b>Badges</b><div class="chips" style="margin-top:6px">${badges.map(b => `<span class="chip on">🏅 ${esc(b)}</span>`).join('')}</div></div>` : ''}
+      <label class="check" style="margin-top:12px"><input type="checkbox" data-action="gg-hidew" ${g.hideWeight ? 'checked' : ''}> Hide my weight from friends (compete on habits only)</label>
+      <p class="faint small">Fair play: eating far below your target or losing weight faster than about 1% of your body weight a week earns no extra points. Consistency wins.</p>
+    </div>`;
+  }
+  function passHtml(c, pass) {
+    return `<div class="pass-head"><b>Season ${c.season} pass</b> · level ${pass.level} / 30 · ${fmt(c.seasonPts)} season pts<div class="faint small">Free for everyone. A new level every 60 season points. Unclaimed rewards disappear when the season ends on ${esc(shortDate(c.seasonEnd))}.</div></div>
+      <div class="pass-grid">${pass.list.map(r => `<div class="pass-cell ${r.unlocked ? 'un' : ''} ${r.claimed ? 'cl' : ''}"><span class="pl">Lv ${r.level}</span><span class="pr">${esc(r.label)}</span>
+        ${r.claimed ? '<span class="faint small">Claimed</span>' : r.unlocked ? `<button class="btn primary sm" data-action="gg-claim-pass" data-lv="${r.level}">Claim</button>` : `<span class="faint small">${fmt(r.need)} pts</span>`}</div>`).join('')}</div>`;
+  }
+  function lockerHtml() {
+    const g = gst(), own = g.cosmetics || {}, eq = g.equipped || {};
+    const item = (kind, id, label, preview) => `<button class="lk-item ${eq[kind] === id ? 'on' : ''}" data-action="gg-equip" data-kind="${kind}" data-id="${esc(id)}">${preview}<span>${esc(label)}</span></button>`;
+    const frames = game().FRAMES.filter(f => (own.frames || []).includes(f.id));
+    const titles = own.titles || [], colors = game().COLORS.filter(x => (own.colors || []).includes(x.id));
+    return `<div class="locker">
+      <div class="lk-sec"><b>Profile picture</b><div class="lk-av">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, frame: eq.frame }, 'big')}
+        <label class="btn">Choose a photo<input type="file" accept="image/*" hidden data-action="gg-avatar-file"></label>${P().avatar ? '<button class="btn ghost" data-action="gg-avatar-remove">Remove</button>' : ''}</div>
+        <div class="faint small">Friends see it on the ladder. It's shrunk to a tiny image so the app stays light.</div></div>
+      <div class="lk-sec"><b>Frames</b> <span class="faint small">${frames.length} / ${game().FRAMES.length} unlocked</span><div class="lk-grid">${item('frame', '', 'None', avatarHtml({ name: P().name, color: P().color, avatar: P().avatar }))}${frames.map(f => item('frame', f.id, f.name, avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, frame: f.id }))).join('')}</div></div>
+      <div class="lk-sec"><b>Titles</b><div class="lk-grid">${item('title', '', 'None', '')}${titles.map(t => item('title', t, t, '🏷️')).join('') || ''}</div></div>
+      <div class="lk-sec"><b>Name colour</b><div class="lk-grid">${item('color', '', 'Default', '<i class="sw" style="background:var(--ink)"></i>')}${colors.map(x => item('color', x.id, x.name, `<i class="sw" style="background:${x.css}"></i>`)).join('')}</div></div>
+      <p class="faint small">Earn more from chests (one for every completed day), the season pass and events.</p></div>`;
+  }
+
+  // ---------------------------------------------------------------- diary card, result screen and chests
+  function gameCard(k) {
+    const c = gc(), d = c.days[k]; if (!d) return '';
+    const isT = k === c.today, gr = game().gradeOf(d.pts), ready = game().chestsReady(c);
+    const reacts = MY_REACTS.filter(r => r.day === k);
+    const who = id => { const f = (F.list || []).find(x => x.id === id); return f ? f.profile.name : 'A friend'; };
+    return `<div class="panel gg-card">
+      <div class="gg-row1">
+        <button class="gg-score" data-action="gg-result" data-k="${k}"><b class="num">${fmt(d.pts)}</b><span>pts${isT ? ' today' : ''}</span><i class="grade g-${gr}">${gr}</i></button>
+        <div class="gg-meta">${tierBadge(c.tier)}<span class="lv">Lv ${fmt(c.level)}</span>${c.logStreak ? `<span class="streak" title="Logging streak">🔥 ${fmt(c.logStreak)}</span>` : ''}${c.freezes ? `<span class="frz" title="Streak freezes">🧊 ${fmt(c.freezes)}</span>` : ''}</div>
+      </div>
+      ${d.mult === 2 ? '<div class="gg-banner">⚡ Welcome back! Comeback bonus: double points.</div>' : ''}
+      ${isT ? `<div class="gg-quests"><div class="faint small">Today's quests · +10 each</div>${d.quests.map(q => `<div class="q ${q.ok ? 'ok' : ''}"><span>${q.ok ? '✅' : '⬜'} ${esc(q.text)}</span><small>${esc(q.prog || '')}</small></div>`).join('')}</div>` : ''}
+      ${reacts.length ? `<div class="gg-reacts">${reacts.map(r => `<span title="${esc(who(r.from_id))}">${REACT_ICON[r.emoji] || ''} ${esc(who(r.from_id))}</span>`).join('')}</div>` : ''}
+      <div class="gg-actions">${ready.length ? `<button class="btn primary gg-chest" data-action="gg-chest" data-k="${ready[0]}">🎁 Open chest${ready.length > 1 ? ` (${ready.length})` : ''}</button>` : ''}
+        <button class="btn ghost" data-action="go-ranked">Ranked · ${fmt(c.weekPts)} pts this week ›</button></div>
+    </div>`;
+  }
+  function shareText(t) { if (navigator.share) navigator.share({ text: t }).catch(() => {}); else { navigator.clipboard && navigator.clipboard.writeText(t); toast('Copied to share.'); } }
+  function showResult(k) {
+    const c = gc(), d = c.days[k]; if (!d) return;
+    const gr = game().gradeOf(d.pts), best = d.items.filter(i => i.ok).sort((a, b) => (b.pts - a.pts) || ((['logged', 'weigh'].includes(a.id) ? 1 : 0) - (['logged', 'weigh'].includes(b.id) ? 1 : 0)))[0];
+    const rk = weekRank(), prev = (S.settings.lastRank || {}).pos;
+    const opened = !!((gst().chests || {})[k]);
+    card.className = 'modal-card narrow gg-result';
+    card.innerHTML = `<div class="modal-head"><h2>${k === todayKey() ? 'Today' : esc(shortDate(k))}: result</h2><button class="btn ghost" data-r="close">Close</button></div>
+      <div class="modal-body">
+        <div class="res-grade g-${gr}">${gr}</div>
+        <div class="res-pts"><b class="num">${fmt(d.pts)}</b> points${d.mult === 2 ? ' · ⚡ x2 comeback' : ''}${d.streakBonus ? ` · 🔥 +${d.streakBonus} streak bonus` : ''}</div>
+        ${best ? `<div class="res-mvp">⭐ MVP stat: ${esc(best.label.replace('Quest: ', ''))}${best.note ? ` <span class="faint">(${esc(best.note)})</span>` : ''}</div>` : ''}
+        ${rk ? `<div class="res-rank">Weekly ladder: <b>#${rk.pos}</b> of ${rk.of}${prev && prev !== rk.pos ? ` <span class="${prev > rk.pos ? 'up' : 'down'}">${prev > rk.pos ? '▲' : '▼'} ${Math.abs(prev - rk.pos)}</span>` : ''}${rk.above ? ` · ${fmt(rk.above.week - rk.me.week)} pts behind ${esc(rk.above.name)}` : ' · you\'re top 👑'}</div>` : ''}
+        ${d.tooLow ? '<div class="sup-warn"><p>⚠ You ate well under your target today. Under-eating earns no points: fuel up tomorrow.</p></div>' : ''}
+        <ul class="res-list">${d.items.map(i => `<li class="${i.ok ? 'ok' : ''}"><span>${i.ok ? '✅' : '▫️'} ${esc(i.label)}</span><b>${i.ok ? '+' + i.pts : '0'}</b></li>`).join('')}</ul>
+        <div class="res-btns">${d.d.full && !opened ? '<button class="btn primary" data-r="chest">🎁 Open chest</button>' : ''}<button class="btn" data-r="share">Share</button></div>
+      </div>`;
+    modal.hidden = false;
+    card.onclick = e => {
+      const b = e.target.closest('[data-r]'); if (!b) return;
+      if (b.dataset.r === 'close') { closeModal(); render(); }
+      if (b.dataset.r === 'chest') openChestModal(k);
+      if (b.dataset.r === 'share') shareText(`GG Gains · ${k === todayKey() ? 'today' : shortDate(k)}: grade ${gr}, ${d.pts} pts${c.logStreak ? `, 🔥 ${c.logStreak}-day streak` : ''}. ${c.tier.name} tier, level ${c.level}. Beat that 😤`);
+    };
+    if (rk) { S.settings.lastRank = { pos: rk.pos, at: todayKey() }; save(); }
+  }
+  function openChestModal(k) {
+    let opened = false;
+    card.className = 'modal-card narrow gg-chestm';
+    card.innerHTML = `<div class="modal-head"><h2>Chest · ${esc(shortDate(k))}</h2><button class="btn ghost" data-c="close">Close</button></div><div class="modal-body"><button class="chest-box shake" data-c="open">🎁</button><p class="muted" style="text-align:center">Tap the chest to open it</p></div>`;
+    modal.hidden = false;
+    card.onclick = e => {
+      const b = e.target.closest('[data-c]'); if (!b) return;
+      const a = b.dataset.c;
+      if (a === 'close') { closeModal(); render(); return; }
+      if (a === 'open' && !opened) {
+        opened = true; b.classList.remove('shake'); b.classList.add('burst');
+        const rw = game().openChest(k);
+        setTimeout(() => {
+          const body = card.querySelector('.modal-body'); if (!body) return;
+          const more = game().chestsReady(gc());
+          body.innerHTML = `<div class="chest-box open">✨</div><div class="chest-rw"><b>${esc(rw.label)}</b><p class="muted">${esc(rw.text || '')}</p></div>
+            <div class="res-btns">${['frame', 'title', 'color'].includes(rw.kind) ? `<button class="btn primary" data-c="equip">Equip now</button>` : ''}${more.length ? `<button class="btn" data-c="next" data-k="${more[0]}">Open next chest (${more.length})</button>` : ''}<button class="btn ghost" data-c="close">Done</button></div>`;
+          card.dataset.rwKind = rw.kind; card.dataset.rwId = rw.id || '';
+        }, 550);
+      }
+      if (a === 'equip') { equip(card.dataset.rwKind, card.dataset.rwId); toast('Equipped.'); closeModal(); render(); }
+      if (a === 'next') openChestModal(b.dataset.k);
+    };
+  }
+  function equip(kind, id) { const g = gst(); g.equipped = g.equipped || {}; g.equipped[kind] = id || null; save(); }
+
+  // ---------------------------------------------------------------- ranked events -> notifications
+  async function ggCheckEvents() {
+    if (!F.list) return;
+    const c = gc(), g = gst(), today = todayKey(), now = new Date();
+    const list = sortedFor('week', ggRows()), ids = list.map(r => r.id), meI = ids.indexOf('me');
+    const prev = S.settings.ladderOrder;
+    if (prev && prev.wk === c.wk && meI >= 0) {
+      for (const r of list) {
+        if (r.me) continue;
+        const pi = prev.ids.indexOf(r.id), pm = prev.ids.indexOf('me'), ni = ids.indexOf(r.id);
+        if (pi < 0 || pm < 0) continue;
+        if (pi > pm && ni < meI) ggNote(`ot-${today}-${r.id}`, `${r.name} overtook you 😤`, `You're ${fmt(r.week - list[meI].week)} pts behind this week.`);
+        if (pi < pm && ni > meI) ggNote(`yo-${today}-${r.id}`, `You overtook ${r.name} 🔥`, `${fmt(list[meI].week - r.week)} pts ahead this week.`);
+      }
+    }
+    S.settings.ladderOrder = { wk: c.wk, ids };
+    // tier changes and near rank-up
+    const lt = S.settings.lastTier;
+    if (lt && lt !== c.tier.id) {
+      const up = game().TIERS.findIndex(t => t.id === c.tier.id) > game().TIERS.findIndex(t => t.id === lt);
+      ggNote(`tier-${today}-${c.tier.id}`, up ? `Rank up! ${TIER_ICON[c.tier.id]} ${c.tier.name}` : `Dropped to ${c.tier.name}`, up ? 'Keep it going to climb higher.' : 'A couple of good days gets you back.');
+    }
+    S.settings.lastTier = c.tier.id;
+    if (c.next && c.next.min - c.rating <= 40 && c.next.min - c.rating > 0) ggNote(`near-${today}`, `You're 1 good day away from ${c.next.name}`, `${fmt(c.next.min - c.rating)} pts to go.`, { quiet: true });
+    // Sunday evening: last day of the week
+    if (now.getDay() === 0 && now.getHours() >= 17 && list.length > 1) {
+      const above = list[meI - 1];
+      ggNote(`sun-${c.wk}`, `Final day of the week: you're #${meI + 1}`, above ? `${fmt(above.week - list[meI].week)} pts behind ${above.name}. Finish strong!` : 'You\'re top. Hold on to it! 👑');
+    }
+    // Monday: last week's MVP
+    if (now.getDay() === 1 && list.length > 1) {
+      const mvp = list.slice().sort((a, b) => b.lastWeek - a.lastWeek)[0];
+      if (mvp && mvp.lastWeek > 0) ggNote(`mvp-${game().addD(c.wk, -7)}`, mvp.me ? 'You were last week\'s MVP 👑' : `${mvp.name} was last week's MVP 👑`, `${fmt(mvp.lastWeek)} pts. A new week starts now.`);
+    }
+    // invite rewards: +100 XP for each new friend, a frame at 3 friends
+    const nf = (F.list || []).filter(f => f.status === 'accepted').length;
+    if (nf > (g.friendsRewarded || 0)) {
+      const gained = nf - (g.friendsRewarded || 0);
+      g.bonusXp = (g.bonusXp || 0) + gained * 100; g.friendsRewarded = nf;
+      if (nf >= 3) { g.cosmetics = g.cosmetics || {}; const fr = g.cosmetics.frames || (g.cosmetics.frames = []); if (!fr.includes('royal')) fr.push('royal'); }
+      game().invalidate(); save();
+      ggNote(`inv-${nf}`, `+${gained * 100} XP for your squad`, nf >= 3 ? 'And the Royal frame for having 3 friends!' : 'Every friend you add earns XP.', { quiet: true });
+    }
+    // reactions on my days
+    try {
+      const rs = await social.reactionsFor(social.me(), game().addD(today, -14));
+      MY_REACTS = rs;
+      const seen = S.settings.reactSeen || '';
+      const fresh = rs.filter(r => r.created_at > seen && r.from_id !== social.me());
+      if (fresh.length) {
+        S.settings.reactSeen = rs[0].created_at;
+        const f = (F.list || []).find(x => x.id === fresh[0].from_id);
+        ggNote(`re-${fresh[0].created_at}`, `${f ? f.profile.name : 'A friend'} reacted ${REACT_ICON[fresh[0].emoji]} to your day`, fresh.length > 1 ? `+${fresh.length - 1} more reactions` : '');
+        if (UI.view === 'today' && modal.hidden) softRender(render);
+      }
+    } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------- reactions on a friend's day
+  let FR_REACTS = { key: '', list: [] };
+  function reactBar(f, day) {
+    const key = f.id + '|' + day;
+    if (FR_REACTS.key !== key) { FR_REACTS = { key, list: [], loading: true }; social.reactionsFor(f.id, day, day).then(l => { if (FR_REACTS.key === key) { FR_REACTS.list = l; FR_REACTS.loading = false; if (UI.view === 'friends' && F.view === f.id) renderFriendProfile(); } }).catch(() => {}); }
+    const mine = new Set(FR_REACTS.list.filter(r => r.from_id === social.me()).map(r => r.emoji));
+    const count = e => FR_REACTS.list.filter(r => r.emoji === e).length;
+    return `<div class="react-bar"><span class="faint small">React to ${esc(f.profile.name)}'s day</span>${Object.entries(REACT_ICON).map(([e, ic]) => `<button class="react ${mine.has(e) ? 'on' : ''}" data-action="react" data-e="${e}" data-to="${esc(f.id)}" data-day="${day}">${ic}${count(e) ? ` <b>${count(e)}</b>` : ''}</button>`).join('')}</div>`;
+  }
+
+  // ---------------------------------------------------------------- profile picture
+  async function setAvatarFrom(file) {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
+    const s = Math.min(img.width, img.height), c = document.createElement('canvas'); c.width = c.height = 160;
+    c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 160, 160);
+    let url = c.toDataURL('image/webp', 0.8); if (!url.startsWith('data:image/webp')) url = c.toDataURL('image/jpeg', 0.8);
+    P().avatar = url; save(); render(); toast('Profile picture updated.');
+  }
+
+  // ---------------------------------------------------------------- progress photos
+  async function photoThumbs(root = main) {
+    for (const el of root.querySelectorAll('[data-photo]')) {
+      if (el.dataset.loaded) continue; el.dataset.loaded = '1';
+      try { const r = await window.MHPhotos.get(el.dataset.photo); if (r && r.blob) { const u = URL.createObjectURL(r.blob); if (el.tagName === 'IMG') el.src = u; else el.style.backgroundImage = `url(${u})`; } } catch (_) {}
+    }
+  }
+  function photoCard(k) {
+    if (!window.MHPhotos) return '';
+    const has = PHOTO_DAYS.has(k);
+    return `<div class="panel photo-card"><div class="pc-head"><h2>📸 Progress photo</h2><button class="btn ghost sm" data-action="go-photos">All photos ›</button></div>
+      ${has ? `<div class="pc-row"><img data-photo="${k}" alt="Progress photo for ${esc(shortDate(k))}"><div><p class="muted small" style="margin-top:0">Saved on this phone only.</p><button class="btn" data-action="photo-take" data-k="${k}">Retake</button></div></div>`
+        : `<p class="muted small" style="margin-top:0">Take one photo a day, in the same spot and pose. At the end of the month GG Gains turns them into a transformation video.</p><button class="btn primary" data-action="photo-take" data-k="${k}">Take today's photo</button>`}</div>`;
+  }
+  async function takePhoto(k) {
+    const keys = [...PHOTO_DAYS].filter(x => x < k).sort(); let ghost = null;
+    if (keys.length) { const r = await window.MHPhotos.get(keys[keys.length - 1]); if (r) ghost = URL.createObjectURL(r.blob); }
+    const blob = await window.MHPhotos.capture({ ghost });
+    if (!blob) return;
+    await window.MHPhotos.put(k, blob); PHOTO_DAYS.add(k); game().invalidate(); save(); render(); toast('Photo saved on this phone.');
+  }
+  const PH = { range: 'month', music: 'beat', file: null, speed: 'normal', labels: 'weight', size: 'portrait', busy: false, progress: 0, video: null, view: null };
+  function renderPhotos() {
+    const ks = [...PHOTO_DAYS].sort(), byMonth = {};
+    for (const k of ks) (byMonth[k.slice(0, 7)] = byMonth[k.slice(0, 7)] || []).push(k);
+    const months = Object.keys(byMonth).sort().reverse();
+    const mName = m => dateOf(m + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    const ranges = [['month', 'This month'], ['last', 'Last month'], ['year', 'This year'], ['all', 'All time'], ...months.map(m => ['m:' + m, mName(m)])];
+    main.innerHTML = `<div class="page">
+      <div class="page-head"><div><h1>Transformation</h1><p class="sub">${ks.length} photo${ks.length === 1 ? '' : 's'} · stored only on this device</p></div><button class="btn primary" data-action="photo-take" data-k="${todayKey()}">📸 Today's photo</button></div>
+      <div class="grid-2">
+        <div class="panel"><h2>Make a video</h2>
+          ${!window.MHPhotos.supported() ? '<p class="err small">This browser can\'t make videos. Update iOS, or use the PC app.</p>' : ''}
+          <label class="field"><span>Photos from</span><select id="phRange">${ranges.map(([v, l]) => `<option value="${v}" ${PH.range === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+          <label class="field" style="margin-top:10px"><span>Music</span><select id="phMusic"><option value="beat" ${PH.music === 'beat' ? 'selected' : ''}>GG Gains beat (built in)</option><option value="file" ${PH.music === 'file' ? 'selected' : ''}>A song from my phone…</option><option value="none" ${PH.music === 'none' ? 'selected' : ''}>No music</option></select></label>
+          ${PH.music === 'file' ? `<label class="btn" style="margin-top:8px">${PH.file ? '🎵 ' + esc(PH.file.name) : 'Choose a song'}<input type="file" accept="audio/*" hidden id="phFile"></label>` : ''}
+          <div class="form-grid ph-opts" style="margin-top:10px">
+            <label class="field"><span>Speed</span><select id="phSpeed">${[['fast', 'Fast'], ['normal', 'Normal'], ['slow', 'Slow']].map(([v, l]) => `<option value="${v}" ${PH.speed === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+            <label class="field"><span>Captions</span><select id="phLabels"><option value="weight" ${PH.labels === 'weight' ? 'selected' : ''}>Date + weight</option><option value="date" ${PH.labels === 'date' ? 'selected' : ''}>Date only</option></select></label>
+            <label class="field"><span>Shape</span><select id="phSize"><option value="portrait" ${PH.size === 'portrait' ? 'selected' : ''}>Post 4:5</option><option value="story" ${PH.size === 'story' ? 'selected' : ''}>Story 9:16</option></select></label></div>
+          <button class="btn primary" style="margin-top:12px" data-action="photos-make" ${PH.busy ? 'disabled' : ''}>${PH.busy ? 'Making your video…' : '🎬 Make my video'}</button>
+          ${PH.busy ? `<div class="xpbar" style="margin-top:10px"><i style="width:${Math.round(PH.progress * 100)}%"></i></div><p class="faint small">Keep the app open while it records (it plays in real time).</p>` : ''}
+          ${PH.video ? `<video class="ph-video" src="${PH.video.url}" controls playsinline></video><div class="res-btns"><button class="btn primary" data-action="photos-share">Share / save</button><a class="btn" href="${PH.video.url}" download="GG-Gains-transformation.${PH.video.ext}">Download</a></div>` : ''}
+          <p class="faint small" style="margin-top:12px">Photos never leave this device: they aren't uploaded anywhere. Deleting the app or clearing Safari's website data deletes them too, so save your videos.</p>
+        </div>
+        <div class="panel"><h2>Your photos</h2>
+          ${months.length ? months.map(m => `<div class="ph-month"><b>${esc(mName(m))}</b> <span class="faint small">${byMonth[m].length} photos</span><div class="ph-grid">${byMonth[m].map(k => `<button class="ph-th" data-photo="${k}" data-action="photo-view" data-k="${k}"><span>${esc(String(Number(k.slice(8))))}</span></button>`).join('')}</div></div>`).join('') : '<p class="muted">No photos yet. Take your first one today: future you will thank you.</p>'}
+        </div>
+      </div></div>`;
+    photoThumbs();
+    const bind = (id, key, re) => { const el = $('#' + id); if (el) el.addEventListener('change', () => { PH[key] = el.value; if (re) renderPhotos(); }); };
+    bind('phRange', 'range'); bind('phMusic', 'music', true); bind('phSpeed', 'speed'); bind('phLabels', 'labels'); bind('phSize', 'size');
+    const pf = $('#phFile'); if (pf) pf.addEventListener('change', () => { PH.file = pf.files[0] || null; renderPhotos(); });
+  }
+  async function makeTransformation() {
+    const today = todayKey(), y = today.slice(0, 4), m = today.slice(0, 7);
+    const lm = (() => { const d = dateOf(m + '-01'); d.setMonth(d.getMonth() - 1); return keyOf(d).slice(0, 7); })();
+    let from = null, to = null, title = 'My transformation', subtitle = '';
+    const mName = mm => dateOf(mm + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    if (PH.range === 'month') { from = m + '-01'; to = m + '-31'; subtitle = mName(m); }
+    else if (PH.range === 'last') { from = lm + '-01'; to = lm + '-31'; subtitle = mName(lm); }
+    else if (PH.range === 'year') { from = y + '-01-01'; to = y + '-12-31'; subtitle = y; title = 'My year'; }
+    else if (PH.range.startsWith('m:')) { const mm = PH.range.slice(2); from = mm + '-01'; to = mm + '-31'; subtitle = mName(mm); }
+    else subtitle = 'All time';
+    const photos = await window.MHPhotos.list(from, to);
+    if (photos.length < 2) { toast('You need at least 2 photos in that period.'); return; }
+    if (PH.music === 'file' && !PH.file) { toast('Choose a song first, or pick the built-in beat.'); return; }
+    const per = { fast: 0.18, normal: 0.32, slow: 0.6 }[PH.speed] * (photos.length > 120 ? 0.6 : 1);
+    const w = P().weights, wk = Object.keys(w).sort();
+    const wAt = k => { let v = null; for (const x of wk) { if (x <= k) v = w[x]; else break; } return v; };
+    const labels = k => shortDate(k) + (PH.labels === 'weight' && wAt(k) != null ? ` · ${fmt(wAt(k), 1)} kg` : '');
+    const w0 = wAt(photos[0].k), w1 = wAt(photos[photos.length - 1].k);
+    const endText = w0 != null && w1 != null && Math.abs(w1 - w0) >= 0.1 ? `${w1 < w0 ? '−' : '+'}${fmt(Math.abs(w1 - w0), 1)} kg · ${photos.length} days` : `${photos.length} days of work`;
+    PH.busy = true; PH.progress = 0; if (PH.video) URL.revokeObjectURL(PH.video.url); PH.video = null; renderPhotos();
+    try {
+      const out = await window.MHPhotos.makeVideo({ photos, title, subtitle, perPhoto: per, music: PH.music === 'beat' ? 'beat' : PH.music === 'file' ? PH.file : null, labels, endText, size: PH.size === 'story' ? [1080, 1920] : [1080, 1350] },
+        p => { PH.progress = p; const bar = main.querySelector('.xpbar i'); if (bar) bar.style.width = Math.round(p * 100) + '%'; });
+      PH.video = { url: URL.createObjectURL(out.blob), blob: out.blob, ext: out.ext };
+      toast('Your video is ready.');
+    } catch (e) { toast('Could not make the video: ' + e.message); }
+    PH.busy = false; if (UI.view === 'photos') renderPhotos();
+  }
+  async function viewPhoto(k) {
+    const r = await window.MHPhotos.get(k); if (!r) return;
+    const u = URL.createObjectURL(r.blob);
+    card.className = 'modal-card narrow';
+    card.innerHTML = `<div class="modal-head"><h2>${esc(longDate(k))}</h2><button class="btn ghost" data-v="close">Close</button></div><div class="modal-body"><img class="ph-full" src="${u}" alt=""><div class="res-btns"><button class="btn" data-v="retake">Retake</button><button class="btn danger" data-v="del">Delete</button></div></div>`;
+    modal.hidden = false;
+    card.onclick = async e => {
+      const b = e.target.closest('[data-v]'); if (!b) return;
+      if (b.dataset.v === 'close') closeModal();
+      if (b.dataset.v === 'retake') { closeModal(); takePhoto(k); }
+      if (b.dataset.v === 'del') { if (!confirm('Delete this photo? It can\'t be undone.')) return; await window.MHPhotos.del(k); PHOTO_DAYS.delete(k); game().invalidate(); closeModal(); render(); }
+    };
+  }
+
+  // ---------------------------------------------------------------- actions
+  async function ggAction(act, a, e) {
+    const g = gst();
+    if (act === 'go-ranked') { UI.rk = UI.rk || 'week'; nav('friends'); return true; }
+    if (act === 'go-photos') { nav('photos'); return true; }
+    if (act === 'rk-tab') { UI.rk = a.dataset.v; render(); return true; }
+    if (act === 'gg-result') { showResult(a.dataset.k); return true; }
+    if (act === 'gg-chest') { openChestModal(a.dataset.k); return true; }
+    if (act === 'gg-claim-week') { if (game().claimWeekly(gc().weekly, gc().wk)) toast('+150 XP and a streak freeze 🧊'); render(); return true; }
+    if (act === 'gg-claim-event') { const ev = gc().events.find(x => x.id === a.dataset.id); if (ev && game().claimEvent(ev)) toast('🏅 Badge earned! +250 XP'); render(); return true; }
+    if (act === 'gg-claim-pass') { const rw = game().claimPass(gc().season, Number(a.dataset.lv)); if (rw) toast('Claimed: ' + rw.label); render(); return true; }
+    if (act === 'gg-equip') { equip(a.dataset.kind, a.dataset.id); render(); return true; }
+    if (act === 'gg-hidew') { g.hideWeight = a.checked; save(); toast(a.checked ? 'Your weight is hidden from friends.' : 'Friends can see your weight again.'); return true; }
+    if (act === 'gg-avatar-remove') { P().avatar = null; save(); render(); return true; }
+    if (act === 'react') {
+      const on = !a.classList.contains('on');
+      a.classList.toggle('on', on);
+      try { await social.react(a.dataset.to, a.dataset.day, a.dataset.e, on); FR_REACTS.key = ''; if (on) toast(`Sent ${REACT_ICON[a.dataset.e]}`); renderFriendProfile(); }
+      catch (err) { a.classList.toggle('on', !on); toast(err.offline ? 'You\'re offline.' : 'Could not send that reaction.'); }
+      return true;
+    }
+    if (act === 'photo-take') { takePhoto(a.dataset.k); return true; }
+    if (act === 'photo-view') { viewPhoto(a.dataset.k); return true; }
+    if (act === 'photos-make') { makeTransformation(); return true; }
+    if (act === 'photos-share') {
+      const v = PH.video; if (!v) return true;
+      const file = new File([v.blob], `GG-Gains-transformation.${v.ext}`, { type: v.blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file], title: 'My GG Gains transformation' }).catch(() => {});
+      else { const l = document.createElement('a'); l.href = v.url; l.download = file.name; l.click(); }
+      return true;
+    }
+    return false;
+  }
+  main.addEventListener('change', e => {
+    const t = e.target;
+    if (t.dataset && t.dataset.action === 'gg-avatar-file' && t.files && t.files[0]) setAvatarFrom(t.files[0]).catch(() => toast('Could not read that picture.'));
+  });
+
   render();
   // Quietly bring in the latest Garmin days when the app opens, then every 3 hours.
   const connectedPids = () => Object.values(S.profiles).filter(p => p.garmin.displayName || p.garmin.lastSync).map(p => p.id);

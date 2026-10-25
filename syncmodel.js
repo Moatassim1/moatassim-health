@@ -28,7 +28,7 @@
     return { ...remote, data: out };
   }
 
-  const PROFILE_FIELDS = ['name', 'color', 'setupDone', 'profile', 'targets', 'reminderOn'];
+  const PROFILE_FIELDS = ['name', 'color', 'setupDone', 'profile', 'targets', 'reminderOn', 'game', 'avatar'];
   const GARMIN_SKIP = ['hrCurve'];
 
   function toItems(state) {

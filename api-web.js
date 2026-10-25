@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.26';
+  const APP_VERSION = '2.0.27';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -169,10 +169,16 @@
     const goal = p.profile.goal === 'lose-slow' ? 'lose' : (['lose', 'gain', 'maintain'].includes(p.profile.goal) ? p.profile.goal : 'maintain');
     const pg = progressOf(S);
     const detail = JSON.stringify({ s: pg.start ? pg.start.kg : null, c: pg.latest ? pg.latest.kg : null, a: pg.avg, w: pg.perWeek, g: p.profile.goalWeightKg ?? null });
-    const row = { name: (p.name || 'Me').slice(0, 40), color: p.color || '#E0263A', goal, points: pts, points_detail: detail, points_updated: new Date().toISOString() };
+    const hideW = !!(p.game && p.game.hideWeight);
+    let game = null; try { game = window.GG_PUBLIC ? JSON.stringify(window.GG_PUBLIC()) : null; } catch (_) {}
+    const row = { name: (p.name || 'Me').slice(0, 40), color: p.color || '#E0263A', goal, points: pts, points_detail: hideW ? null : detail, points_updated: new Date().toISOString(), avatar: p.avatar || null };
+    if (game) row.game = game;
     const sig = JSON.stringify({ ...row, points_updated: 0 });
     if (sig === lastProfilePush) return;
-    try { await req(`/rest/v1/profiles?id=eq.${uid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) }); lastProfilePush = sig; } catch (_) {}
+    try { await req(`/rest/v1/profiles?id=eq.${uid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) }); lastProfilePush = sig; }
+    catch (e) { // before the database has the new columns: send the old fields only
+      if (e.status === 400 || e.status === 404) { const { game: _g, avatar: _a, ...old } = row; try { await req(`/rest/v1/profiles?id=eq.${uid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(old) }); lastProfilePush = sig; } catch (_) {} }
+    }
   }
   let profileTimer = null;
 
@@ -362,6 +368,12 @@
           theyShare: (theirs || []).find(p => p.owner === other) || { see_diary: false, see_weight: false, notify_logs: false } };
       });
     },
+    // Reactions on a day: fire, muscle, gg, laugh.
+    async react(to, day, emoji, on) {
+      if (on) return req('/rest/v1/reactions', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify([{ from_id: uid, to_id: to, day, emoji }]) });
+      return req(`/rest/v1/reactions?from_id=eq.${uid}&to_id=eq.${to}&day=eq.${day}&emoji=eq.${emoji}`, { method: 'DELETE' });
+    },
+    async reactionsFor(to, from, until) { return (await req(`/rest/v1/reactions?to_id=eq.${to}&day=gte.${from}${until ? '&day=lte.' + until : ''}&select=*&order=created_at.desc`)) || []; },
     async addFriend(code) {
       const r = await req('/rest/v1/rpc/mh_add_friend', { method: 'POST', body: JSON.stringify({ code }) });
       if (r && r.ok) callFn('push', { kind: r.status === 'accepted' ? 'friend-accepted' : 'friend-request', to: r.id }).catch(() => {});

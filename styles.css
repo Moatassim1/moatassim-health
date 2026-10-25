@@ -1068,3 +1068,5 @@ html.pcam-open, html.pcam-open body { overflow: hidden; }
 .hp-ic { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg, #ff5f6d, #ff2d55); display: grid; place-items: center; font-size: 20px; flex: none; }
 .hp-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .health-offer { margin: 6px 0 4px; }
+.gsi-slot { min-height: 46px; display: grid; justify-items: center; }
+.gsi-slot .gsi-btn { width: 100%; display: flex; justify-content: center; }

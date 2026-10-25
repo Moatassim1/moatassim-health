@@ -3,18 +3,82 @@ import Foundation
 import Capacitor
 import AuthenticationServices
 import HealthKit
+import CommonCrypto
+import Security
 
 @objc(GGNativePlugin)
-public class GGNativePlugin: CAPPlugin, CAPBridgedPlugin, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+public class GGNativePlugin: CAPPlugin, CAPBridgedPlugin, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding, ASWebAuthenticationPresentationContextProviding {
     public let identifier = "GGNativePlugin"
     public let jsName = "GGNative"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "signInWithApple", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "webAuth", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "googleSignIn", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "healthAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "healthAuthorize", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "healthDays", returnType: CAPPluginReturnPromise)
     ]
     private var appleCall: CAPPluginCall?
+    private var webSession: ASWebAuthenticationSession?
+
+    // MARK: Secure sign-in sheet (shares Safari's saved logins, returns straight to the app)
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        return self.bridge?.webView?.window ?? ASPresentationAnchor()
+    }
+    private func openAuth(_ url: URL, scheme: String, done: @escaping (URL?, Error?) -> Void) {
+        DispatchQueue.main.async {
+            let s = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { cb, err in done(cb, err) }
+            s.presentationContextProvider = self
+            s.prefersEphemeralWebBrowserSession = false
+            self.webSession = s
+            if !s.start() { done(nil, NSError(domain: "GG", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't open the sign-in page."])) }
+        }
+    }
+    private func authError(_ call: CAPPluginCall, _ err: Error?) {
+        let cancelled = (err as? ASWebAuthenticationSessionError)?.code == .canceledLogin
+        call.reject(cancelled ? "Cancelled" : (err?.localizedDescription ?? "Sign-in failed"), cancelled ? "CANCELLED" : "FAILED")
+    }
+    @objc func webAuth(_ call: CAPPluginCall) {
+        guard let s = call.getString("url"), let url = URL(string: s), let scheme = call.getString("scheme") else { call.reject("Missing url"); return }
+        openAuth(url, scheme: scheme) { cb, err in
+            if let cb = cb { call.resolve(["url": cb.absoluteString]) } else { self.authError(call, err) }
+        }
+    }
+    // Google sign-in with the app's own Google client: Google shows "GG Gains", and we get an ID token for Supabase.
+    @objc func googleSignIn(_ call: CAPPluginCall) {
+        guard let clientId = call.getString("clientId"), !clientId.isEmpty else { call.reject("Missing client ID"); return }
+        let prefix = clientId.replacingOccurrences(of: ".apps.googleusercontent.com", with: "")
+        let scheme = "com.googleusercontent.apps." + prefix
+        let redirect = scheme + ":/oauth2redirect"
+        var bytes = [UInt8](repeating: 0, count: 32); _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        let verifier = Data(bytes).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        let challenge = GGNativePlugin.sha256b64url(verifier)
+        var c = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
+        c.queryItems = [URLQueryItem(name: "client_id", value: clientId), URLQueryItem(name: "redirect_uri", value: redirect),
+                        URLQueryItem(name: "response_type", value: "code"), URLQueryItem(name: "scope", value: "openid email profile"),
+                        URLQueryItem(name: "code_challenge", value: challenge), URLQueryItem(name: "code_challenge_method", value: "S256"),
+                        URLQueryItem(name: "prompt", value: "select_account")]
+        openAuth(c.url!, scheme: scheme) { cb, err in
+            guard let cb = cb, let code = URLComponents(url: cb, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "code" })?.value else { self.authError(call, err); return }
+            var req = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
+            req.httpMethod = "POST"
+            req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            let enc = { (v: String) in v.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? v }
+            req.httpBody = "code=\(enc(code))&client_id=\(enc(clientId))&redirect_uri=\(enc(redirect))&grant_type=authorization_code&code_verifier=\(enc(verifier))".data(using: .utf8)
+            URLSession.shared.dataTask(with: req) { data, _, e in
+                guard let data = data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let idToken = json["id_token"] as? String else {
+                    call.reject(e?.localizedDescription ?? "Google didn't return a sign-in token.", "FAILED"); return
+                }
+                call.resolve(["idToken": idToken])
+            }.resume()
+        }
+    }
+    static func sha256b64url(_ s: String) -> String {
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        let d = Data(s.utf8)
+        d.withUnsafeBytes { _ = CC_SHA256($0.baseAddress, CC_LONG(d.count), &hash) }
+        return Data(hash).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+    }
     private let store = HKHealthStore()
 
     // MARK: Sign in with Apple

@@ -48,6 +48,10 @@
       return { ok: true };
     },
     // Sign in with Apple (iPhone only): returns { idToken, name, email }.
+    // Secure sign-in sheet that returns to the app (ASWebAuthenticationSession). Resolves with the return URL.
+    async webAuth(url, scheme) { const G = plug('GGNative'); if (!G) throw new Error('Not available'); return (await G.webAuth({ url, scheme: scheme || SCHEME })).url; },
+    canWebAuth() { return !!plug('GGNative'); },
+    async googleSignIn(clientId) { const G = plug('GGNative'); return G.googleSignIn({ clientId }); },
     async appleSignIn() { const G = plug('GGNative'); if (!G) throw new Error('Not available'); return G.signInWithApple({}); },
     // Apple Health: steps, walking km and active calories per day.
     health: {

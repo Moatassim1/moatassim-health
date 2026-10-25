@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.41';
+  const APP_VERSION = '2.0.42';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -708,29 +708,73 @@
       // Apple sign-in is native on iPhone; on the web it isn't set up, so it's hidden there.
       const on = PROVIDERS.filter(([id]) => providerCache[id] && (id !== 'apple' || ios)).sort((a, b) => (b[0] === 'apple') - (a[0] === 'apple'));
       if (!on.length || !$('#aSocial')) return;
-      box.innerHTML = on.map(([id, label, ic]) => `<button class="social-btn sb-${id}" data-prov="${id}"><b>${ic}</b><span>${label}</span></button>`).join('') + `<div class="auth-or"><span>or use your email</span></div>`;
-      box.onclick = e => {
+      const gis = !app && CFG.googleWebClientId && providerCache.google && !navigator.standalone; // Google's popup is unreliable in iPhone home-screen web apps
+      box.innerHTML = on.map(([id, label, ic]) => id === 'google' && gis ? `<div class="gsi-slot" id="gsiSlot"><button class="social-btn sb-google" data-prov="google"><b>${ic}</b><span>${label}</span></button></div>` : `<button class="social-btn sb-${id}" data-prov="${id}"><b>${ic}</b><span>${label}</span></button>`).join('') + `<div class="auth-or"><span>or use your email</span></div>`;
+      if (gis) googleWeb();
+      box.onclick = async e => {
         const b = e.target.closest('[data-prov]'); if (!b) return;
-        if (b.dataset.prov === 'apple' && window.MHNative && window.MHNative.isApp) return appleNative(b);
-        const N = window.MHNative, app = N && N.isApp;
+        const prov = b.dataset.prov, N = window.MHNative;
+        if (app && prov === 'apple') return appleNative(b);
+        if (app && prov === 'google' && CFG.googleIosClientId) return googleNative(b);
         const back = app ? N.authRedirect : location.origin + location.pathname;
-        const url = `${CFG.url}/auth/v1/authorize?provider=${encodeURIComponent(b.dataset.prov)}&redirect_to=${encodeURIComponent(back)}`;
-        if (app) N.openUrl(url); else location.href = url;
+        const url = `${CFG.url}/auth/v1/authorize?provider=${encodeURIComponent(prov)}&redirect_to=${encodeURIComponent(back)}`;
+        if (!app) { location.href = url; return; }
+        if (!N.canWebAuth()) { N.openUrl(url); return; }
+        b.disabled = true;
+        try { const ret = await N.webAuth(url); await sessionFromHash((ret.split('#')[1] || ret.split('?')[1] || '')); }
+        catch (er) { b.disabled = false; if (!(er && (er.code === 'CANCELLED' || /cancel/i.test(er.message || '')))) authScreen('signin', 'Sign-in didn\'t finish: ' + ((er && er.message) || 'unknown error')); }
       };
     } catch (_) {}
+  }
+  // A provider's ID token (Google, Apple) swapped for a GG Gains session.
+  async function sessionFromIdToken(provider, idToken, name) {
+    const s = makeSupa();
+    const sess = await s._req('/auth/v1/token?grant_type=id_token', { method: 'POST', body: JSON.stringify({ provider, id_token: idToken }) }, false);
+    s._keep(sess);
+    LS.set('mh2.session', s.session);
+    const u = sess.user || {}, isNew = u.created_at && Date.now() - new Date(u.created_at).getTime() < 3 * 60 * 1000;
+    const nm = (name || '').trim();
+    await startApp(s, isNew && nm && nameOk(nm) ? nm : null);
+  }
+  // Tokens handed back after a provider's sign-in page (#access_token=…).
+  async function sessionFromHash(frag) {
+    const h = new URLSearchParams(frag);
+    if (h.get('error_description')) { authScreen('signin', h.get('error_description').replace(/\+/g, ' ')); return; }
+    const at = h.get('access_token'), rt = h.get('refresh_token');
+    if (!at || !rt) { authScreen('signin', 'Sign-in didn\'t finish. Please try again.'); return; }
+    const s = makeSupa();
+    const user = await s._req('/auth/v1/user', { headers: { Authorization: 'Bearer ' + at } }, false);
+    s._keep({ access_token: at, refresh_token: rt, expires_in: Number(h.get('expires_in')) || 3600, user });
+    LS.set('mh2.session', s.session);
+    await startApp(s, null);
+  }
+  // Web: Google's own sign-in button. Shows "Sign in to GG Gains" and the Google accounts already on this browser.
+  let gisLoading = null;
+  function googleWeb() {
+    const slot = $('#gsiSlot'); if (!slot) return;
+    gisLoading = gisLoading || new Promise((res, rej) => { if (window.google && google.accounts) return res(); const sc = document.createElement('script'); sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+    gisLoading.then(() => {
+      const el = $('#gsiSlot'); if (!el || !window.google || !google.accounts) return;
+      google.accounts.id.initialize({ client_id: CFG.googleWebClientId, auto_select: false, cancel_on_tap_outside: true, itp_support: true, use_fedcm_for_prompt: true,
+        callback: async r => { try { await sessionFromIdToken('google', r.credential); } catch (e) { authScreen('signin', 'Google sign-in didn\'t finish: ' + e.message); } } });
+      const w = Math.min(400, Math.max(200, Math.round(el.getBoundingClientRect().width || 320)));
+      const holder = document.createElement('div'); holder.className = 'gsi-btn';
+      el.innerHTML = ''; el.appendChild(holder);
+      google.accounts.id.renderButton(holder, { type: 'standard', theme: document.documentElement.dataset.theme === 'dark' ? 'filled_black' : 'outline', size: 'large', text: 'continue_with', shape: 'pill', width: w, logo_alignment: 'center' });
+      try { google.accounts.id.prompt(); } catch (_) {}
+    }).catch(() => {}); // if Google's script can't load, the normal Continue with Google button stays
+  }
+  // iPhone app: Google sign-in through the app's own Google client.
+  async function googleNative(btn) {
+    btn.disabled = true;
+    try { const r = await window.MHNative.googleSignIn(CFG.googleIosClientId); await sessionFromIdToken('google', r.idToken); }
+    catch (e) { btn.disabled = false; if (e && (e.code === 'CANCELLED' || /cancel/i.test(e.message || ''))) return; authScreen('signin', 'Google sign-in didn\'t finish: ' + ((e && e.message) || 'unknown error')); }
   }
   // Sign in with Apple on iPhone: Apple gives us a signed token, Supabase swaps it for a session.
   async function appleNative(btn) {
     btn.disabled = true;
-    try {
-      const r = await window.MHNative.appleSignIn();
-      const s = makeSupa();
-      const sess = await s._req('/auth/v1/token?grant_type=id_token', { method: 'POST', body: JSON.stringify({ provider: 'apple', id_token: r.idToken }) }, false);
-      s._keep(sess);
-      LS.set('mh2.session', s.session);
-      const name = (r.name || '').trim(), u = sess.user || {}, isNew = u.created_at && Date.now() - new Date(u.created_at).getTime() < 3 * 60 * 1000;
-      await startApp(s, isNew && name && nameOk(name) ? name : null);
-    } catch (e) {
+    try { const r = await window.MHNative.appleSignIn(); await sessionFromIdToken('apple', r.idToken, r.name); }
+    catch (e) {
       btn.disabled = false;
       if (e && (e.code === 'CANCELLED' || /cancel/i.test(e.message || ''))) return;
       authScreen('signin', 'Apple sign-in didn\'t finish: ' + ((e && e.message) || 'unknown error'));

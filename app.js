@@ -2854,7 +2854,7 @@
   }
 
   // ---------------------------------------------------------------- Quests page (its own tab)
-  const CPI = '<img class="cp-ic" src="icons/cp-96.png" alt="" aria-hidden="true">';
+  const CPI = '<i class="cp-ic" aria-hidden="true"></i>';
   // The Consistency Points symbol goes next to every mention of CP, wherever it appears.
   const CP_RE = /consistency points(?: \(CP\))?|\bCP\b/gi;
   function cpDecorate(root) {
@@ -2871,7 +2871,7 @@
       while ((m = CP_RE.exec(v))) {
         frag.appendChild(document.createTextNode(v.slice(last, m.index)));
         const prev = m.index === 0 ? t.previousSibling : null;
-        if (!(prev && prev.classList && prev.classList.contains('cp-ic'))) { const img = document.createElement('img'); img.className = 'cp-ic'; img.src = 'icons/cp-96.png'; img.alt = ''; img.setAttribute('aria-hidden', 'true'); frag.appendChild(img); added++; }
+        if (!(prev && prev.classList && prev.classList.contains('cp-ic'))) { const img = document.createElement('i'); img.className = 'cp-ic'; img.setAttribute('aria-hidden', 'true'); frag.appendChild(img); added++; }
         frag.appendChild(document.createTextNode(m[0])); last = m.index + m[0].length;
       }
       if (!added) continue;

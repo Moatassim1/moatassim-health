@@ -341,7 +341,7 @@
   const BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16zM10 20a2 2 0 0 0 4 0"/></svg>';
   function renderMe() {
     const pts = myPoints();
-    const html = `<button class="me-card" data-act2="go-settings">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, frame: ((P().game || {}).equipped || {}).frame })}<span class="pname">${esc(P().name)}<small>${pts == null ? 'Set a goal to rank' : fmt(pts, 1) + '% to goal'}</small></span></button>
+    const html = `<button class="me-card" data-act2="go-settings">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, tier: GAME ? gc().tier.id : null })}<span class="pname">${esc(P().name)}<small>${pts == null ? 'Set a goal to rank' : fmt(pts, 1) + '% to goal'}</small></span></button>
       <button class="bell" data-act2="notes" aria-label="Notifications">${BELL}${NOTES.unread ? `<i>${NOTES.unread > 9 ? '9+' : NOTES.unread}</i>` : ''}</button>`;
     $('#profiles').innerHTML = html;
     const mt = $('#mtop'); if (mt) mt.innerHTML = `<div class="brand-mini"><img class="brand-mark" src="icons/icon-192.png" alt=""></div>` + html;
@@ -669,7 +669,7 @@
       const en = dayEntries(UI.date).find(x => x.id === a.dataset.id);
       if (en) openAdd({ date: UI.date, entry: en });
     }
-    else if (['go-ranked', 'go-photos', 'rk-tab', 'gg-result', 'gg-chest', 'gg-claim-week', 'gg-claim-event', 'gg-claim-pass', 'gg-equip', 'gg-hidew', 'gg-avatar-remove', 'gg-avatar-file', 'react', 'photo-take', 'photo-view', 'photos-make', 'photos-share'].includes(act)) ggAction(act, a, e);
+    else if (['go-ranked', 'go-photos', 'rk-tab', 'gg-result', 'gg-claim-week', 'gg-claim-event', 'gg-equip', 'gg-hidew', 'gg-avatar-remove', 'gg-avatar-file', 'react', 'photo-take', 'photo-view', 'photos-make', 'photos-share'].includes(act)) ggAction(act, a, e);
     else if (act === 'toggle-complete') {
       const m = P().dayMeta[UI.date] || {};
       m.complete = !m.complete;
@@ -2528,20 +2528,23 @@
       P, uid: () => (social && social.me && social.me()) || 'me', today: todayKey, dayEntries, totalsOf, targets, waterGoal, microTargets,
       garmin: k => ((P().garmin || {}).days || {})[k] || null, photoDays: () => PHOTO_DAYS, BUILTIN, weights: () => P().weights,
       goal: () => { const g = P().profile.goal || 'maintain'; return g.startsWith('lose') ? 'lose' : g; },
-      firstDay: () => Object.keys(P().diary).filter(k => (P().diary[k] || []).length).sort()[0], sig: () => '', save
+      firstDay: () => Object.keys(P().diary).filter(k => (P().diary[k] || []).length).sort()[0], sig: () => '', save,
+      goalInfo: () => { const pg = social.progressOf ? social.progressOf(S) : {}, g = (P().profile.goal || '').startsWith('lose') ? 'lose' : P().profile.goal; if (!pg.start || pg.avg == null) return null;
+        const kg = g === 'gain' ? pg.avg - pg.start.kg : pg.start.kg - pg.avg; return { pct: myPoints() || 0, kg: Math.max(0, Math.round(kg * 10) / 10) }; }
     });
     return GAME;
   }
   const gc = () => game().compute();
   const gst = () => P().game || (P().game = {});
   window.GG_PUBLIC = () => game().publicStats(gc());
+  const titleHtml = id => { const t = id && game().titleById(id); if (!t) return ''; const r = game().RARITY[t.rarity]; return `<span class="ttl" style="--rc:${r.color}">${esc(t.id)}</span>`; };
   const tierBadge = (t, sm) => `<span class="tier ${sm ? 'sm' : ''}" style="--tc:${t.color}">${TIER_ICON[t.id] || ''} ${esc(t.name)}</span>`;
   const tierById = id => game().TIERS.find(t => t.id === id) || game().TIERS[0];
-  const colorCss = id => { const c = game().COLORS.find(x => x.id === id); return c ? c.css : ''; };
+  // o.tier: tier id, which sets the frame (frames only come from your rank).
   function avatarHtml(o, extra = '') {
-    const fr = o.frame && game().FRAMES.find(f => f.id === o.frame);
+    const fr = o.tier && game().TIER_FRAMES[o.tier];
     const inner = o.avatar ? `<img src="${esc(o.avatar)}" alt="">` : esc((o.name || '?').charAt(0).toUpperCase());
-    return `<span class="avatar ${o.avatar ? 'has-img' : ''} ${fr ? 'framed' : ''} ${extra}" style="background:${esc(o.color || '#E0263A')};${fr ? `--frame:${fr.css}` : ''}">${inner}</span>`;
+    return `<span class="avatar ${o.avatar ? 'has-img' : ''} ${fr ? 'framed' : ''} ${extra}" style="background:${esc(o.color || '#E0263A')};${fr ? `--frame:${fr}` : ''}" ${o.tier ? `title="${esc(tierById(o.tier).name)} tier"` : ''}>${inner}</span>`;
   }
   if (window.MHPhotos) window.MHPhotos.days().then(s => { PHOTO_DAYS = s; game().invalidate(); if (UI.view === 'today' && modal.hidden) softRender(render); }).catch(() => {});
 
@@ -2569,7 +2572,7 @@
       r.week = st.wk === wk ? st.wp || 0 : 0;
       r.lastWeek = st.lwk === lastWk ? st.lwp || 0 : st.wk === lastWk ? st.wp || 0 : 0;
       r.season = st.s === c.season ? st.sp || 0 : 0;
-      r.tier = tierById(st.t); r.level = st.lv || 1; r.fire = !!st.fire; r.title = st.ti || ''; r.nameColor = colorCss(st.nc); r.frame = st.fr || null;
+      r.tier = tierById(st.t); r.level = st.lv || 1; r.fire = !!st.fire; r.title = st.ti || '';
       r.hideWeight = !!st.hw;
     }
     const mvp = rows.length > 1 ? rows.slice().sort((a, b) => b.lastWeek - a.lastWeek)[0] : null;
@@ -2593,12 +2596,10 @@
   }
   function ggLadderPanel() {
     const tab = UI.rk || 'week', c = gc(), rows = ggRows();
-    const tabs = [['week', 'This week'], ['season', `Season ${c.season}`], ['overall', 'Overall'], ['me', 'My rank'], ['pass', 'Pass'], ['locker', 'Locker']];
-    const pass = game().passState(c);
-    const head = `<div class="rk-tabs">${tabs.map(([v, l]) => `<button class="${tab === v ? 'on' : ''}" data-action="rk-tab" data-v="${v}">${l}${v === 'pass' && pass.claimable ? ` <i class="dot">${pass.claimable}</i>` : ''}</button>`).join('')}</div>`;
+    const tabs = [['week', 'This week'], ['season', `Season ${c.season}`], ['overall', 'Overall'], ['me', 'My rank'], ['locker', 'Locker']];
+    const head = `<div class="rk-tabs">${tabs.map(([v, l]) => `<button class="${tab === v ? 'on' : ''}" data-action="rk-tab" data-v="${v}">${l}</button>`).join('')}</div>`;
     if (tab === 'me') return `<div class="panel">${head}${myRankHtml(c)}</div>`;
-    if (tab === 'pass') return `<div class="panel">${head}${passHtml(c, pass)}</div>`;
-    if (tab === 'locker') return `<div class="panel">${head}${lockerHtml()}</div>`;
+    if (tab === 'locker') return `<div class="panel">${head}${lockerHtml(c)}</div>`;
     const list = sortedFor(tab, rows), arrow = arrowsFor(tab, list);
     const val = r => tab === 'week' ? r.week : tab === 'season' ? r.season : r.points;
     const meRow = list.find(r => r.me), others = list.filter(r => !r.me);
@@ -2606,19 +2607,20 @@
     if (tab === 'week' && others.length) {
       const rv = others.slice().sort((a, b) => Math.abs(a.week - meRow.week) - Math.abs(b.week - meRow.week))[0];
       const gap = rv.week - meRow.week;
-      rival = `<div class="rival">⚔️ This week's rival: <b>${esc(rv.name)}</b> · ${gap > 0 ? `${fmt(gap)} pts ahead of you` : gap < 0 ? `${fmt(-gap)} pts behind you` : 'level with you'}</div>`;
+      rival = `<div class="rival">⚔️ This week's rival: <b>${esc(rv.name)}</b> · ${gap > 0 ? `${fmt(gap)} CP ahead of you` : gap < 0 ? `${fmt(-gap)} CP behind you` : 'level with you'}</div>`;
     }
-    const sub = tab === 'week' ? `Resets every Monday. Points for logging, hitting calories and protein, steps, training, water, weigh-ins and quests.` :
+    const sub = tab === 'week' ? `Consistency points (CP) this week. Resets every Monday. Earn CP for logging, hitting calories and protein, steps, training, water, weigh-ins, your progress photo and quests.` :
       tab === 'season' ? `Season ${c.season} runs ${esc(shortDate(c.seasonStart))} to ${esc(shortDate(c.seasonEnd))}. Your final season tier is kept as a badge.` :
       'How far each person has got from their start weight to their goal (7-day average weight).';
     const leader = Math.max(1, ...list.map(r => val(r) || 0));
     return `<div class="panel">${head}<p class="muted small" style="margin:6px 0 10px">${sub}</p>${rival}
       <ol class="rank gg-rank">${list.map((r, i) => `<li class="${r.me ? 'me' : ''}" ${r.friend ? `data-action="f-view" data-id="${esc(r.id)}"` : ''}>
-        <span class="rk-pos num">${i + 1}${arrow(r.id)}</span>${avatarHtml({ name: r.name, color: r.color, avatar: r.avatar, frame: r.frame })}
-        <span class="rk-name"><span class="rk-line"><span style="${r.nameColor ? 'color:' + r.nameColor : ''}">${esc(r.name)}</span>${r.crown ? ' <span title="Last week\'s MVP">👑</span>' : ''}${r.fire ? ' <span title="On fire: 3 great days in a row">🔥</span>' : ''}${r.me ? ' <span class="faint">(you)</span>' : ''}</span>
-          <small>${tierBadge(r.tier, true)} · Lv ${fmt(r.level)}${r.title ? ' · ' + esc(r.title) : ''}</small></span>
-        <span class="rk-pts num">${tab === 'overall' ? pointsText(r.points) : fmt(val(r) || 0) + ' pts'}</span>
-        ${tab === 'overall' ? (r.hideWeight && !r.me ? '<div class="faint small" style="grid-column:1/-1">Weight hidden</div>' : progressBar(r)) : `<div class="rk-prog"><div class="rk-track"><i style="width:${Math.max(2, (val(r) || 0) / leader * 100)}%"></i></div></div>`}
+        <span class="rk-pos num">${i + 1}${arrow(r.id)}</span>${avatarHtml({ name: r.name, color: r.color, avatar: r.avatar, tier: r.tier.id })}
+        <span class="rk-name"><span class="rk-line"><span style="color:${esc(r.color || 'inherit')}">${esc(r.name)}</span>${r.crown ? ' <span title="Last week\'s MVP">👑</span>' : ''}${r.fire ? ' <span title="On fire: 3 great days in a row">🔥</span>' : ''}${r.me ? ' <span class="faint">(you)</span>' : ''}</span>
+          <small>${tierBadge(r.tier, true)} · Lv ${fmt(r.level)}${r.title ? ' · ' + titleHtml(r.title) : ''}</small></span>
+        <span class="rk-pts num">${tab === 'overall' ? pointsText(r.points) : fmt(val(r) || 0) + ' CP'}</span>
+        ${tab === 'overall' ? '' : `<div class="rk-prog rk-cp"><div class="rk-track"><i style="width:${Math.max(2, (val(r) || 0) / leader * 100)}%"></i></div></div>`}
+        ${r.hideWeight && !r.me ? '<div class="faint small rk-hidden">Weight hidden · ' + esc(pointsText(r.points)) + ' to goal</div>' : progressBar(r)}
       </li>`).join('')}</ol>
       ${!others.length ? '<p class="muted small">Add a friend below to start competing.</p>' : ''}</div>`;
   }
@@ -2630,12 +2632,12 @@
     const wq = c.weekly, wqClaimed = (g.weeklyDone || []).includes(c.wk);
     const badges = (g.badges || []).map(id => (game().EVENTS.find(e => e.id === id) || { name: id }).name);
     return `<div class="myrank">
-      <div class="mr-top">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, frame: (g.equipped || {}).frame }, 'big')}
-        <div><div class="mr-name" style="${colorCss((g.equipped || {}).color) ? 'color:' + colorCss(g.equipped.color) : ''}">${esc(P().name)}</div><div class="faint small">${esc((g.equipped || {}).title || 'No title yet: open chests to earn one')}</div></div></div>
-      <div class="mr-block"><div class="mr-h"><b>Level ${c.level}</b><span class="faint small">${c.need ? `${fmt(c.into)} / ${fmt(c.need)} XP` : 'Max level'}</span></div><div class="xpbar"><i style="width:${lvPct}%"></i></div><div class="faint small">XP never goes down. Every point you earn is XP.</div></div>
-      <div class="mr-block"><div class="mr-h">${tierBadge(c.tier)}<span class="faint small">${fmt(c.rating)} pts in the last 14 days</span></div><div class="xpbar tierbar" style="--tc:${c.tier.color}"><i style="width:${tierPct}%"></i></div>
-        <div class="faint small">${nx ? `${fmt(nx.min - c.rating)} pts to ${TIER_ICON[nx.id]} ${esc(nx.name)}.` : 'Top tier. Stay here!'}${dropTo && c.rating - c.tier.min < 60 ? ` <b class="warn-txt">Careful: ${fmt(c.rating - c.tier.min)} pts above ${esc(dropTo.name)}. A couple of bad days and you drop.</b>` : ''} Your tier uses your last 14 days, so it can go up or down.</div></div>
-      <div class="mr-stats"><div><b>🔥 ${fmt(c.logStreak)}</b><span>day logging streak</span></div><div><b>💪 ${fmt(c.protStreak)}</b><span>day protein streak</span></div><div><b>🧊 ${fmt(c.freezes)}</b><span>streak freezes</span></div><div><b>${fmt(c.weekPts)}</b><span>pts this week</span></div></div>
+      <div class="mr-top">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, tier: c.tier.id }, 'big')}
+        <div><div class="mr-name" style="color:${esc(P().color)}">${esc(P().name)}</div><div class="small">${(g.equipped || {}).title ? titleHtml(g.equipped.title) : '<span class="faint">No title equipped: earn them in the Locker</span>'}</div></div></div>
+      <div class="mr-block"><div class="mr-h"><b>Level ${c.level}</b><span class="faint small">${c.need ? `${fmt(c.into)} / ${fmt(c.need)} XP` : 'Max level'}</span></div><div class="xpbar"><i style="width:${lvPct}%"></i></div><div class="faint small">XP never goes down. Every consistency point you earn is also XP. ${fmt(c.titlesEarned.size)} of ${game().TITLES.length} titles earned.</div></div>
+      <div class="mr-block"><div class="mr-h">${tierBadge(c.tier)}<span class="faint small">${fmt(c.rating)} CP in the last 14 days</span></div><div class="xpbar tierbar" style="--tc:${c.tier.color}"><i style="width:${tierPct}%"></i></div>
+        <div class="faint small">${nx ? `${fmt(nx.min - c.rating)} CP to ${TIER_ICON[nx.id]} ${esc(nx.name)}.` : 'Top tier. Stay here!'}${dropTo && c.rating - c.tier.min < 60 ? ` <b class="warn-txt">Careful: ${fmt(c.rating - c.tier.min)} CP above ${esc(dropTo.name)}. A couple of bad days and you drop.</b>` : ''} Your tier uses your last 14 days, so it can go up or down.</div></div>
+      <div class="mr-stats"><div><b>🔥 ${fmt(c.logStreak)}</b><span>day logging streak</span></div><div><b>💪 ${fmt(c.protStreak)}</b><span>day protein streak</span></div><div><b>🧊 ${fmt(c.freezes)}</b><span>streak freezes</span></div><div><b>${fmt(c.weekPts)}</b><span>CP this week</span></div></div>
       <div class="mr-block"><div class="mr-h"><b>Weekly quest</b><span class="faint small">+150 XP and a streak freeze</span></div><div>${esc(wq.text)}: <b>${fmt(Math.min(wq.have, wq.need))} / ${wq.need}</b></div>
         ${wq.done ? (wqClaimed ? '<div class="faint small">✅ Claimed</div>' : '<button class="btn primary" data-action="gg-claim-week">Claim reward</button>') : `<div class="xpbar"><i style="width:${wq.have / wq.need * 100}%"></i></div>`}</div>
       ${c.events.map(e => `<div class="mr-block event"><div class="mr-h"><b>${esc(e.name)}</b><span class="faint small">${esc(shortDate(e.from))} – ${esc(shortDate(e.to))}</span></div>
@@ -2643,45 +2645,42 @@
         ${(g.badges || []).includes(e.id) ? '<div class="faint small">🏅 Badge earned</div>' : e.done ? '<button class="btn primary" data-action="gg-claim-event" data-id="' + e.id + '">Claim badge + 250 XP</button>' : e.live ? `<div class="xpbar"><i style="width:${e.have / e.need * 100}%"></i></div><div class="faint small">Limited time: this badge can't be earned after the event.</div>` : ''}</div>`).join('')}
       ${badges.length ? `<div class="mr-block"><b>Badges</b><div class="chips" style="margin-top:6px">${badges.map(b => `<span class="chip on">🏅 ${esc(b)}</span>`).join('')}</div></div>` : ''}
       <label class="check" style="margin-top:12px"><input type="checkbox" data-action="gg-hidew" ${g.hideWeight ? 'checked' : ''}> Hide my weight from friends (compete on habits only)</label>
-      <p class="faint small">Fair play: eating far below your target or losing weight faster than about 1% of your body weight a week earns no extra points. Consistency wins.</p>
+      <p class="faint small">Fair play: eating far below your target or losing weight faster than about 1% of your body weight a week earns no extra CP. Consistency wins.</p>
     </div>`;
   }
-  function passHtml(c, pass) {
-    return `<div class="pass-head"><b>Season ${c.season} pass</b> · level ${pass.level} / 30 · ${fmt(c.seasonPts)} season pts<div class="faint small">Free for everyone. A new level every 60 season points. Unclaimed rewards disappear when the season ends on ${esc(shortDate(c.seasonEnd))}.</div></div>
-      <div class="pass-grid">${pass.list.map(r => `<div class="pass-cell ${r.unlocked ? 'un' : ''} ${r.claimed ? 'cl' : ''}"><span class="pl">Lv ${r.level}</span><span class="pr">${esc(r.label)}</span>
-        ${r.claimed ? '<span class="faint small">Claimed</span>' : r.unlocked ? `<button class="btn primary sm" data-action="gg-claim-pass" data-lv="${r.level}">Claim</button>` : `<span class="faint small">${fmt(r.need)} pts</span>`}</div>`).join('')}</div>`;
-  }
-  function lockerHtml() {
-    const g = gst(), own = g.cosmetics || {}, eq = g.equipped || {};
-    const item = (kind, id, label, preview) => `<button class="lk-item ${eq[kind] === id ? 'on' : ''}" data-action="gg-equip" data-kind="${kind}" data-id="${esc(id)}">${preview}<span>${esc(label)}</span></button>`;
-    const frames = game().FRAMES.filter(f => (own.frames || []).includes(f.id));
-    const titles = own.titles || [], colors = game().COLORS.filter(x => (own.colors || []).includes(x.id));
+  function lockerHtml(c) {
+    const g = gst(), eq = g.equipped || {};
     return `<div class="locker">
-      <div class="lk-sec"><b>Profile picture</b><div class="lk-av">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, frame: eq.frame }, 'big')}
+      <div class="lk-sec"><b>Profile picture</b><div class="lk-av">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, tier: c.tier.id }, 'big')}
         <label class="btn">Choose a photo<input type="file" accept="image/*" hidden data-action="gg-avatar-file"></label>${P().avatar ? '<button class="btn ghost" data-action="gg-avatar-remove">Remove</button>' : ''}</div>
         <div class="faint small">Friends see it on the ladder. It's shrunk to a tiny image so the app stays light.</div></div>
-      <div class="lk-sec"><b>Frames</b> <span class="faint small">${frames.length} / ${game().FRAMES.length} unlocked</span><div class="lk-grid">${item('frame', '', 'None', avatarHtml({ name: P().name, color: P().color, avatar: P().avatar }))}${frames.map(f => item('frame', f.id, f.name, avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, frame: f.id }))).join('')}</div></div>
-      <div class="lk-sec"><b>Titles</b><div class="lk-grid">${item('title', '', 'None', '')}${titles.map(t => item('title', t, t, '🏷️')).join('') || ''}</div></div>
-      <div class="lk-sec"><b>Name colour</b><div class="lk-grid">${item('color', '', 'Default', '<i class="sw" style="background:var(--ink)"></i>')}${colors.map(x => item('color', x.id, x.name, `<i class="sw" style="background:${x.css}"></i>`)).join('')}</div></div>
-      <p class="faint small">Earn more from chests (one for every completed day), the season pass and events.</p></div>`;
+      <div class="lk-sec"><b>Frame</b><div class="faint small" style="margin-top:4px">Your frame is your rank: ${tierBadge(c.tier, true)}. Climb to a higher tier to get its frame, and drop a tier and the frame drops with you.</div>
+        <div class="lk-tiers">${game().TIERS.map(t => `<span class="${t.id === c.tier.id ? 'on' : ''}">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, tier: t.id })}<small>${esc(t.name)}</small></span>`).join('')}</div></div>
+      <div class="lk-sec"><b>Titles</b> <span class="faint small">${fmt(c.titlesEarned.size)} / ${game().TITLES.length} earned · tap one you've earned to wear it</span>
+        ${Object.entries(game().RARITY).map(([rid, r]) => `<div class="ttl-group"><div class="ttl-h" style="color:${r.color}">${esc(r.name)}</div><div class="ttl-grid">${game().TITLES.filter(t => t.rarity === rid).map(t => {
+          const got = c.titlesEarned.has(t.id), have = Math.min(t.need, Math.floor(c.stats[t.stat] || 0));
+          return got ? `<button class="ttl-card got ${(eq.title || '') === t.id ? 'on' : ''}" style="--rc:${r.color}" data-action="gg-equip" data-kind="title" data-id="${esc(t.id)}"><b>✓ ${esc(t.id)}</b><small>${esc(t.text)}</small>${(eq.title || '') === t.id ? '<i>Wearing</i>' : ''}</button>`
+            : `<div class="ttl-card" style="--rc:${r.color}"><b>🔒 ${esc(t.id)}</b><small>${esc(t.text)}</small>${t.need > 1 ? `<div class="xpbar sm"><i style="width:${have / t.need * 100}%"></i></div><small>${fmt(have)} / ${fmt(t.need)}</small>` : ''}</div>`;
+        }).join('')}</div></div>`).join('')}
+        ${eq.title ? '<button class="btn ghost sm" style="margin-top:10px" data-action="gg-equip" data-kind="title" data-id="">Take title off</button>' : ''}</div>
+      <p class="faint small">Titles reward consistency over time and big goals: the cooler the title, the harder it is. Your name colour is picked at random.</p></div>`;
   }
-
-  // ---------------------------------------------------------------- diary card, result screen and chests
+  // ---------------------------------------------------------------- diary card and result screen
   function gameCard(k) {
     const c = gc(), d = c.days[k]; if (!d) return '';
-    const isT = k === c.today, gr = game().gradeOf(d.pts), ready = game().chestsReady(c);
+    if (c.newTitles.length) setTimeout(() => c.newTitles.forEach(t => ggNote('title-' + t.id, `🏷️ New title: ${t.id}`, `${game().RARITY[t.rarity].name} · ${t.text}. Wear it from Ranked › Locker.`)), 0);
+    const isT = k === c.today, gr = game().gradeOf(d.pts);
     const reacts = MY_REACTS.filter(r => r.day === k);
     const who = id => { const f = (F.list || []).find(x => x.id === id); return f ? f.profile.name : 'A friend'; };
     return `<div class="panel gg-card">
       <div class="gg-row1">
-        <button class="gg-score" data-action="gg-result" data-k="${k}"><b class="num">${fmt(d.pts)}</b><span>pts${isT ? ' today' : ''}</span><i class="grade g-${gr}">${gr}</i></button>
+        <button class="gg-score" data-action="gg-result" data-k="${k}"><b class="num">${fmt(d.pts)}</b><span>CP${isT ? ' today' : ''}</span><i class="grade g-${gr}">${gr}</i></button>
         <div class="gg-meta">${tierBadge(c.tier)}<span class="lv">Lv ${fmt(c.level)}</span>${c.logStreak ? `<span class="streak" title="Logging streak">🔥 ${fmt(c.logStreak)}</span>` : ''}${c.freezes ? `<span class="frz" title="Streak freezes">🧊 ${fmt(c.freezes)}</span>` : ''}</div>
       </div>
-      ${d.mult === 2 ? '<div class="gg-banner">⚡ Welcome back! Comeback bonus: double points.</div>' : ''}
+      ${d.mult === 2 ? '<div class="gg-banner">⚡ Welcome back! Comeback bonus: double CP.</div>' : ''}
       ${isT ? `<div class="gg-quests"><div class="faint small">Today's quests · +10 each</div>${d.quests.map(q => `<div class="q ${q.ok ? 'ok' : ''}"><span>${q.ok ? '✅' : '⬜'} ${esc(q.text)}</span><small>${esc(q.prog || '')}</small></div>`).join('')}</div>` : ''}
       ${reacts.length ? `<div class="gg-reacts">${reacts.map(r => `<span title="${esc(who(r.from_id))}">${REACT_ICON[r.emoji] || ''} ${esc(who(r.from_id))}</span>`).join('')}</div>` : ''}
-      <div class="gg-actions">${ready.length ? `<button class="btn primary gg-chest" data-action="gg-chest" data-k="${ready[0]}">🎁 Open chest${ready.length > 1 ? ` (${ready.length})` : ''}</button>` : ''}
-        <button class="btn ghost" data-action="go-ranked">Ranked · ${fmt(c.weekPts)} pts this week ›</button></div>
+      <div class="gg-actions"><button class="btn ghost" data-action="go-ranked">Ranked · ${fmt(c.weekPts)} CP this week ›</button></div>
     </div>`;
   }
   function shareText(t) { if (navigator.share) navigator.share({ text: t }).catch(() => {}); else { navigator.clipboard && navigator.clipboard.writeText(t); toast('Copied to share.'); } }
@@ -2689,50 +2688,24 @@
     const c = gc(), d = c.days[k]; if (!d) return;
     const gr = game().gradeOf(d.pts), best = d.items.filter(i => i.ok).sort((a, b) => (b.pts - a.pts) || ((['logged', 'weigh'].includes(a.id) ? 1 : 0) - (['logged', 'weigh'].includes(b.id) ? 1 : 0)))[0];
     const rk = weekRank(), prev = (S.settings.lastRank || {}).pos;
-    const opened = !!((gst().chests || {})[k]);
     card.className = 'modal-card narrow gg-result';
     card.innerHTML = `<div class="modal-head"><h2>${k === todayKey() ? 'Today' : esc(shortDate(k))}: result</h2><button class="btn ghost" data-r="close">Close</button></div>
       <div class="modal-body">
         <div class="res-grade g-${gr}">${gr}</div>
-        <div class="res-pts"><b class="num">${fmt(d.pts)}</b> points${d.mult === 2 ? ' · ⚡ x2 comeback' : ''}${d.streakBonus ? ` · 🔥 +${d.streakBonus} streak bonus` : ''}</div>
+        <div class="res-pts"><b class="num">${fmt(d.pts)}</b> consistency points${d.mult === 2 ? ' · ⚡ x2 comeback' : ''}${d.streakBonus ? ` · 🔥 +${d.streakBonus} streak bonus` : ''}</div>
         ${best ? `<div class="res-mvp">⭐ MVP stat: ${esc(best.label.replace('Quest: ', ''))}${best.note ? ` <span class="faint">(${esc(best.note)})</span>` : ''}</div>` : ''}
-        ${rk ? `<div class="res-rank">Weekly ladder: <b>#${rk.pos}</b> of ${rk.of}${prev && prev !== rk.pos ? ` <span class="${prev > rk.pos ? 'up' : 'down'}">${prev > rk.pos ? '▲' : '▼'} ${Math.abs(prev - rk.pos)}</span>` : ''}${rk.above ? ` · ${fmt(rk.above.week - rk.me.week)} pts behind ${esc(rk.above.name)}` : ' · you\'re top 👑'}</div>` : ''}
-        ${d.tooLow ? '<div class="sup-warn"><p>⚠ You ate well under your target today. Under-eating earns no points: fuel up tomorrow.</p></div>' : ''}
+        ${rk ? `<div class="res-rank">Weekly ladder: <b>#${rk.pos}</b> of ${rk.of}${prev && prev !== rk.pos ? ` <span class="${prev > rk.pos ? 'up' : 'down'}">${prev > rk.pos ? '▲' : '▼'} ${Math.abs(prev - rk.pos)}</span>` : ''}${rk.above ? ` · ${fmt(rk.above.week - rk.me.week)} CP behind ${esc(rk.above.name)}` : ' · you\'re top 👑'}</div>` : ''}
+        ${d.tooLow ? '<div class="sup-warn"><p>⚠ You ate well under your target today. Under-eating earns no CP: fuel up tomorrow.</p></div>' : ''}
         <ul class="res-list">${d.items.map(i => `<li class="${i.ok ? 'ok' : ''}"><span>${i.ok ? '✅' : '▫️'} ${esc(i.label)}</span><b>${i.ok ? '+' + i.pts : '0'}</b></li>`).join('')}</ul>
-        <div class="res-btns">${d.d.full && !opened ? '<button class="btn primary" data-r="chest">🎁 Open chest</button>' : ''}<button class="btn" data-r="share">Share</button></div>
+        <div class="res-btns"><button class="btn" data-r="share">Share</button></div>
       </div>`;
     modal.hidden = false;
     card.onclick = e => {
       const b = e.target.closest('[data-r]'); if (!b) return;
       if (b.dataset.r === 'close') { closeModal(); render(); }
-      if (b.dataset.r === 'chest') openChestModal(k);
-      if (b.dataset.r === 'share') shareText(`GG Gains · ${k === todayKey() ? 'today' : shortDate(k)}: grade ${gr}, ${d.pts} pts${c.logStreak ? `, 🔥 ${c.logStreak}-day streak` : ''}. ${c.tier.name} tier, level ${c.level}. Beat that 😤`);
+      if (b.dataset.r === 'share') shareText(`GG Gains · ${k === todayKey() ? 'today' : shortDate(k)}: grade ${gr}, ${d.pts} CP${c.logStreak ? `, 🔥 ${c.logStreak}-day streak` : ''}. ${c.tier.name} tier, level ${c.level}. Beat that 😤`);
     };
     if (rk) { S.settings.lastRank = { pos: rk.pos, at: todayKey() }; save(); }
-  }
-  function openChestModal(k) {
-    let opened = false;
-    card.className = 'modal-card narrow gg-chestm';
-    card.innerHTML = `<div class="modal-head"><h2>Chest · ${esc(shortDate(k))}</h2><button class="btn ghost" data-c="close">Close</button></div><div class="modal-body"><button class="chest-box shake" data-c="open">🎁</button><p class="muted" style="text-align:center">Tap the chest to open it</p></div>`;
-    modal.hidden = false;
-    card.onclick = e => {
-      const b = e.target.closest('[data-c]'); if (!b) return;
-      const a = b.dataset.c;
-      if (a === 'close') { closeModal(); render(); return; }
-      if (a === 'open' && !opened) {
-        opened = true; b.classList.remove('shake'); b.classList.add('burst');
-        const rw = game().openChest(k);
-        setTimeout(() => {
-          const body = card.querySelector('.modal-body'); if (!body) return;
-          const more = game().chestsReady(gc());
-          body.innerHTML = `<div class="chest-box open">✨</div><div class="chest-rw"><b>${esc(rw.label)}</b><p class="muted">${esc(rw.text || '')}</p></div>
-            <div class="res-btns">${['frame', 'title', 'color'].includes(rw.kind) ? `<button class="btn primary" data-c="equip">Equip now</button>` : ''}${more.length ? `<button class="btn" data-c="next" data-k="${more[0]}">Open next chest (${more.length})</button>` : ''}<button class="btn ghost" data-c="close">Done</button></div>`;
-          card.dataset.rwKind = rw.kind; card.dataset.rwId = rw.id || '';
-        }, 550);
-      }
-      if (a === 'equip') { equip(card.dataset.rwKind, card.dataset.rwId); toast('Equipped.'); closeModal(); render(); }
-      if (a === 'next') openChestModal(b.dataset.k);
-    };
   }
   function equip(kind, id) { const g = gst(); g.equipped = g.equipped || {}; g.equipped[kind] = id || null; save(); }
 
@@ -2747,8 +2720,8 @@
         if (r.me) continue;
         const pi = prev.ids.indexOf(r.id), pm = prev.ids.indexOf('me'), ni = ids.indexOf(r.id);
         if (pi < 0 || pm < 0) continue;
-        if (pi > pm && ni < meI) ggNote(`ot-${today}-${r.id}`, `${r.name} overtook you 😤`, `You're ${fmt(r.week - list[meI].week)} pts behind this week.`);
-        if (pi < pm && ni > meI) ggNote(`yo-${today}-${r.id}`, `You overtook ${r.name} 🔥`, `${fmt(list[meI].week - r.week)} pts ahead this week.`);
+        if (pi > pm && ni < meI) ggNote(`ot-${today}-${r.id}`, `${r.name} overtook you 😤`, `You're ${fmt(r.week - list[meI].week)} CP behind this week.`);
+        if (pi < pm && ni > meI) ggNote(`yo-${today}-${r.id}`, `You overtook ${r.name} 🔥`, `${fmt(list[meI].week - r.week)} CP ahead this week.`);
       }
     }
     S.settings.ladderOrder = { wk: c.wk, ids };
@@ -2759,25 +2732,24 @@
       ggNote(`tier-${today}-${c.tier.id}`, up ? `Rank up! ${TIER_ICON[c.tier.id]} ${c.tier.name}` : `Dropped to ${c.tier.name}`, up ? 'Keep it going to climb higher.' : 'A couple of good days gets you back.');
     }
     S.settings.lastTier = c.tier.id;
-    if (c.next && c.next.min - c.rating <= 40 && c.next.min - c.rating > 0) ggNote(`near-${today}`, `You're 1 good day away from ${c.next.name}`, `${fmt(c.next.min - c.rating)} pts to go.`, { quiet: true });
+    if (c.next && c.next.min - c.rating <= 40 && c.next.min - c.rating > 0) ggNote(`near-${today}`, `You're 1 good day away from ${c.next.name}`, `${fmt(c.next.min - c.rating)} CP to go.`, { quiet: true });
     // Sunday evening: last day of the week
     if (now.getDay() === 0 && now.getHours() >= 17 && list.length > 1) {
       const above = list[meI - 1];
-      ggNote(`sun-${c.wk}`, `Final day of the week: you're #${meI + 1}`, above ? `${fmt(above.week - list[meI].week)} pts behind ${above.name}. Finish strong!` : 'You\'re top. Hold on to it! 👑');
+      ggNote(`sun-${c.wk}`, `Final day of the week: you're #${meI + 1}`, above ? `${fmt(above.week - list[meI].week)} CP behind ${above.name}. Finish strong!` : 'You\'re top. Hold on to it! 👑');
     }
     // Monday: last week's MVP
     if (now.getDay() === 1 && list.length > 1) {
       const mvp = list.slice().sort((a, b) => b.lastWeek - a.lastWeek)[0];
-      if (mvp && mvp.lastWeek > 0) ggNote(`mvp-${game().addD(c.wk, -7)}`, mvp.me ? 'You were last week\'s MVP 👑' : `${mvp.name} was last week's MVP 👑`, `${fmt(mvp.lastWeek)} pts. A new week starts now.`);
+      if (mvp && mvp.lastWeek > 0) ggNote(`mvp-${game().addD(c.wk, -7)}`, mvp.me ? 'You were last week\'s MVP 👑' : `${mvp.name} was last week's MVP 👑`, `${fmt(mvp.lastWeek)} CP. A new week starts now.`);
     }
     // invite rewards: +100 XP for each new friend, a frame at 3 friends
     const nf = (F.list || []).filter(f => f.status === 'accepted').length;
     if (nf > (g.friendsRewarded || 0)) {
       const gained = nf - (g.friendsRewarded || 0);
       g.bonusXp = (g.bonusXp || 0) + gained * 100; g.friendsRewarded = nf;
-      if (nf >= 3) { g.cosmetics = g.cosmetics || {}; const fr = g.cosmetics.frames || (g.cosmetics.frames = []); if (!fr.includes('royal')) fr.push('royal'); }
       game().invalidate(); save();
-      ggNote(`inv-${nf}`, `+${gained * 100} XP for your squad`, nf >= 3 ? 'And the Royal frame for having 3 friends!' : 'Every friend you add earns XP.', { quiet: true });
+      ggNote(`inv-${nf}`, `+${gained * 100} XP for your squad`, 'Every friend you add earns XP.', { quiet: true });
     }
     // reactions on my days
     try {
@@ -2825,7 +2797,7 @@
     const has = PHOTO_DAYS.has(k);
     return `<div class="panel photo-card"><div class="pc-head"><h2>📸 Progress photo</h2><button class="btn ghost sm" data-action="go-photos">All photos ›</button></div>
       ${has ? `<div class="pc-row"><img data-photo="${k}" alt="Progress photo for ${esc(shortDate(k))}"><div><p class="muted small" style="margin-top:0">Saved on this phone only.</p><button class="btn" data-action="photo-take" data-k="${k}">Retake</button></div></div>`
-        : `<p class="muted small" style="margin-top:0">Take one photo a day, in the same spot and pose. At the end of the month GG Gains turns them into a transformation video.</p><button class="btn primary" data-action="photo-take" data-k="${k}">Take today's photo</button>`}</div>`;
+        : `<p class="muted small" style="margin-top:0">Take one photo a day (+10 CP), in the same spot and pose. GG Gains turns them into a transformation video.</p><button class="btn primary" data-action="photo-take" data-k="${k}">Take today's photo</button>`}</div>`;
   }
   async function takePhoto(k) {
     const keys = [...PHOTO_DAYS].filter(x => x < k).sort(); let ghost = null;
@@ -2916,11 +2888,9 @@
     if (act === 'go-photos') { nav('photos'); return true; }
     if (act === 'rk-tab') { UI.rk = a.dataset.v; render(); return true; }
     if (act === 'gg-result') { showResult(a.dataset.k); return true; }
-    if (act === 'gg-chest') { openChestModal(a.dataset.k); return true; }
     if (act === 'gg-claim-week') { if (game().claimWeekly(gc().weekly, gc().wk)) toast('+150 XP and a streak freeze 🧊'); render(); return true; }
     if (act === 'gg-claim-event') { const ev = gc().events.find(x => x.id === a.dataset.id); if (ev && game().claimEvent(ev)) toast('🏅 Badge earned! +250 XP'); render(); return true; }
-    if (act === 'gg-claim-pass') { const rw = game().claimPass(gc().season, Number(a.dataset.lv)); if (rw) toast('Claimed: ' + rw.label); render(); return true; }
-    if (act === 'gg-equip') { equip(a.dataset.kind, a.dataset.id); render(); return true; }
+    if (act === 'gg-equip') { if (a.dataset.id && !gc().titlesEarned.has(a.dataset.id)) return true; equip('title', a.dataset.id); render(); return true; }
     if (act === 'gg-hidew') { g.hideWeight = a.checked; save(); toast(a.checked ? 'Your weight is hidden from friends.' : 'Friends can see your weight again.'); return true; }
     if (act === 'gg-avatar-remove') { P().avatar = null; save(); render(); return true; }
     if (act === 'react') {

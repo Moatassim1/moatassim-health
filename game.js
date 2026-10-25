@@ -1,5 +1,5 @@
-// GG Gains game engine: daily points, quests, streaks, tiers, XP levels, weeks, seasons,
-// chests, cosmetics, season pass and events. Pure calculations over the person's own data;
+// GG Gains game engine: daily consistency points (CP), quests, streaks, tiers, XP levels, weeks, seasons,
+// level-based XP, achievement titles and events. Pure calculations over the person's own data;
 // app.js draws the screens. Points reward consistency, never extremes (see guardrails).
 (function () {
   'use strict';
@@ -16,22 +16,76 @@
     { id: 'elite', name: 'Elite', min: 1050, color: '#9B5CF6' },
     { id: 'legend', name: 'Legend', min: 1180, color: '#E0263A' }
   ];
+  // Your avatar frame is your tier: it can only be earned by ranking up.
+  const TIER_FRAMES = {
+    bronze: 'linear-gradient(135deg,#E8B07A,#8A4B1E)', silver: 'linear-gradient(135deg,#F3F4F6,#8B95A1)', gold: 'linear-gradient(135deg,#FDE68A,#C27803)',
+    platinum: 'linear-gradient(135deg,#A7F3D0,#0F766E)', diamond: 'linear-gradient(135deg,#BFDBFE,#1D4ED8)', elite: 'linear-gradient(135deg,#E9D5FF,#6D28D9)',
+    legend: 'conic-gradient(#E0263A,#FF8A1F,#FDE68A,#FF8A1F,#E0263A)'
+  };
   const RATING_DAYS = 14;                      // tier = points over the last 14 days, so it can go down
-  const FRAMES = [
-    { id: 'ember', name: 'Ember', css: 'linear-gradient(135deg,#E0263A,#FF8A1F)' },
-    { id: 'ice', name: 'Ice', css: 'linear-gradient(135deg,#7DD3FC,#2563EB)' },
-    { id: 'toxic', name: 'Toxic', css: 'linear-gradient(135deg,#A3E635,#16A34A)' },
-    { id: 'royal', name: 'Royal', css: 'linear-gradient(135deg,#C084FC,#7C3AED)' },
-    { id: 'gold', name: 'Gold', css: 'linear-gradient(135deg,#FDE68A,#D97706)' },
-    { id: 'shadow', name: 'Shadow', css: 'linear-gradient(135deg,#71717A,#18181B)' },
-    { id: 'rainbow', name: 'Rainbow', css: 'conic-gradient(#ef4444,#f59e0b,#22c55e,#3b82f6,#a855f7,#ef4444)' },
-    { id: 'legend', name: 'Legend', css: 'conic-gradient(#E0263A,#FF8A1F,#FDE68A,#FF8A1F,#E0263A)' }
-  ];
-  const TITLES = ['Protein Machine', 'Iron Will', 'Comeback Kid', 'Macro Master', 'Step Lord', 'Meal Prepper', 'Hydro Homie',
-    'Consistency King', 'No Days Off', 'The Grinder', 'Clean Plate Club', 'Night Owl Logger', 'Early Bird', 'Gym Rat', 'Veg Lord', 'Tryhard'];
-  const COLORS = [
-    { id: 'crimson', name: 'Crimson', css: '#E0263A' }, { id: 'sunset', name: 'Sunset', css: '#F97316' }, { id: 'lime', name: 'Lime', css: '#65A30D' },
-    { id: 'ocean', name: 'Ocean', css: '#0284C7' }, { id: 'violet', name: 'Violet', css: '#7C3AED' }, { id: 'gold', name: 'Gold', css: '#CA8A04' }, { id: 'pink', name: 'Pink', css: '#DB2777' }
+  // Titles are achievements: the cooler the name, the harder it is. Once earned, kept forever.
+  const RARITY = {
+    common: { name: 'Common', color: '#8B95A1' }, rare: { name: 'Rare', color: '#2563EB' }, epic: { name: 'Epic', color: '#7C3AED' },
+    legendary: { name: 'Legendary', color: '#D97706' }, mythic: { name: 'Mythic', color: '#E0263A' }
+  };
+  const T = (id, rarity, need, stat, text) => ({ id, rarity, need, stat, text });
+  const TITLES = [
+    // common: the first steps
+    T('Rookie', 'common', 1, 'full', 'Log your first full day'),
+    T('Day One', 'common', 1, 'photos', 'Take your first progress photo'),
+    T('Protein Pup', 'common', 7, 'protein', 'Hit protein on 7 days'),
+    T('Hydrated', 'common', 7, 'water', 'Hit your water goal on 7 days'),
+    T('Scale Watcher', 'common', 10, 'weighins', 'Weigh in 10 times'),
+    T('Sweat Starter', 'common', 5, 'workouts', 'Train on 5 days'),
+    T('Walker', 'common', 10, 'steps8k', 'Walk 8,000+ steps on 10 days'),
+    T('Early Bird', 'common', 10, 'early', 'Log before 10am on 10 days'),
+    T('Week One', 'common', 7, 'bestLog', 'Reach a 7-day logging streak'),
+    T('Weekend Warrior', 'common', 8, 'weekends', 'Log full days on 8 weekend days'),
+    T('Quest Taker', 'common', 10, 'quests', 'Complete 10 daily quests'),
+    // rare: a month of work
+    T('Protein Machine', 'rare', 30, 'protein', 'Hit protein on 30 days'),
+    T('Meal Prepper', 'rare', 50, 'full', 'Log 50 full days'),
+    T('Gym Rat', 'rare', 30, 'workouts', 'Train on 30 days'),
+    T('Step Lord', 'rare', 30, 'steps10k', 'Walk 10,000+ steps on 30 days'),
+    T('Hydro Homie', 'rare', 30, 'water', 'Hit your water goal on 30 days'),
+    T('Clean Plate', 'rare', 30, 'within', 'Land within 10% of your calories on 30 days'),
+    T('Snapshot', 'rare', 30, 'photos', 'Take 30 progress photos'),
+    T('Locked In', 'rare', 14, 'bestLog', 'Reach a 14-day logging streak'),
+    T('S-Ranker', 'rare', 5, 'sGrades', 'Earn 5 S grades'),
+    T('First Blood', 'rare', 2, 'kgDone', 'Move 2 kg towards your goal weight'),
+    T('Silver Lining', 'rare', 1, 'tierSilver', 'Reach Silver tier'),
+    T('Quest Hunter', 'rare', 75, 'quests', 'Complete 75 daily quests'),
+    // epic: months of consistency
+    T('Iron Will', 'epic', 30, 'bestLog', 'Reach a 30-day logging streak'),
+    T('Consistency King', 'epic', 100, 'full', 'Log 100 full days'),
+    T('Macro Master', 'epic', 60, 'perfect', 'Hit calories and protein on the same day 60 times'),
+    T('Halfway Hero', 'epic', 50, 'goalPct', 'Get halfway to your goal weight'),
+    T('Marathoner', 'epic', 100, 'steps8k', 'Walk 8,000+ steps on 100 days'),
+    T('Photo Finish', 'epic', 100, 'photos', 'Take 100 progress photos'),
+    T('Weekly Warrior', 'epic', 10, 'weeklies', 'Complete 10 weekly quests'),
+    T('Golden', 'epic', 1, 'tierGold', 'Reach Gold tier'),
+    T('Platinum Mind', 'epic', 1, 'tierPlatinum', 'Reach Platinum tier'),
+    T('S-Tier Grinder', 'epic', 25, 'sGrades', 'Earn 25 S grades'),
+    T('Five Down', 'epic', 5, 'kgDone', 'Move 5 kg towards your goal weight'),
+    T('Protein Monk', 'epic', 30, 'bestProt', 'Hit protein 30 days in a row'),
+    // legendary: the long haul
+    T('Unstoppable', 'legendary', 60, 'bestLog', 'Reach a 60-day logging streak'),
+    T('No Days Off', 'legendary', 100, 'bestLog', 'Reach a 100-day logging streak'),
+    T('Diamond Hands', 'legendary', 1, 'tierDiamond', 'Reach Diamond tier'),
+    T('Elite Operator', 'legendary', 1, 'tierElite', 'Reach Elite tier'),
+    T('Transformed', 'legendary', 100, 'goalPct', 'Reach your goal weight'),
+    T('Ten Kilo Club', 'legendary', 10, 'kgDone', 'Move 10 kg towards your goal weight'),
+    T('Protein Prophet', 'legendary', 300, 'protein', 'Hit protein on 300 days'),
+    T('The 365', 'legendary', 365, 'full', 'Log 365 full days'),
+    T('Perfectionist', 'legendary', 200, 'perfect', 'Hit calories and protein on the same day 200 times'),
+    T('Event Horizon', 'legendary', 4, 'badges', 'Earn 4 event badges'),
+    // mythic: almost nobody
+    T('Legend', 'mythic', 1, 'tierLegend', 'Reach Legend tier'),
+    T('Eternal Grind', 'mythic', 365, 'bestLog', 'Reach a 365-day logging streak'),
+    T('Year in Pictures', 'mythic', 365, 'photos', 'Take 365 progress photos'),
+    T('Twenty Down', 'mythic', 20, 'kgDone', 'Move 20 kg towards your goal weight'),
+    T('GG', 'mythic', 1, 'gg', 'Reach your goal weight with a 100-day logging streak'),
+    T('Maxed Out', 'mythic', 100, 'level', 'Reach level 100')
   ];
   const REACTIONS = { fire: '🔥', muscle: '💪', gg: 'GG', laugh: '😂' };
 
@@ -49,7 +103,6 @@
     { id: 'veg', text: 'Eat 3 different fruits or vegetables', f: d => { const n = d.fruitVeg; return [n >= 3, `${n} / 3`]; } },
     { id: 'workout', text: 'Train today (log a workout or sauna)', f: d => [d.workout, ''] },
     { id: 'weigh', text: 'Weigh in', f: d => [d.weighed, ''] },
-    { id: 'photo', text: 'Take today\'s progress photo', f: d => [d.photo, ''] },
     { id: 'vitc', text: 'Hit your vitamin C target', f: d => [(d.t.vc || 0) >= d.micro.vc, `${Math.round(d.t.vc || 0)} / ${d.micro.vc} mg`] }
   ];
   const WEEKLY = [
@@ -122,6 +175,7 @@
       add('workout', 'Trained', 10, d.workout);
       add('water', 'Hit your water goal', 5, d.water >= d.waterGoal);
       add('weigh', 'Weighed in', 5, d.weighed);
+      add('photo', 'Took your progress photo', 10, d.photo);
       const qs = questsFor(k).map(q => { const [ok, prog] = q.f(d); return { ...q, ok, prog }; });
       qs.forEach(q => add('q-' + q.id, 'Quest: ' + q.text, 10, q.ok, q.prog));
       let base = items.reduce((a, x) => a + x.pts, 0);
@@ -175,14 +229,36 @@
       seasonPts += weekBonus(wk, days);
       const rating = sum(addD(today, -(RATING_DAYS - 1)), today);
       const tier = tierFor(rating);
-      // XP never drops: all points ever + quest/chest bonuses
+      // XP never drops: all CP ever + weekly quest, event and friend bonuses
       let xp = 0; for (const x in days) xp += days[x].pts;
-      xp += Object.values(g.chests || {}).reduce((a, c) => a + (c.xp || 0), 0) + (g.bonusXp || 0);
+      xp += (g.bonusXp || 0);
       const lv = levelOf(xp);
+      // lifetime stats for titles
+      const st = { full: 0, protein: 0, water: 0, weighins: 0, workouts: 0, steps8k: 0, steps10k: 0, early: 0, weekends: 0, within: 0, perfect: 0, sGrades: 0, quests: 0, bestLog: 0, bestProt: 0, maxRating: 0 };
+      let run = 0, prun = 0, win = [];
+      for (const x of Object.keys(days).sort()) {
+        const d = days[x], ok = id => (d.items.find(i => i.id === id) || {}).ok;
+        if (d.d.full) st.full++; if (ok('protein')) st.protein++; if (ok('water')) st.water++; if (ok('weigh')) st.weighins++; if (ok('workout')) st.workouts++;
+        if (ok('steps')) st.steps8k++; if (d.d.g && (d.d.g.steps || 0) >= 10000) st.steps10k++; if (ok('calories')) st.within++; if (ok('calories') && ok('protein')) st.perfect++;
+        if (d.d.entries.some(e => new Date(e.at || 0).getHours() < 10 && keyOf(new Date(e.at || 0)) === x)) st.early++;
+        if (d.d.full && [0, 6].includes(dOf(x).getDay())) st.weekends++;
+        if (d.d.full && d.pts >= 85) st.sGrades++;
+        st.quests += d.quests.filter(q => q.ok).length;
+        run = d.d.full || used.has(x) ? run + (d.d.full ? 1 : 0) : (x === today ? run : 0); st.bestLog = Math.max(st.bestLog, run);
+        prun = ok('protein') ? prun + 1 : (x === today ? prun : 0); st.bestProt = Math.max(st.bestProt, prun);
+        win.push(d.pts); if (win.length > RATING_DAYS) win.shift(); st.maxRating = Math.max(st.maxRating, win.reduce((a, b) => a + b, 0));
+      }
+      st.photos = ctx.photoDays().size; st.weeklies = (g.weeklyDone || []).length; st.badges = (g.badges || []).length; st.level = lv.level;
+      const gi = ctx.goalInfo() || {}; st.goalPct = gi.pct || 0; st.kgDone = gi.kg || 0;
+      for (const t of TIERS) st['tier' + t.name] = st.maxRating >= t.min ? 1 : 0;
+      st.gg = st.goalPct >= 100 && st.bestLog >= 100 ? 1 : 0;
+      const earned = new Set(g.titlesEarned || []), fresh = [];
+      for (const t of TITLES) if (!earned.has(t.id) && (st[t.stat] || 0) >= t.need) { earned.add(t.id); fresh.push(t); }
+      if (fresh.length) { g.titlesEarned = [...earned]; ctx.save(); }
       const out = { today, days, todayS, weekPts, lastWeekPts, wk, season, seasonStart: sStart, seasonEnd: addD(seasonStart(season + 1), -1), seasonPts, rating, tier, next: nextTier(tier),
         xp, ...lv, logStreak: curLog, protStreak: curProt, freezes: Math.max(0, (g.freezesEarned || 0) - used.size),
         onFire: [0, 1, 2].every(i => { const x = days[addD(today, -i - (todayS && todayS.d.full ? 0 : 1))]; return x && x.pts >= 65; }),
-        weekly: weeklyQuest(wk, days), events: eventsFor(today, days), comebackActive: todayS && todayS.mult === 2 };
+        weekly: weeklyQuest(wk, days), events: eventsFor(today, days), comebackActive: todayS && todayS.mult === 2, stats: st, titlesEarned: earned, newTitles: fresh };
       cache.set(sig, out);
       return out;
     }
@@ -221,70 +297,9 @@
       });
     }
 
-    // ---------------------------------------------------------------- chests and cosmetics
-    // One chest per completed day; the reward is fixed by the day (no rerolling).
-    function chestReward(k) {
-      const r = rng('c|' + k + '|' + ctx.uid())(), g = G(), own = g.cosmetics || {};
-      const roll = (list, kind) => { const left = list.filter(x => !(own[kind] || []).includes(x.id || x)); return left.length ? left[Math.floor(rng('cx|' + k + kind)() * left.length)] : null; };
-      if (r < 0.12) return { kind: 'freeze', label: '🧊 Streak freeze', text: 'Saves your streak if you miss a day.' };
-      if (r < 0.22) { const f = roll(FRAMES, 'frames'); if (f) return { kind: 'frame', id: f.id, label: '🖼️ ' + f.name + ' frame', text: 'A new frame for your profile picture.' }; }
-      if (r < 0.32) { const t = roll(TITLES.map(x => ({ id: x })), 'titles'); if (t) return { kind: 'title', id: t.id, label: '🏷️ Title: ' + t.id, text: 'Shows under your name on the ladder.' }; }
-      if (r < 0.40) { const c = roll(COLORS, 'colors'); if (c) return { kind: 'color', id: c.id, label: '🎨 ' + c.name + ' name colour', text: 'Your name in a new colour on the ladder.' }; }
-      const xp = 50 + Math.floor(rng('cxp|' + k)() * 11) * 10;
-      return { kind: 'xp', xp, label: `⚡ +${xp} XP`, text: 'Bonus XP towards your next level.' };
-    }
-    function chestsReady(comp) {
-      const g = G(), opened = g.chests || {}, out = [];
-      for (const k in comp.days) if (comp.days[k].d.full && !opened[k] && k >= addD(comp.today, -6)) out.push(k);
-      return out.sort();
-    }
-    function grant(rw) {
-      const g = G(); g.cosmetics = g.cosmetics || {};
-      const push = (kind, id) => { const a = g.cosmetics[kind] || (g.cosmetics[kind] = []); if (!a.includes(id)) a.push(id); };
-      if (rw.kind === 'freeze') g.freezesEarned = (g.freezesEarned || 0) + 1;
-      if (rw.kind === 'frame') push('frames', rw.id);
-      if (rw.kind === 'title') push('titles', rw.id);
-      if (rw.kind === 'color') push('colors', rw.id);
-      if (rw.kind === 'xp') g.bonusXp = (g.bonusXp || 0) + 0; // chest XP is counted from g.chests
-    }
-    function openChest(k) {
-      const g = G(); g.chests = g.chests || {};
-      if (g.chests[k]) return g.chests[k];
-      const rw = chestReward(k); grant(rw);
-      g.chests[k] = { ...rw, at: Date.now() };
-      cache.clear(); ctx.save();
-      return g.chests[k];
-    }
-    // Season pass: 30 free levels, one per 60 season points.
-    const PASS_STEP = 60;
-    function passRewards(season) {
-      const out = [];
-      for (let i = 1; i <= 30; i++) {
-        const r = rng('p|' + season + '|' + i)();
-        let rw;
-        if (i === 30) rw = { kind: 'frame', id: 'legend', label: '🖼️ Legend frame' };
-        else if (i === 20) rw = { kind: 'title', id: `Season ${season} Grinder`, label: `🏷️ Title: Season ${season} Grinder` };
-        else if (i % 5 === 0) { const f = FRAMES[(season * 3 + i) % (FRAMES.length - 1)]; rw = { kind: 'frame', id: f.id, label: '🖼️ ' + f.name + ' frame' }; }
-        else if (r < 0.25) rw = { kind: 'freeze', label: '🧊 Streak freeze' };
-        else if (r < 0.45) { const c = COLORS[Math.floor(r * 100) % COLORS.length]; rw = { kind: 'color', id: c.id, label: '🎨 ' + c.name + ' name' }; }
-        else if (r < 0.6) { const t = TITLES[Math.floor(r * 1000) % TITLES.length]; rw = { kind: 'title', id: t, label: '🏷️ ' + t }; }
-        else rw = { kind: 'xp', xp: 100, label: '⚡ +100 XP' };
-        out.push({ level: i, need: i * PASS_STEP, ...rw });
-      }
-      return out;
-    }
-    function passState(comp) {
-      const g = G(), claimed = (g.pass && g.pass[comp.season]) || [];
-      const list = passRewards(comp.season).map(r => ({ ...r, unlocked: comp.seasonPts >= r.need, claimed: claimed.includes(r.level) }));
-      return { list, level: Math.min(30, Math.floor(comp.seasonPts / PASS_STEP)), claimable: list.filter(r => r.unlocked && !r.claimed).length };
-    }
-    function claimPass(season, level) {
-      const g = G(); g.pass = g.pass || {}; const a = g.pass[season] || (g.pass[season] = []);
-      if (a.includes(level)) return null;
-      const rw = passRewards(season).find(r => r.level === level); if (!rw) return null;
-      a.push(level); grant(rw); if (rw.kind === 'xp') g.bonusXp = (g.bonusXp || 0) + rw.xp;
-      cache.clear(); ctx.save(); return rw;
-    }
+    // ---------------------------------------------------------------- level rewards (frames, titles, name colours)
+    // Every 2nd level unlocks something, so the Locker fills up as you keep going.
+    const titleById = id => TITLES.find(t => t.id === id) || null;
     function claimEvent(ev) {
       const g = G(); g.badges = g.badges || [];
       if (g.badges.includes(ev.id)) return false;
@@ -300,10 +315,10 @@
       const g = G(), eq = g.equipped || {};
       return { v: 1, wk: comp.wk, wp: comp.weekPts, lwk: addD(comp.wk, -7), lwp: comp.lastWeekPts, s: comp.season, sp: comp.seasonPts, r: comp.rating, t: comp.tier.id,
         lv: comp.level, ls: comp.logStreak, ps: comp.protStreak, fire: comp.onFire ? 1 : 0, td: comp.todayS ? comp.todayS.pts : 0,
-        fr: eq.frame || null, ti: eq.title || null, nc: eq.color || null, hw: g.hideWeight ? 1 : 0, b: (g.badges || []).slice(-6) };
+        ti: eq.title || null, hw: g.hideWeight ? 1 : 0, b: (g.badges || []).slice(-6) };
     }
 
-    return { compute, scoreDay, questsFor, openChest, chestsReady, chestReward, passState, claimPass, claimEvent, claimWeekly, publicStats,
-      TIERS, FRAMES, TITLES, COLORS, REACTIONS, EVENTS, tierFor, nextTier, gradeOf, levelOf, seasonOf, weekId, addD, diffDays, invalidate: () => cache.clear() };
+    return { compute, scoreDay, questsFor, titleById, claimEvent, claimWeekly, publicStats,
+      TIERS, TIER_FRAMES, TITLES, RARITY, REACTIONS, EVENTS, tierFor, nextTier, gradeOf, levelOf, seasonOf, weekId, addD, diffDays, invalidate: () => cache.clear() };
   };
 })();

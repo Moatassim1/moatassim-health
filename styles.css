@@ -840,3 +840,26 @@ body { background: radial-gradient(900px 520px at 105% -8%, var(--glow-1), trans
 .ph-opts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ph-opts select { width: 100%; min-width: 0; }
 @media (max-width: 420px) { .ph-opts { grid-template-columns: 1fr 1fr; } }
+
+.gg-rank .rk-cp { margin-bottom: 4px; }
+.gg-rank .rk-cp .rk-track { height: 8px; }
+.gg-rank .rk-hidden { grid-column: 1 / -1; }
+.lk-next { display: grid; gap: 4px; margin-top: 6px; font-size: 13.5px; color: var(--muted); }
+
+.lk-tiers { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.lk-tiers > span { display: flex; flex-direction: column; align-items: center; gap: 4px; opacity: .45; }
+.lk-tiers > span.on { opacity: 1; }
+.lk-tiers small { font-size: 11px; font-weight: 600; }
+
+.ttl { color: var(--rc); font-weight: 700; }
+.ttl-group { margin-top: 12px; }
+.ttl-h { font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+.ttl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 6px; }
+.ttl-card { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; text-align: left; background: var(--surface); color: var(--muted); }
+.ttl-card b { font-size: 13.5px; color: var(--ink); }
+.ttl-card small { font-size: 11.5px; }
+.ttl-card.got { border-color: var(--rc); background: color-mix(in srgb, var(--rc) 8%, var(--surface)); cursor: pointer; }
+.ttl-card.got b { color: var(--rc); }
+.ttl-card.on { box-shadow: 0 0 0 2px var(--rc); }
+.ttl-card i { font-style: normal; font-size: 11px; font-weight: 700; color: var(--rc); }
+.xpbar.sm { height: 5px; margin-top: 3px; }

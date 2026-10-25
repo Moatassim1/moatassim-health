@@ -9,6 +9,10 @@ on:
         description: 'Send the build to TestFlight'
         type: boolean
         default: true
+      test_only:
+        description: 'Test build only (no signing, no secrets needed)'
+        type: boolean
+        default: false
 concurrency: ios-build
 jobs:
   build:
@@ -26,6 +30,7 @@ jobs:
           sudo xcode-select -s "$X"
           xcodebuild -version
       - name: Check secrets
+        if: ${{ !inputs.test_only }}
         env:
           A: ${{ secrets.APPLE_TEAM_ID }}
           B: ${{ secrets.ASC_KEY_ID }}
@@ -47,13 +52,21 @@ jobs:
           npx cap sync ios
           bash native/setup-ios.sh
           ls ios/App
+      - name: Test build (unsigned)
+        if: ${{ inputs.test_only }}
+        run: |
+          cd ios/App
+          if [ -d App.xcworkspace ]; then SRC="-workspace App.xcworkspace"; else SRC="-project App.xcodeproj"; fi
+          xcodebuild $SRC -scheme App -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO TARGETED_DEVICE_FAMILY=1 build | tail -25
       - name: API key
+        if: ${{ !inputs.test_only }}
         env:
           KEY: ${{ secrets.ASC_KEY_P8 }}
         run: |
           mkdir -p ~/private_keys
           printf '%s\n' "$KEY" > ~/private_keys/AuthKey.p8
       - name: Build (archive)
+        if: ${{ !inputs.test_only }}
         env:
           TEAM: ${{ secrets.APPLE_TEAM_ID }}
           KID: ${{ secrets.ASC_KEY_ID }}
@@ -70,7 +83,7 @@ jobs:
             | tee "$RUNNER_TEMP/archive.log" | grep -E "error:|warning: .*sign|ARCHIVE|BUILD" || true
           test -d "$RUNNER_TEMP/App.xcarchive" || { tail -80 "$RUNNER_TEMP/archive.log"; exit 1; }
       - name: Send to TestFlight
-        if: ${{ inputs.upload }}
+        if: ${{ inputs.upload && !inputs.test_only }}
         env:
           TEAM: ${{ secrets.APPLE_TEAM_ID }}
           KID: ${{ secrets.ASC_KEY_ID }}

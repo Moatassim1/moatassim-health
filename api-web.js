@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.37';
+  const APP_VERSION = '2.0.38';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -490,6 +490,7 @@
     sync: { connect: async () => ({ ok: true }), disconnect: async () => ({}), now: () => runSync(), info: async () => ({ ...status }), onStatus: cb => statusCbs.push(cb), onReload: cb => reloadCbs.push(cb) },
     async exportData() {
       const blob = new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' });
+      if (window.MHNative && window.MHNative.isApp) { await window.MHNative.shareFile(blob, `GG-Gains-backup-${todayKey()}.json`, 'GG Gains backup'); return { ok: true }; }
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `GG-Gains-backup-${todayKey()}.json`; a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
       return { ok: true };
@@ -708,8 +709,10 @@
       box.innerHTML = on.map(([id, label, ic]) => `<button class="social-btn sb-${id}" data-prov="${id}"><b>${ic}</b><span>${label}</span></button>`).join('') + `<div class="auth-or"><span>or use your email</span></div>`;
       box.onclick = e => {
         const b = e.target.closest('[data-prov]'); if (!b) return;
-        const back = location.origin + location.pathname;
-        location.href = `${CFG.url}/auth/v1/authorize?provider=${encodeURIComponent(b.dataset.prov)}&redirect_to=${encodeURIComponent(back)}`;
+        const N = window.MHNative, app = N && N.isApp;
+        const back = app ? N.authRedirect : location.origin + location.pathname;
+        const url = `${CFG.url}/auth/v1/authorize?provider=${encodeURIComponent(b.dataset.prov)}&redirect_to=${encodeURIComponent(back)}`;
+        if (app) N.openUrl(url); else location.href = url;
       };
     } catch (_) {}
   }
@@ -731,7 +734,8 @@
 
   // ---------------------------------------------------------------- boot
   window.MHBoot = async function () {
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    const APP = window.MHNative && window.MHNative.isApp;
+    if (!APP && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
     if (!CFG.url || !CFG.key) { $('#auth').hidden = false; $('#auth').innerHTML = '<div class="auth-card"><h1>Setup needed</h1><p>config.js has no Supabase project.</p></div>'; return; }
     if (/access_token=|error_description=/.test(location.hash)) {
       const r = await finishOAuth();

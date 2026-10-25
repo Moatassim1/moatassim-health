@@ -2383,10 +2383,10 @@
         <div class="stack">
           ${window.desktop ? '' : `<div class="panel">
             <h2>Daily reminder</h2>
-            <p class="muted small" style="margin-top:0">Adds a repeating reminder to your phone's calendar, so you get a nudge to log your food even when the app is closed.</p>
+            <p class="muted small" style="margin-top:0">${window.MHNative && window.MHNative.isApp ? 'A notification every day at this time, so you never lose your streak.' : 'Adds a repeating reminder to your phone\'s calendar, so you get a nudge to log your food even when the app is closed.'}</p>
             <div class="row-inline" style="align-items:center"><select id="remTime" style="max-width:140px">${Array.from({ length: 48 }, (_, i) => { const hm = String(Math.floor(i / 2)).padStart(2, '0') + (i % 2 ? '30' : '00'); return `<option value="${hm}" ${hm === (st.reminderTime || '21:00').replace(':', '') ? 'selected' : ''}>${hm.slice(0, 2)}:${hm.slice(2)}</option>`; }).join('')}</select>
-              <a class="btn primary" id="remLink" href="reminders/${esc((st.reminderTime || '21:00').replace(':', ''))}.ics" target="_blank" rel="noopener">Add to my calendar</a></div>
-            <p class="faint small">Tap <b>Add All</b> when your calendar opens. To stop it, delete the event in your calendar.</p>
+              ${window.MHNative && window.MHNative.isApp ? `<label class="check"><input type="checkbox" id="remNative" ${st.nativeReminder ? 'checked' : ''}> Remind me every day</label>` : `<a class="btn primary" id="remLink" href="reminders/${esc((st.reminderTime || '21:00').replace(':', ''))}.ics" target="_blank" rel="noopener">Add to my calendar</a>`}</div>
+            ${window.MHNative && window.MHNative.isApp ? '' : '<p class="faint small">Tap <b>Add All</b> when your calendar opens. To stop it, delete the event in your calendar.</p>'}
           </div>`}
           ${window.desktop ? `<div class="panel">
             <h2>Daily reminder</h2>
@@ -2443,7 +2443,8 @@
     ['pgGoal', 'pgKg', 'pgWeeks'].forEach(id => { const el = $('#' + id); if (el) el.addEventListener('change', () => { const d = UI.planForm || (UI.planForm = {}); d.goal = $('#pgGoal').value; d.goalKg = $('#pgKg').value; d.weeks = $('#pgWeeks').value; UI.planResult = null; softRender(renderSettings); }); });
     $('#pName').addEventListener('change', e => { const v = e.target.value.trim(); if (v && window.MHNameOk && !window.MHNameOk(v)) { toast('That name isn\'t allowed. Please choose another one.'); e.target.value = P().name; return; } if (v) { P().name = v; save(); softRender(render); } });
     loadBackupList();
-    const rt = $('#remTime'); if (rt) rt.addEventListener('change', () => { $('#remLink').href = 'reminders/' + rt.value + '.ics'; S.settings.reminderTime = rt.value.slice(0, 2) + ':' + rt.value.slice(2); save(); });
+    const rt = $('#remTime'); if (rt) rt.addEventListener('change', () => { const rl = $('#remLink'); if (rl) rl.href = 'reminders/' + rt.value + '.ics'; S.settings.reminderTime = rt.value.slice(0, 2) + ':' + rt.value.slice(2); save(); if (S.settings.nativeReminder) window.MHNative.setReminder(S.settings.reminderTime, true); });
+    const rn = $('#remNative'); if (rn) rn.addEventListener('change', async () => { const r = await window.MHNative.setReminder(S.settings.reminderTime || '21:00', rn.checked); if (!r.ok) { rn.checked = false; toast(r.error); } S.settings.nativeReminder = rn.checked; save(); if (r.ok) toast(rn.checked ? `Daily reminder set for ${S.settings.reminderTime || '21:00'}.` : 'Reminder off.'); });
     main.querySelectorAll('[data-rem]').forEach(el => el.addEventListener('change', () => { P().reminderOn = el.checked; save(); }));
     main.querySelectorAll('[data-s]').forEach(el => el.addEventListener('change', () => {
       const k = el.dataset.s;
@@ -2922,7 +2923,7 @@
     const mb = tb.querySelector('[data-view="more"] .tb-av');
     if (mb) { const av = P().avatar; mb.innerHTML = av ? `<img src="${esc(av)}" alt="">` : esc((P().name || '?').charAt(0).toUpperCase()); mb.style.background = av ? 'none' : (P().color || '#888'); }
   }
-  function shareText(t) { if (navigator.share) navigator.share({ text: t }).catch(() => {}); else { navigator.clipboard && navigator.clipboard.writeText(t); toast('Copied to share.'); } }
+  function shareText(t) { if (window.MHNative && window.MHNative.isApp) { window.MHNative.share({ text: t }); return; } if (navigator.share) navigator.share({ text: t }).catch(() => {}); else { navigator.clipboard && navigator.clipboard.writeText(t); toast('Copied to share.'); } }
   function showResult(k) {
     const c = gc(), d = c.days[k]; if (!d) return;
     const gr = game().gradeOf(d.pts), best = d.items.filter(i => i.ok).sort((a, b) => (b.pts - a.pts) || ((['logged', 'weigh'].includes(a.id) ? 1 : 0) - (['logged', 'weigh'].includes(b.id) ? 1 : 0)))[0];
@@ -3163,6 +3164,7 @@
     if (act === 'photos-share') {
       const v = PH.video; if (!v) return true;
       const file = new File([v.blob], `GG-Gains-transformation.${v.ext}`, { type: v.blob.type });
+      if (window.MHNative && window.MHNative.isApp) { window.MHNative.shareFile(v.blob, file.name, 'My GG Gains transformation'); return true; }
       if (navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file], title: 'My GG Gains transformation' }).catch(() => {});
       else { const l = document.createElement('a'); l.href = v.url; l.download = file.name; l.click(); }
       return true;

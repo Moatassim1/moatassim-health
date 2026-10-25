@@ -1,0 +1,14 @@
+{
+  "appId": "com.gggains.app",
+  "appName": "GG Gains",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0d0a0c",
+    "allowsLinkPreview": false
+  },
+  "plugins": {
+    "SplashScreen": { "launchShowDuration": 600, "backgroundColor": "#0d0a0c", "showSpinner": false },
+    "LocalNotifications": { "iconColor": "#E0263A" }
+  }
+}

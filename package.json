@@ -1,0 +1,20 @@
+{
+  "name": "gg-gains",
+  "private": true,
+  "description": "GG Gains app shell (Capacitor). The web app itself is the static files in this folder.",
+  "scripts": {
+    "www": "node native/build-www.mjs"
+  },
+  "dependencies": {
+    "@capacitor/app": "latest",
+    "@capacitor/browser": "latest",
+    "@capacitor/cli": "latest",
+    "@capacitor/core": "latest",
+    "@capacitor/filesystem": "latest",
+    "@capacitor/ios": "latest",
+    "@capacitor/local-notifications": "latest",
+    "@capacitor/share": "latest",
+    "@capacitor/splash-screen": "latest",
+    "@capacitor/status-bar": "latest"
+  }
+}

@@ -1,0 +1,97 @@
+# Builds the GG Gains iPhone app on a Mac in the cloud and sends it to TestFlight.
+# Run it from GitHub › Actions › "iPhone app" › Run workflow.
+# Needs these repository secrets: APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8
+name: iPhone app
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: 'Send the build to TestFlight'
+        type: boolean
+        default: true
+concurrency: ios-build
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Pick the newest Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
+          [ -z "$X" ] && X=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$X"
+          xcodebuild -version
+      - name: Check secrets
+        env:
+          A: ${{ secrets.APPLE_TEAM_ID }}
+          B: ${{ secrets.ASC_KEY_ID }}
+          C: ${{ secrets.ASC_ISSUER_ID }}
+          D: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          miss=""; [ -z "$A" ] && miss="$miss APPLE_TEAM_ID"; [ -z "$B" ] && miss="$miss ASC_KEY_ID"; [ -z "$C" ] && miss="$miss ASC_ISSUER_ID"; [ -z "$D" ] && miss="$miss ASC_KEY_P8"
+          if [ -n "$miss" ]; then echo "::error::Missing repository secrets:$miss"; exit 1; fi
+      - name: Install the app shell
+        run: |
+          npm install --no-audit --no-fund
+          npx cap --version
+          npm ls --depth=0
+      - name: Web files
+        run: npm run www
+      - name: Create the iOS project
+        run: |
+          npx cap add ios --packagemanager SPM || npx cap add ios
+          npx cap sync ios
+          bash native/setup-ios.sh
+          ls ios/App
+      - name: API key
+        env:
+          KEY: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p ~/private_keys
+          printf '%s\n' "$KEY" > ~/private_keys/AuthKey.p8
+      - name: Build (archive)
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          KID: ${{ secrets.ASC_KEY_ID }}
+          ISS: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cd ios/App
+          if [ -d App.xcworkspace ]; then SRC="-workspace App.xcworkspace"; else SRC="-project App.xcodeproj"; fi
+          xcodebuild $SRC -scheme App -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" archive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey.p8 -authenticationKeyID "$KID" -authenticationKeyIssuerID "$ISS" \
+            DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic PRODUCT_BUNDLE_IDENTIFIER=com.gggains.app \
+            TARGETED_DEVICE_FAMILY=1 MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            | tee "$RUNNER_TEMP/archive.log" | grep -E "error:|warning: .*sign|ARCHIVE|BUILD" || true
+          test -d "$RUNNER_TEMP/App.xcarchive" || { tail -80 "$RUNNER_TEMP/archive.log"; exit 1; }
+      - name: Send to TestFlight
+        if: ${{ inputs.upload }}
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          KID: ${{ secrets.ASC_KEY_ID }}
+          ISS: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cat > "$RUNNER_TEMP/export.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
+            -exportPath "$RUNNER_TEMP/out" -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey.p8 -authenticationKeyID "$KID" -authenticationKeyIssuerID "$ISS"
+          echo "Uploaded build ${{ github.run_number }} to App Store Connect. It shows in TestFlight after Apple finishes processing (5-30 min)."
+      - name: Clean up key
+        if: always()
+        run: rm -rf ~/private_keys

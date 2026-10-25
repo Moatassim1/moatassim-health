@@ -418,12 +418,14 @@
     const wk = latestWeight(addDays(k, -7));
     const ref = w ?? (latestWeight(k) || {}).kg;
     const ch = (ref != null && wk) ? ref - wk.kg : null;
+    const locked = w != null && UI.wEdit !== k;
     return `<div class="panel weight-card">
-      <div class="wc-head"><h2>Weight</h2>${ch != null ? `<span class="muted small">${ch > 0 ? '+' : ''}${fmt(ch, 1)} kg vs a week before</span>` : ''}</div>
+      <div class="wc-head"><h2>${k === todayKey() ? 'Today\'s weight' : 'Weight on ' + esc(shortDate(k))}</h2>${ch != null ? `<span class="muted small">${ch > 0 ? '+' : ''}${fmt(ch, 1)} kg vs a week before</span>` : ''}</div>
       <div class="wc-row">
-        <div class="wc-in"><input type="number" id="wIn" min="25" max="300" step="0.1" value="${w ?? ''}" placeholder="${prev ? fmt(prev.kg, 1) : 'kg'}" aria-label="Weight in kg"><span>kg</span></div>
-        <button class="btn primary" id="wSave">${w != null ? 'Update' : 'Save'}</button>
-        ${w != null ? '<button class="btn ghost" id="wDel">Remove</button>' : ''}
+        <div class="wc-in ${locked ? 'locked' : ''}"><input type="number" inputmode="decimal" id="wIn" min="25" max="300" step="0.1" value="${w ?? ''}" placeholder="${prev ? fmt(prev.kg, 1) : 'kg'}" aria-label="Weight in kg" ${locked ? 'readonly tabindex="-1"' : ''}><span>kg</span></div>
+        ${locked ? `<button class="btn wc-logged" disabled>✓ Logged</button><button class="btn ghost sm wc-change" id="wEdit">Change</button>`
+          : w != null ? `<button class="btn primary" id="wSave">Save</button><button class="btn ghost sm" id="wCancel">Cancel</button><button class="btn ghost sm danger" id="wDel">Remove</button>`
+          : `<button class="btn primary" id="wSave">Log</button>`}
       </div>
       <p class="muted small" style="margin:8px 0 0">${w != null ? `Saved for ${k === todayKey() ? 'today' : esc(shortDate(k))}.` : prev ? `Last weigh-in ${fmt(prev.kg, 1)} kg on ${esc(shortDate(prev.date))}.` : 'Weigh yourself in the morning, before eating, for the most even readings.'}
       <a href="#" data-action="go-forecast">See the projection</a></p>
@@ -476,12 +478,15 @@
       if (!(v >= 25 && v <= 300)) { toast('Enter your weight in kg, e.g. 78.4'); return; }
       P().weights[k] = v;
       if (k >= (latestWeight() || {}).date || k === todayKey()) P().profile.weightKg = v;
-      save(); render(); toast(`Weight saved: ${fmt(v, 1)} kg.`);
+      UI.wEdit = null; save(); render(); toast(`Weight logged: ${fmt(v, 1)} kg.`);
     };
-    $('#wSave').addEventListener('click', saveW);
+    const ed = $('#wEdit'); if (ed) ed.addEventListener('click', () => { UI.wEdit = k; render(); setTimeout(() => { const i = $('#wIn'); if (i) { i.focus(); i.select(); } }, 30); });
+    const cn = $('#wCancel'); if (cn) cn.addEventListener('click', () => { UI.wEdit = null; render(); });
+    const sv = $('#wSave'); if (!sv) return;
+    sv.addEventListener('click', saveW);
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') saveW(); });
     const del = $('#wDel');
-    if (del) del.addEventListener('click', () => { const old = P().weights[k]; delete P().weights[k]; save(); render(); toast('Weight removed.', 'Undo', () => { P().weights[k] = old; save(); render(); }); });
+    if (del) del.addEventListener('click', () => { const old = P().weights[k]; delete P().weights[k]; UI.wEdit = null; save(); render(); toast('Weight removed.', 'Undo', () => { P().weights[k] = old; save(); render(); }); });
   }
 
   // ---------------------------------------------------------------- TODAY
@@ -2999,9 +3004,23 @@
     if (!window.MHPhotos) return '';
     const has = PHOTO_DAYS.has(k);
     return `<div class="panel photo-card"><div class="pc-head"><h2>📸 Progress photo</h2><button class="btn ghost sm" data-action="go-photos">All photos ›</button></div>
-      ${has ? `<div class="pc-row"><img data-photo="${k}" alt="Progress photo for ${esc(shortDate(k))}"><div><p class="muted small" style="margin-top:0">Saved on this phone only.</p><button class="btn" data-action="photo-take" data-k="${k}">Retake</button></div></div>`
-        : `<p class="muted small" style="margin-top:0">Take one photo a day (+10 CP), in the same spot and pose. GG Gains turns them into a transformation video.</p><button class="btn primary" data-action="photo-take" data-k="${k}">Take today's photo</button>`}</div>`;
+      ${has ? `<div class="pc-row"><img data-photo="${k}" alt="Progress photo for ${esc(shortDate(k))}"><div><p class="muted small" style="margin-top:0">Saved on this phone only.</p>${photoButtons(k, false)}</div></div>`
+        : `<p class="muted small" style="margin-top:0">Take one photo a day (+10 CP), in the same spot and pose. GG Gains turns them into a transformation video.</p>${photoButtons(k, true)}`}</div>`;
   }
+  // Take photo = the phone's own camera (back camera, zoom, flip, cancel all built in). Upload = photo library.
+  // Line-up = our camera with a see-through copy of your last photo, to match the pose.
+  function photoButtons(k, first) {
+    return `<div class="ph-btns">
+      <label class="btn ${first ? 'primary' : ''}">📷 ${first ? 'Take photo' : 'Retake'}<input type="file" accept="image/*" capture="environment" hidden data-photo-in="${k}"></label>
+      <label class="btn">🖼️ Upload<input type="file" accept="image/*" hidden data-photo-in="${k}"></label>
+      <button class="btn ghost" data-action="photo-take" data-k="${k}" title="Camera with your last photo shown faintly, to match the pose">👻 Line-up camera</button></div>`;
+  }
+  document.addEventListener('change', async e => {
+    const inp = e.target.closest && e.target.closest('[data-photo-in]'); if (!inp || !inp.files || !inp.files[0]) return;
+    const k = inp.dataset.photoIn, file = inp.files[0]; inp.value = '';
+    try { const blob = await window.MHPhotos.shrink(file); await window.MHPhotos.put(k, blob); PHOTO_DAYS.add(k); game().invalidate(); save(); render(); toast('Photo saved on this phone. +10 CP'); }
+    catch (er) { toast('Could not read that photo.'); }
+  });
   async function takePhoto(k) {
     const keys = [...PHOTO_DAYS].filter(x => x < k).sort(); let ghost = null;
     if (keys.length) { const r = await window.MHPhotos.get(keys[keys.length - 1]); if (r) ghost = URL.createObjectURL(r.blob); }
@@ -3017,7 +3036,7 @@
     const mName = m => dateOf(m + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
     const ranges = [['month', 'This month'], ['last', 'Last month'], ['year', 'This year'], ['all', 'All time'], ...months.map(m => ['m:' + m, mName(m)])];
     main.innerHTML = `<div class="page">
-      <div class="page-head"><div><h1>Transformation</h1><p class="sub">${ks.length} photo${ks.length === 1 ? '' : 's'} · stored only on this device</p></div><button class="btn primary" data-action="photo-take" data-k="${todayKey()}">📸 Today's photo</button></div>
+      <div class="page-head"><div><h1>Transformation</h1><p class="sub">${ks.length} photo${ks.length === 1 ? '' : 's'} · stored only on this device</p></div>${photoButtons(todayKey(), !PHOTO_DAYS.has(todayKey()))}</div>
       <div class="grid-2">
         <div class="panel"><h2>Make a video</h2>
           ${!window.MHPhotos.supported() ? '<p class="err small">This browser can\'t make videos. Update iOS, or use the PC app.</p>' : ''}

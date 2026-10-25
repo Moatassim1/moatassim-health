@@ -44,7 +44,7 @@
   };
   function capture({ ghost } = {}) {
     return new Promise(resolve => {
-      let stream = null, facing = 'user', timer = 0, done = false, cams = [], busy = false, shot = null, countdown = null;
+      let stream = null, facing = 'environment', dz = 1, hw = null, timer = 0, done = false, cams = [], busy = false, shot = null, countdown = null;
       const box = document.createElement('div'); box.className = 'pcam';
       box.innerHTML = `<div class="pcam-stage"><video playsinline muted autoplay></video>${ghost ? `<img class="pcam-ghost" src="${ghost}" alt="">` : ''}<img class="pcam-review" alt="" hidden></div>
         <div class="pcam-top"><button class="pcam-ic" data-p="close" aria-label="Close">${IC.x}</button><span class="pcam-title">Progress photo</span><button class="pcam-ic" data-p="timer" aria-label="Timer">${IC.timer}<small>Off</small></button></div>
@@ -81,16 +81,31 @@
         for (const v of tries) { try { return await navigator.mediaDevices.getUserMedia({ audio: false, video: v }); } catch (_) {} }
         throw new Error('no camera');
       }
-      const setupZoom = () => {
-        zoomBox.hidden = true; zoomBox.innerHTML = '';
-        const tr = stream && stream.getVideoTracks()[0]; if (!tr || !tr.getCapabilities) return;
-        const cap = tr.getCapabilities(); if (!cap.zoom || cap.zoom.max <= cap.zoom.min) return;
-        const opts = [...new Set([cap.zoom.min, 1, 2].filter(z => z >= cap.zoom.min && z <= cap.zoom.max))];
-        if (opts.length < 2) return;
-        const cur = (tr.getSettings && tr.getSettings().zoom) || 1;
-        zoomBox.innerHTML = opts.map(z => `<button data-p="zoom" data-z="${z}" class="${Math.abs(z - cur) < .01 ? 'on' : ''}">${z < 1 ? '.' + String(Math.round(z * 10)) : z}×</button>`).join('');
-        zoomBox.hidden = false;
+      // Zoom: the camera's own zoom when the phone offers it (incl. 0.5x wide lens), otherwise a digital zoom (crop).
+      const zLabel = z => (z < 1 ? '.' + String(Math.round(z * 10)) : String(Math.round(z * 10) / 10)) + '×';
+      const curZoom = () => hw ? ((stream.getVideoTracks()[0].getSettings() || {}).zoom || 1) : dz;
+      const paintZoom = () => { const c = curZoom(); zoomBox.querySelectorAll('button').forEach(b => b.classList.toggle('on', Math.abs(Number(b.dataset.z) - c) < .05)); const l = zoomBox.querySelector('.zl'); if (l) l.textContent = zLabel(c); };
+      const applyDz = () => { video.style.transform = `scale(${dz})${facing === 'user' ? ' scaleX(-1)' : ''}`; };
+      const setZoom = async z => {
+        if (hw) { z = Math.max(hw.min, Math.min(hw.max, z)); try { await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ zoom: z }] }); } catch (_) {} }
+        else { dz = Math.max(1, Math.min(4, z)); applyDz(); }
+        paintZoom();
       };
+      const setupZoom = () => {
+        hw = null; dz = 1; applyDz();
+        const tr = stream && stream.getVideoTracks()[0];
+        const cap = tr && tr.getCapabilities ? tr.getCapabilities() : {};
+        if (cap.zoom && cap.zoom.max > cap.zoom.min) hw = { min: cap.zoom.min, max: Math.min(cap.zoom.max, 10) };
+        const opts = hw ? [...new Set([hw.min, 1, 2, 5].filter(z => z >= hw.min && z <= hw.max))] : [1, 2, 3];
+        zoomBox.innerHTML = opts.map(z => `<button data-p="zoom" data-z="${z}">${zLabel(z)}</button>`).join('');
+        zoomBox.hidden = false; paintZoom();
+      };
+      // Pinch to zoom anywhere on the picture.
+      let pinch = null;
+      const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+      box.addEventListener('touchstart', e => { if (e.touches.length === 2 && stream) pinch = { d: dist(e.touches), z: curZoom() }; }, { passive: true });
+      box.addEventListener('touchmove', e => { if (pinch && e.touches.length === 2) { e.preventDefault(); setZoom(pinch.z * dist(e.touches) / pinch.d); } }, { passive: false });
+      box.addEventListener('touchend', e => { if (e.touches.length < 2) pinch = null; });
       const start = async () => {
         if (busy) return; busy = true;
         stop();
@@ -99,7 +114,7 @@
           video.srcObject = stream;
           const tr = stream.getVideoTracks()[0], st = tr.getSettings ? tr.getSettings() : {};
           if (st.facingMode) facing = st.facingMode === 'environment' ? 'environment' : 'user';
-          video.classList.toggle('mirror', facing === 'user');
+          video.classList.remove('mirror');
           await video.play().catch(() => {});
           if (!cams.length && navigator.mediaDevices.enumerateDevices) { try { cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (_) {} }
           box.querySelector('[data-p="flip"]').hidden = cams.length === 1;
@@ -122,9 +137,10 @@
       };
       const shoot = () => {
         if (!video.videoWidth) return;
-        const c = document.createElement('canvas'); c.width = video.videoWidth; c.height = video.videoHeight;
+        const vw = video.videoWidth, vh = video.videoHeight, z = hw ? 1 : dz, sw = vw / z, sh = vh / z;
+        const c = document.createElement('canvas'); c.width = Math.round(sw); c.height = Math.round(sh);
         const x = c.getContext('2d'); if (facing === 'user') { x.translate(c.width, 0); x.scale(-1, 1); }
-        x.drawImage(video, 0, 0); box.classList.add('flash'); setTimeout(() => box.classList.remove('flash'), 180);
+        x.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, c.width, c.height); box.classList.add('flash'); setTimeout(() => box.classList.remove('flash'), 180);
         c.toBlob(async b => showReview(await shrink(b)), 'image/jpeg', 0.9);
       };
       box.addEventListener('click', async e => {
@@ -134,7 +150,7 @@
         if (a === 'flip') { facing = facing === 'user' ? 'environment' : 'user'; b.classList.add('spin'); setTimeout(() => b.classList.remove('spin'), 400); await start(); }
         if (a === 'timer') { timer = timer === 0 ? 3 : timer === 3 ? 10 : 0; b.querySelector('small').textContent = timer ? timer + 's' : 'Off'; b.classList.toggle('on', !!timer); }
         if (a === 'ghost') { b.classList.toggle('on'); const g = box.querySelector('.pcam-ghost'); if (g) g.hidden = !b.classList.contains('on'); }
-        if (a === 'zoom') { const tr = stream && stream.getVideoTracks()[0]; if (tr) { try { await tr.applyConstraints({ advanced: [{ zoom: Number(b.dataset.z) }] }); zoomBox.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); } catch (_) {} } }
+        if (a === 'zoom') await setZoom(Number(b.dataset.z));
         if (a === 'retake') backToLive();
         if (a === 'use' && shot) finish(shot);
         if (a === 'shoot') {
@@ -144,6 +160,7 @@
           countdown = setInterval(() => { n--; if (n <= 0) { clearInterval(countdown); countdown = null; cd.hidden = true; shoot(); } else cd.textContent = n; }, 1000);
         }
       });
+      box.querySelectorAll('[data-p="close"]').forEach(b => b.addEventListener('pointerup', () => finish(null)));
       box.addEventListener('change', async e => {
         if (e.target.dataset.p === 'file' && e.target.files[0]) showReview(await shrink(e.target.files[0]));
       });

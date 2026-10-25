@@ -828,7 +828,8 @@ html.pcam-open, html.pcam-open body { overflow: hidden; }
 .pcam-stage { position: absolute; inset: 0; display: grid; place-items: center; }
 .pcam video, .pcam .pcam-ghost, .pcam .pcam-review { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
 .pcam .pcam-ghost { opacity: .3; pointer-events: none; background: transparent; }
-.pcam video.mirror { transform: scaleX(-1); }
+.pcam video { transform-origin: center; transition: transform .08s linear; }
+.pcam .pcam-stage { overflow: hidden; touch-action: none; }
 .pcam .pcam-ghost[hidden], .pcam [hidden] { display: none !important; }
 .pcam.flash::after { content: ''; position: absolute; inset: 0; background: #fff; opacity: .7; pointer-events: none; }
 .pcam-top { position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: grid; grid-template-columns: 52px 1fr 52px; align-items: center; padding: calc(env(safe-area-inset-top) + 12px) 14px 14px; background: linear-gradient(rgba(0,0,0,.65), transparent); }
@@ -1048,3 +1049,9 @@ html.pcam-open, html.pcam-open body { overflow: hidden; }
   .au-perks li { font-size: 11.5px; padding: 5px 9px; }
 }
 .au-perks li { white-space: nowrap; }
+.wc-in.locked input { background: var(--surface-2); border-color: transparent; color: var(--ink); pointer-events: none; }
+.btn.wc-logged, .btn.wc-logged:disabled { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); opacity: 1; font-weight: 700; cursor: default; }
+.wc-change { font-size: 13px; }
+.ph-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.ph-btns .btn { flex: 1 1 auto; justify-content: center; cursor: pointer; }
+.photo-card .ph-btns { justify-content: flex-start; }

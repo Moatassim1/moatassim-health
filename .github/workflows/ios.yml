@@ -66,6 +66,37 @@ jobs:
         run: |
           mkdir -p ~/private_keys
           printf '%s\n' "$KEY" > ~/private_keys/AuthKey.p8
+      - name: Check the Apple key works
+        if: ${{ !inputs.test_only }}
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          KID: ${{ secrets.ASC_KEY_ID }}
+          ISS: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          pip3 install --quiet --break-system-packages pyjwt cryptography requests 2>/dev/null || pip3 install --quiet pyjwt cryptography requests
+          python3 - <<'PY'
+          import os, re, time, jwt, requests
+          kid, iss, team = os.environ['KID'].strip(), os.environ['ISS'].strip(), os.environ['TEAM'].strip()
+          key = open(os.path.expanduser('~/private_keys/AuthKey.p8')).read()
+          probs = []
+          if not re.fullmatch(r'[A-Z0-9]{10}', kid): probs.append(f'ASC_KEY_ID should be 10 capital letters/numbers (it has {len(kid)} characters{", includes AuthKey_" if "authkey" in kid.lower() else ""}{", includes .p8" if ".p8" in kid.lower() else ""})')
+          if not re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', iss): probs.append(f'ASC_ISSUER_ID should look like 69a6de7e-xxxx-xxxx-xxxx-xxxxxxxxxxxx (it has {len(iss)} characters)')
+          if not re.fullmatch(r'[A-Z0-9]{10}', team): probs.append(f'APPLE_TEAM_ID should be 10 capital letters/numbers (it has {len(team)} characters)')
+          if 'BEGIN PRIVATE KEY' not in key or 'END PRIVATE KEY' not in key: probs.append('ASC_KEY_P8 is missing the BEGIN/END PRIVATE KEY lines')
+          for p in probs: print('::error::' + p)
+          try:
+              tok = jwt.encode({'iss': iss, 'iat': int(time.time()), 'exp': int(time.time()) + 600, 'aud': 'appstoreconnect-v1'}, key, algorithm='ES256', headers={'kid': kid, 'typ': 'JWT'})
+              r = requests.get('https://api.appstoreconnect.apple.com/v1/apps?limit=5', headers={'Authorization': 'Bearer ' + tok}, timeout=30)
+              print('::notice::App Store Connect answered', r.status_code)
+              if r.ok:
+                  apps = [(a['attributes']['name'], a['attributes']['bundleId']) for a in r.json().get('data', [])]
+                  print('::notice::Apps visible to this key:', apps)
+                  if not any(b == 'com.gggains.app' for _, b in apps): print('::error::No app with bundle ID com.gggains.app in App Store Connect yet')
+              else:
+                  print('::error::Apple rejected the key (' + str(r.status_code) + '): ' + r.text[:300].replace('\n', ' '))
+          except Exception as e:
+              print('::error::Could not use the key: ' + str(e)[:300])
+          PY
       - name: Build (archive)
         if: ${{ !inputs.test_only }}
         env:

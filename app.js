@@ -2854,6 +2854,37 @@
   }
 
   // ---------------------------------------------------------------- Quests page (its own tab)
+  const CPI = '<img class="cp-ic" src="icons/cp-96.png" alt="" aria-hidden="true">';
+  // The Consistency Points symbol goes next to every mention of CP, wherever it appears.
+  const CP_RE = /consistency points(?: \(CP\))?|\bCP\b/gi;
+  function cpDecorate(root) {
+    if (!root || root.nodeType !== 1 && root.nodeType !== 3) return;
+    const texts = [];
+    if (root.nodeType === 3) texts.push(root);
+    else { const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) texts.push(n); }
+    for (const t of texts) {
+      const v = t.nodeValue; if (!v || !/cp|consistency points/i.test(v)) continue;
+      const par = t.parentNode; if (!par || par.closest && par.closest('script,style,textarea,select,option,title,.no-cp,.pcam')) continue;
+      CP_RE.lastIndex = 0; if (!CP_RE.test(v)) continue;
+      CP_RE.lastIndex = 0;
+      const frag = document.createDocumentFragment(); let last = 0, m, added = 0;
+      while ((m = CP_RE.exec(v))) {
+        frag.appendChild(document.createTextNode(v.slice(last, m.index)));
+        const prev = m.index === 0 ? t.previousSibling : null;
+        if (!(prev && prev.classList && prev.classList.contains('cp-ic'))) { const img = document.createElement('img'); img.className = 'cp-ic'; img.src = 'icons/cp-96.png'; img.alt = ''; img.setAttribute('aria-hidden', 'true'); frag.appendChild(img); added++; }
+        frag.appendChild(document.createTextNode(m[0])); last = m.index + m[0].length;
+      }
+      if (!added) continue;
+      frag.appendChild(document.createTextNode(v.slice(last)));
+      par.replaceChild(frag, t);
+    }
+  }
+  let cpBusy = false;
+  new MutationObserver(ms => {
+    if (cpBusy) return; cpBusy = true;
+    try { for (const m of ms) for (const n of m.addedNodes) cpDecorate(n); } finally { cpBusy = false; }
+  }).observe(document.body, { childList: true, subtree: true });
+  cpDecorate(document.body);
   function renderQuests() {
     const c = gc(), k = c.today, d = c.days[k]; if (!d) { main.innerHTML = '<div class="page"><h1>Quests</h1></div>'; return; }
     if (c.newTitles.length) setTimeout(() => c.newTitles.forEach(t => ggNote('title-' + t.id, `🏷️ New title: ${t.id}`, `${game().RARITY[t.rarity].name} · ${t.text}. Wear it from Ranked › Locker.`)), 0);
@@ -2879,7 +2910,7 @@
         <div>${esc(e.text)}${e.live ? `: <b>${fmt(Math.min(e.have, e.need))} / ${e.need}</b>` : ' · starts soon'}</div>
         ${(g.badges || []).includes(e.id) ? '<div class="faint small">🏅 Badge earned</div>' : e.done ? '<button class="btn primary" data-action="gg-claim-event" data-id="' + e.id + '">Claim badge + 250 XP</button>' : e.live ? `<div class="xpbar"><i style="width:${e.have / e.need * 100}%"></i></div><div class="faint small">Limited time: this badge can't be earned after the event.</div>` : ''}</div>`).join('')}
       <div class="panel"><div class="q-head"><h2>Today's points</h2><span class="faint small">every day, for using the app and hitting your targets</span></div>
-        <ul class="res-list">${d.items.map(i => `<li class="${i.ok ? 'ok' : ''}"><span>${i.ok ? '✅' : '▫️'} ${esc(i.label)}</span><b>${i.ok ? '+' + i.pts : '+' + (i.max || i.pts || 0)}</b></li>`).join('')}</ul></div>
+        <ul class="res-list">${d.items.map(i => `<li class="${i.ok ? 'ok' : ''}"><span>${i.ok ? '✅' : '▫️'} ${esc(i.label)}</span><b>${i.ok ? '+' + i.pts : '+' + (i.max || i.pts || 0)}${CPI}</b></li>`).join('')}</ul></div>
       ${reacts.length ? `<div class="panel"><h2>Friends hyped your day</h2><div class="gg-reacts">${reacts.map(r => `<span>${REACT_ICON[r.emoji] || ''} ${esc(who(r.from_id))}</span>`).join('')}</div></div>` : ''}
       <button class="btn ghost wide" data-action="go-ranked">See the ladder · ${fmt(c.weekPts)} CP this week ›</button>
     </div>`;
@@ -2904,7 +2935,7 @@
         ${best ? `<div class="res-mvp">⭐ MVP stat: ${esc(best.label.replace('Quest: ', ''))}${best.note ? ` <span class="faint">(${esc(best.note)})</span>` : ''}</div>` : ''}
         ${rk ? `<div class="res-rank">Weekly ladder: <b>#${rk.pos}</b> of ${rk.of}${prev && prev !== rk.pos ? ` <span class="${prev > rk.pos ? 'up' : 'down'}">${prev > rk.pos ? '▲' : '▼'} ${Math.abs(prev - rk.pos)}</span>` : ''}${rk.above ? ` · ${fmt(rk.above.week - rk.me.week)} CP behind ${esc(rk.above.name)}` : ' · you\'re top 👑'}</div>` : ''}
         ${d.tooLow ? '<div class="sup-warn"><p>⚠ You ate well under your target today. Under-eating earns no CP: fuel up tomorrow.</p></div>' : ''}
-        <ul class="res-list">${d.items.map(i => `<li class="${i.ok ? 'ok' : ''}"><span>${i.ok ? '✅' : '▫️'} ${esc(i.label)}</span><b>${i.ok ? '+' + i.pts : '0'}</b></li>`).join('')}</ul>
+        <ul class="res-list">${d.items.map(i => `<li class="${i.ok ? 'ok' : ''}"><span>${i.ok ? '✅' : '▫️'} ${esc(i.label)}</span><b>${i.ok ? '+' + i.pts : '0'}${CPI}</b></li>`).join('')}</ul>
         <div class="res-btns"><button class="btn" data-r="share">Share</button></div>
       </div>`;
     modal.hidden = false;

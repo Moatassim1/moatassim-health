@@ -308,13 +308,12 @@
   $('#tabbar').addEventListener('click', e => {
     const b = e.target.closest('button[data-view]'); if (!b) return;
     const v = b.dataset.view;
-    if (v === 'scan') return window.MHScanIntoLog();
     if (v === 'more') return openMore();
     nav(v);
   });
   function openMore() {
     card.className = 'modal-card narrow sheet-card';
-    const items = [['trends', 'Daily performance', 'Your nutrients, trends and history'], ['photos', 'Transformation', 'Daily progress photos and videos'], ['garmin', 'Devices', 'Garmin and other watches'], ['foods', 'Food list', 'All foods, and your own'], ['forecast', 'Weight projection', 'Where your weight is heading'], ['settings', 'Settings', 'Account, goal, targets, notifications']];
+    const items = [['settings', 'Settings', 'Account, goal, targets, notifications'], ['photos', 'Transformation', 'Daily progress photos and videos'], ['garmin', 'Devices', 'Garmin and other watches'], ['foods', 'Food list', 'All foods, and your own'], ['forecast', 'Weight projection', 'Where your weight is heading']];
     card.innerHTML = `<div class="modal-head"><h2>More</h2><button class="btn ghost" data-f="close">Close</button></div><div class="modal-body more-list">${items.map(([v, t, d]) => `<button data-f="go" data-v="${v}"><b>${t}</b><span>${d}</span></button>`).join('')}</div>`;
     modal.hidden = false;
     card.onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; closeModal(); if (b.dataset.f === 'go') nav(b.dataset.v); };
@@ -341,7 +340,9 @@
   const BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16zM10 20a2 2 0 0 0 4 0"/></svg>';
   function renderMe() {
     const pts = myPoints();
-    const html = `<button class="me-card" data-act2="go-settings">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, tier: GAME ? gc().tier.id : null })}<span class="pname">${esc(P().name)}<small>${pts == null ? 'Set a goal to rank' : fmt(pts, 1) + '% to goal'}</small></span></button>
+    const html = `<button class="me-card" data-act2="go-me">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, tier: GAME ? gc().tier.id : null })}<span class="pname">${esc(P().name)}<small>${pts == null ? 'Set a goal to rank' : fmt(pts, 1) + '% to goal'}</small></span></button>
+      <button class="bell tb-ic" data-act2="forecast" aria-label="Weight projection" title="Weight projection"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 3 8-8M15 7h5v5"/></svg></button>
+      <button class="bell tb-ic" data-act2="search" aria-label="Find people" title="Find people"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg></button>
       <button class="bell" data-act2="notes" aria-label="Notifications">${BELL}${NOTES.unread ? `<i>${NOTES.unread > 9 ? '9+' : NOTES.unread}</i>` : ''}</button>`;
     $('#profiles').innerHTML = html;
     const mt = $('#mtop'); if (mt) mt.innerHTML = `<div class="brand-mini"><img class="brand-mark" src="icons/icon-192.png" alt=""></div>` + html;
@@ -350,6 +351,9 @@
   function onChrome(e) {
     const b = e.target.closest('[data-act2]'); if (!b) return;
     if (b.dataset.act2 === 'go-settings') nav('settings');
+    if (b.dataset.act2 === 'go-me') { UI.rk = 'me'; F.view = null; nav('friends'); }
+    if (b.dataset.act2 === 'forecast') nav('forecast');
+    if (b.dataset.act2 === 'search') openPeopleSearch();
     if (b.dataset.act2 === 'notes') openNotes();
   }
   $('#profiles').addEventListener('click', onChrome);
@@ -362,7 +366,7 @@
   function render() {
     if (GAME) GAME.invalidate();
     renderMe();
-    document.querySelectorAll('#tabbar button[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === UI.view || (b.dataset.view === 'more' && ['trends', 'garmin', 'foods', 'forecast', 'settings', 'photos'].includes(UI.view))));
+    document.querySelectorAll('#tabbar button[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === UI.view || (b.dataset.view === 'more' && ['garmin', 'foods', 'settings', 'photos'].includes(UI.view))));
     renderSideFoot();
     try { renderTabbarExtras(); } catch (_) {}
     const v = UI.view;
@@ -1539,14 +1543,13 @@
   function renderFriends() {
     loadFriends();
     if (F.view) return renderFriendProfile();
-    const code = (window.MH_ME && window.MH_ME.friend_code) || '…';
     const list = F.list || [];
     const incoming = list.filter(f => f.incoming), outgoing = list.filter(f => f.outgoing), friends = list.filter(f => f.status === 'accepted');
     const rows = rankingRows();
     const pr = P().profile;
     const needGoal = !pr.goalStart || (pr.goal !== 'maintain' && pr.goalWeightKg == null);
     main.innerHTML = `<div class="page">
-      <div class="page-head"><div><h1>Ranked</h1><p class="sub">${ME().username ? `You're <b>@${esc(ME().username)}</b> ${flagOf(ME().country)}. Friends can find you by searching it.` : '<button class="link-btn" data-action="u-change">Choose your username</button> so friends can find you.'}</p></div><button class="btn icon search-btn" data-action="u-find" aria-label="Find friends">🔍</button></div>
+      <div class="page-head"><div><h1>Ranked</h1><p class="sub">${ME().username ? `<b>@${esc(ME().username)}</b> ${flagOf(ME().country)} · friends find you by your username` : '<button class="link-btn" data-action="u-change">Choose your username</button> so friends can find you.'}</p></div></div>
       ${needGoal ? `<div class="nudge"><span><b>Set your goal to join the ranking.</b> Choose lose, gain or maintain and a goal weight in Settings. Your points start from your weight on that day.</span><button class="btn primary" data-action="go-settings">Set goal</button></div>` : ''}
       <div class="grid-2">
         ${ggLadderPanel()}
@@ -1600,7 +1603,7 @@
     const meals = MEALS.map(m => { const list = (d.entries || []).filter(e => e.meal === m); return list.length ? `<div class="cmp-meal"><b>${m}</b> <span class="faint num">${fmt(totalsOf(list).kcal)} kcal</span><ul>${list.map(e => `<li><span>${esc(e.name)}</span><span class="faint num">${esc(entryAmount(e))} · ${fmt(e.n.kcal * e.grams / 100)}</span></li>`).join('')}</ul></div>` : ''; }).join('');
     const g = d.garmin;
     main.innerHTML = `<div class="page">
-      <div class="page-head"><div><button class="btn primary back-friends" data-action="f-back">‹ Back to Friends</button><h1 style="display:flex;align-items:center;gap:10px">${(() => { let st = {}; try { st = JSON.parse(f.profile.game || '{}'); } catch (_) {} return avatarHtml({ name: f.profile.name, color: f.profile.color, avatar: f.profile.avatar, tier: st.t || null }, 'big'); })()}<span>${esc(f.profile.name)} ${flagOf(f.profile.country)}${f.profile.username ? `<small class="faint" style="display:block;font-size:14px;font-weight:600">@${esc(f.profile.username)}</small>` : ''}</span></h1>
+      <div class="page-head"><div><button class="btn ghost sm back-friends" data-action="f-back">‹ Back</button><h1 style="display:flex;align-items:center;gap:10px">${(() => { let st = {}; try { st = JSON.parse(f.profile.game || '{}'); } catch (_) {} return avatarHtml({ name: f.profile.name, color: f.profile.color, avatar: f.profile.avatar, tier: st.t || null }, 'big'); })()}<span>${esc(f.profile.name)} ${flagOf(f.profile.country)}${f.profile.username ? `<small class="faint" style="display:block;font-size:14px;font-weight:600">@${esc(f.profile.username)}</small>` : ''}</span></h1>
         <p class="sub">${goalText(f.profile.goal)} · ${pointsText(f.profile.points)} of the way to goal${f.profile.points_updated ? ' · updated ' + esc(new Date(f.profile.points_updated).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })) : ''}</p></div>
         ${true ? `<div class="datebar"><button class="btn icon" data-action="f-day" data-d="-1" aria-label="Previous day">‹</button><span class="num" style="min-width:110px;text-align:center">${F.day === todayKey() ? 'Today' : esc(shortDate(F.day))}</span><button class="btn icon" data-action="f-day" data-d="1" ${F.day >= todayKey() ? 'disabled' : ''} aria-label="Next day">›</button></div>` : ''}
       </div>
@@ -2069,7 +2072,7 @@
   }
 
   async function handleViewAction(act, a) {
-    if (act === 'u-find') { const p = $('#findPanel'); if (p) { p.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => { const i = $('#uSearch'); if (i) i.focus(); }, 300); } return; }
+    if (act === 'u-find') { openPeopleSearch(); return; }
     if (act === 'u-change') { usernameGate(true); return; }
     if (act === 'u-add') {
       a.disabled = true; a.textContent = 'Sending…';
@@ -2077,17 +2080,6 @@
       catch (er) { toast('Could not add: ' + er.message); }
       const box = $('#uResults'); if (box) box.innerHTML = searchResults(id => SR.sent.has(id) ? 'sent' : '');
       return;
-    }
-    if (act === 'f-add') {
-      const code = ($('#fCode').value || '').trim();
-      if (!code) { F.msg = 'Type their friend ID first.'; F.msgErr = true; return render(); }
-      F.busy = true; F.msg = ''; render();
-      try {
-        const r = await social.addFriend(code);
-        F.msgErr = !r.ok; F.msg = r.ok ? (r.status === 'accepted' ? `You and ${r.name} are now friends.` : `Request sent to ${r.name}. You'll both appear in the ranking once they accept.`) : r.error;
-        if (r.ok) F.code = '';
-      } catch (e) { F.msgErr = true; F.msg = e.offline ? 'You\'re offline.' : e.message; }
-      F.busy = false; await loadFriends(true); render();
     }
     else if (act === 'f-accept') { try { await social.accept(a.dataset.id); toast('Friend added. Choose what they can see below.'); } catch (e) { toast(e.message); } await loadFriends(true); }
     else if (act === 'f-remove') {
@@ -2105,7 +2097,7 @@
     else if (act === 'f-view') { F.view = a.dataset.id; F.day = todayKey(); F.data = null; render(); main.scrollTop = 0; }
     else if (act === 'f-back') { F.view = null; F.data = null; render(); }
     else if (act === 'f-day') { F.day = addDays(F.day, Number(a.dataset.d)); if (F.day > todayKey()) F.day = todayKey(); F.data = null; render(); }
-    else if (act === 'copy-code') { const c = window.MH_ME && window.MH_ME.friend_code; if (c) { try { await navigator.clipboard.writeText(c); toast('Friend ID copied: ' + c); } catch (_) { toast('Your friend ID is ' + c); } } }
+    else if (false && act === 'copy-code') { const c = window.MH_ME && window.MH_ME.friend_code; if (c) { try { await navigator.clipboard.writeText(c); toast('Friend ID copied: ' + c); } catch (_) { toast('Your friend ID is ' + c); } } }
     else if (act === 'goal-restart') { const l = latestWeight(); P().profile.goalStart = l && l.date === todayKey() ? { date: todayKey(), kg: l.kg, real: true } : { date: todayKey(), kg: null }; save(); render(); toast(l && l.date === todayKey() ? 'Ranking restarted from today\'s weight.' : 'Ranking restarts from your next weigh-in.'); }
     else if (act === 'signout') { if (confirm('Sign out on this device? Your data stays in your account.')) social.signOut(); }
     else if (act === 'push-enable') { const r = await social.enablePush(); if (r.ok) { toast('Notifications are on.'); render(); } else { const m = $('#pushMsg'); if (m) { m.textContent = r.error; m.className = 'small err'; } } }
@@ -2345,7 +2337,7 @@
             <label class="field"><span>Name (what friends see)</span><input type="text" id="pName" value="${esc(P().name)}" maxlength="40"></label>
           </div>
           
-          <div class="kv" style="margin-top:14px"><span>Friend ID</span><span><b class="code-pill" data-action="copy-code" title="Tap to copy">${esc(me.friend_code || '…')}</b></span><span>Signed in as</span><span>${esc((window.MH_EMAIL) || '')}</span></div>
+          <div class="kv" style="margin-top:14px"><span>Username</span><span>${ME().username ? '@' + esc(ME().username) : '<span class="faint">not set</span>'} <button class="btn ghost sm" data-action="u-change">Change</button></span><span>Signed in as</span><span>${esc((window.MH_EMAIL) || '')}</span></div>
           <button class="btn ghost danger" style="margin-top:12px" data-action="signout">Sign out</button>
           <div class="acct-safety">
             <button class="btn ghost sm" data-action="blocks-show">Blocked people</button>
@@ -2631,6 +2623,19 @@
       ${r === 'friends' ? '<span class="faint small">Friends ✓</span>' : r === 'sent' ? '<span class="faint small">Request sent</span>' : r === 'incoming' ? `<button class="btn primary" data-action="f-accept" data-id="${esc(u.id)}">Accept</button>` : `<button class="btn primary" data-action="u-add" data-code="${esc(u.friend_code)}" data-id="${esc(u.id)}">Add</button>`}<button class="btn icon ghost sm" data-action="u-more" data-id="${esc(u.id)}" data-name="${esc(u.name)}" data-user="${esc(u.username)}" aria-label="More options">⋯</button></div>`; }).join('');
   }
   let searchT = null;
+  function openPeopleSearch() {
+    loadFriends();
+    card.className = 'modal-card narrow sheet-card';
+    card.innerHTML = `<div class="modal-head"><h2>Find people</h2><button class="btn ghost" data-ps="close">Close</button></div><div class="modal-body">${searchPanel().replace('class="panel" id="findPanel"><h2>Find friends</h2>', 'id="findPanel">')}</div>`;
+    modal.hidden = false;
+    wireSearch(); setTimeout(() => { const i = $('#uSearch'); if (i) i.focus(); }, 80);
+    card.onclick = async e => {
+      if (e.target.closest('[data-ps="close"]')) return closeModal();
+      const a = e.target.closest('[data-action]'); if (!a) return;
+      if (a.dataset.action === 'u-more') { safetySheet(a.dataset); return; }
+      if (a.dataset.action === 'u-add' || a.dataset.action === 'f-accept') { await handleViewAction(a.dataset.action, a); const i = $('#uSearch'); if (i) i.dispatchEvent(new Event('input')); }
+    };
+  }
   function wireSearch() {
     const si = $('#uSearch'); if (!si) return;
     si.addEventListener('input', () => {
@@ -2852,7 +2857,7 @@
     const who = id => { const f = (F.list || []).find(x => x.id === id); return f ? f.profile.name : 'A friend'; };
     const h = new Date().getHours(), left = 24 - h;
     main.innerHTML = `<div class="page qpage">
-      <div class="page-head"><div><h1>Quests</h1><p class="sub">Come back every day, hit your targets, climb the ladder. New quests at midnight${done < d.quests.length ? ` · ${left}h left today` : ''}.</p></div></div>
+      <div class="page-head"><div><h1>Quests</h1><p class="sub">New quests every day at midnight${done < d.quests.length ? ` · <b>${left}h left</b>` : ' · all done today ✅'}</p></div></div>
       ${d.mult === 2 ? '<div class="gg-banner">⚡ Welcome back! Comeback bonus: double CP today.</div>' : ''}
       <div class="panel q-hero">
         <button class="gg-score" data-action="gg-result" data-k="${k}"><b class="num">${fmt(d.pts)}</b><span>CP today</span><i class="grade g-${gr}">${gr}</i></button>

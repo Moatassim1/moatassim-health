@@ -314,7 +314,7 @@
   });
   function openMore() {
     card.className = 'modal-card narrow sheet-card';
-    const items = [['photos', 'Transformation', 'Daily progress photos and videos'], ['garmin', 'Devices', 'Garmin and other watches'], ['foods', 'Food list', 'All foods, and your own'], ['forecast', 'Weight projection', 'Where your weight is heading'], ['settings', 'Settings', 'Account, goal, targets, notifications']];
+    const items = [['trends', 'Daily performance', 'Your nutrients, trends and history'], ['photos', 'Transformation', 'Daily progress photos and videos'], ['garmin', 'Devices', 'Garmin and other watches'], ['foods', 'Food list', 'All foods, and your own'], ['forecast', 'Weight projection', 'Where your weight is heading'], ['settings', 'Settings', 'Account, goal, targets, notifications']];
     card.innerHTML = `<div class="modal-head"><h2>More</h2><button class="btn ghost" data-f="close">Close</button></div><div class="modal-body more-list">${items.map(([v, t, d]) => `<button data-f="go" data-v="${v}"><b>${t}</b><span>${d}</span></button>`).join('')}</div>`;
     modal.hidden = false;
     card.onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; closeModal(); if (b.dataset.f === 'go') nav(b.dataset.v); };
@@ -362,8 +362,9 @@
   function render() {
     if (GAME) GAME.invalidate();
     renderMe();
-    document.querySelectorAll('#tabbar button[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === UI.view || (b.dataset.view === 'more' && ['garmin', 'foods', 'forecast', 'settings', 'photos'].includes(UI.view))));
+    document.querySelectorAll('#tabbar button[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === UI.view || (b.dataset.view === 'more' && ['trends', 'garmin', 'foods', 'forecast', 'settings', 'photos'].includes(UI.view))));
     renderSideFoot();
+    try { renderTabbarExtras(); } catch (_) {}
     const v = UI.view;
     if (v === 'today') renderToday();
     else if (v === 'trends') renderTrends();
@@ -373,6 +374,7 @@
     else if (v === 'settings') renderSettings();
     else if (v === 'friends') renderFriends();
     else if (v === 'photos') renderPhotos();
+    else if (v === 'quests') renderQuests();
   }
 
   function guessMeal() {
@@ -566,7 +568,6 @@
 
       ${garminRenewBanner()}
       ${checkinCard()}
-      ${gameCard(k)}
       ${splitOn() ? `<div class="daytype"><div class="seg"><button class="${dayType(k) === 'train' ? 'on' : ''}" data-action="daytype" data-v="train">🏋️ Training day</button><button class="${dayType(k) === 'rest' ? 'on' : ''}" data-action="daytype" data-v="rest">😴 Rest day</button></div><span class="faint small">${(P().dayMeta[k] || {}).dayType ? 'set for this day' : Array.isArray(P().targets.trainDays) && P().targets.trainDays.length ? 'from your weekly schedule' : 'tap to change'}</span></div>` : ''}
       ${!P().setupDone ? `<div class="nudge"><span><b>Set up ${esc(P().name)}'s details</b> so the calorie targets and weight projection fit ${esc(P().name)}: age, height, weight and goal.</span><button class="btn primary" data-action="go-settings">Set up</button></div>` : ''}
       <div class="readout">
@@ -1614,7 +1615,7 @@
         </div>` : `<div class="panel"><p class="muted" style="margin:0">${esc(f.profile.name)} hasn't shared their food diary with you.</p></div>`}
         <div class="panel"><h2>Weight</h2>${true ? (wk.length ? `<div class="big-score"><span class="v">${fmt(d.weights[wk[wk.length - 1]], 1)}</span><span class="q">kg on ${esc(shortDate(wk[wk.length - 1]))}</span></div>${wchart}` : '<p class="muted">No weigh-ins yet.</p>') : `<p class="muted" style="margin:0">${esc(f.profile.name)} hasn't shared their weight with you.</p>`}</div>
       </div>`}
-      <div style="margin-top:20px"><button class="btn ghost danger" data-action="f-remove" data-id="${esc(f.id)}">Remove friend</button></div>
+      <div class="safety-row"><button class="btn ghost danger" data-action="f-remove" data-id="${esc(f.id)}">Remove friend</button><button class="btn ghost" data-action="u-block" data-id="${esc(f.id)}" data-name="${esc(f.profile.name)}">Block</button><button class="btn ghost" data-action="u-report" data-id="${esc(f.id)}" data-name="${esc(f.profile.name)}" data-user="${esc(f.profile.username || '')}">Report</button></div>
     </div>`;
   }
 
@@ -2095,6 +2096,12 @@
       try { await social.remove(a.dataset.id); } catch (e) { toast(e.message); }
       F.view = null; await loadFriends(true); render();
     }
+    else if (act === 'u-more') { safetySheet(a.dataset); }
+    else if (act === 'u-block') { await blockUser(a.dataset); }
+    else if (act === 'u-report') { reportUser(a.dataset); }
+    else if (act === 'blocks-show') { await showBlocks(); }
+    else if (act === 'u-unblock') { try { await social.unblock(a.dataset.id); toast('Unblocked.'); } catch (e) { toast(e.message); } await showBlocks(); }
+    else if (act === 'acct-delete') { deleteAccountFlow(); }
     else if (act === 'f-view') { F.view = a.dataset.id; F.day = todayKey(); F.data = null; render(); main.scrollTop = 0; }
     else if (act === 'f-back') { F.view = null; F.data = null; render(); }
     else if (act === 'f-day') { F.day = addDays(F.day, Number(a.dataset.d)); if (F.day > todayKey()) F.day = todayKey(); F.data = null; render(); }
@@ -2340,6 +2347,12 @@
           
           <div class="kv" style="margin-top:14px"><span>Friend ID</span><span><b class="code-pill" data-action="copy-code" title="Tap to copy">${esc(me.friend_code || '…')}</b></span><span>Signed in as</span><span>${esc((window.MH_EMAIL) || '')}</span></div>
           <button class="btn ghost danger" style="margin-top:12px" data-action="signout">Sign out</button>
+          <div class="acct-safety">
+            <button class="btn ghost sm" data-action="blocks-show">Blocked people</button>
+            <div id="blockList"></div>
+            <button class="btn ghost danger sm" data-action="acct-delete">Delete my account</button>
+            <p class="faint small">Deleting removes your diary, weights, friends, ranking and login from our server for good. Progress photos only live on your phone and are wiped from this device too.</p>
+          </div>
         </div>
         <div class="panel">
           <h2>Goal and ranking</h2>
@@ -2431,7 +2444,7 @@
     main.querySelectorAll('[data-r]').forEach(el => el.addEventListener('change', () => ownSet('r', el)));
     const ts = $('#tsplit'); if (ts) ts.addEventListener('change', () => { const T = P().targets; T.auto = false; T.mode = 'own'; T.split = ts.checked; if (ts.checked && !T.rest) { T.rest = { p: T.p, c: Math.max(40, T.c - 40), f: T.f + 15 }; T.rest.kcal = macroKcal(T.rest); } save(); softRender(renderSettings); });
     ['pgGoal', 'pgKg', 'pgWeeks'].forEach(id => { const el = $('#' + id); if (el) el.addEventListener('change', () => { const d = UI.planForm || (UI.planForm = {}); d.goal = $('#pgGoal').value; d.goalKg = $('#pgKg').value; d.weeks = $('#pgWeeks').value; UI.planResult = null; softRender(renderSettings); }); });
-    $('#pName').addEventListener('change', e => { const v = e.target.value.trim(); if (v) { P().name = v; save(); softRender(render); } });
+    $('#pName').addEventListener('change', e => { const v = e.target.value.trim(); if (v && window.MHNameOk && !window.MHNameOk(v)) { toast('That name isn\'t allowed. Please choose another one.'); e.target.value = P().name; return; } if (v) { P().name = v; save(); softRender(render); } });
     loadBackupList();
     const rt = $('#remTime'); if (rt) rt.addEventListener('change', () => { $('#remLink').href = 'reminders/' + rt.value + '.ics'; S.settings.reminderTime = rt.value.slice(0, 2) + ':' + rt.value.slice(2); save(); });
     main.querySelectorAll('[data-rem]').forEach(el => el.addEventListener('change', () => { P().reminderOn = el.checked; save(); }));
@@ -2535,6 +2548,7 @@
       garmin: k => ((P().garmin || {}).days || {})[k] || null, photoDays: () => PHOTO_DAYS, BUILTIN, weights: () => P().weights,
       goal: () => { const g = P().profile.goal || 'maintain'; return g.startsWith('lose') ? 'lose' : g; },
       firstDay: () => Object.keys(P().diary).filter(k => (P().diary[k] || []).length).sort()[0], sig: () => '', save,
+      hasFriends: () => (F.list || []).some(f => f.status === 'accepted'),
       goalInfo: () => { const pg = social.progressOf ? social.progressOf(S) : {}, g = (P().profile.goal || '').startsWith('lose') ? 'lose' : P().profile.goal; if (!pg.start || pg.avg == null) return null;
         const kg = g === 'gain' ? pg.avg - pg.start.kg : pg.start.kg - pg.avg; return { pct: myPoints() || 0, kg: Math.max(0, Math.round(kg * 10) / 10) }; }
     });
@@ -2577,7 +2591,7 @@
       if (v === me.username) { msg.textContent = 'That\'s your current username.'; msg.className = 'small muted'; return; }
       if (!USERNAME_RE.test(v)) { msg.textContent = 'Use 3–20 letters, numbers, dots or underscores (no spaces).'; msg.className = 'small err'; return; }
       msg.textContent = 'Checking…'; msg.className = 'small muted';
-      try { const free = await social.usernameFree(v); if (inp.value.trim().toLowerCase() !== v) return; ok = free; msg.textContent = free ? `✓ @${v} is free` : `✗ @${v} is taken. Try another.`; msg.className = 'small ' + (free ? 'ok-txt' : 'err'); btn.disabled = !free; }
+      try { const st = await social.usernameStatus(v); if (inp.value.trim().toLowerCase() !== v) return; const free = st === 'ok'; ok = free; msg.textContent = free ? `✓ @${v} is free` : st === 'not_allowed' ? 'That username isn\'t allowed. Please choose another one.' : st === 'invalid' ? 'Use 3–20 letters, numbers, dots or underscores (no spaces).' : `✗ @${v} is taken. Try another.`; msg.className = 'small ' + (free ? 'ok-txt' : 'err'); btn.disabled = !free; }
       catch (e) { msg.textContent = e.offline ? 'You\'re offline. Connect to check names.' : 'Could not check: ' + e.message; msg.className = 'small err'; }
     };
     inp.addEventListener('input', () => { inp.value = inp.value.toLowerCase().replace(/\s/g, ''); clearTimeout(checkT); checkT = setTimeout(check, 350); });
@@ -2614,7 +2628,7 @@
     if (SR.busy && !SR.list) return '<p class="muted small">Searching…</p>';
     if (!SR.list || !SR.list.length) return `<p class="muted small">Nobody found for “${esc(SR.q)}”.</p>`;
     return SR.list.map(u => { const r = rel(u.id); return `<div class="frow">${avatarHtml({ name: u.name, color: u.color, avatar: u.avatar })}<span class="fname">${esc(u.name)} ${flagOf(u.country)}<small class="faint">@${esc(u.username)}</small></span>
-      ${r === 'friends' ? '<span class="faint small">Friends ✓</span>' : r === 'sent' ? '<span class="faint small">Request sent</span>' : r === 'incoming' ? `<button class="btn primary" data-action="f-accept" data-id="${esc(u.id)}">Accept</button>` : `<button class="btn primary" data-action="u-add" data-code="${esc(u.friend_code)}" data-id="${esc(u.id)}">Add</button>`}</div>`; }).join('');
+      ${r === 'friends' ? '<span class="faint small">Friends ✓</span>' : r === 'sent' ? '<span class="faint small">Request sent</span>' : r === 'incoming' ? `<button class="btn primary" data-action="f-accept" data-id="${esc(u.id)}">Accept</button>` : `<button class="btn primary" data-action="u-add" data-code="${esc(u.friend_code)}" data-id="${esc(u.id)}">Add</button>`}<button class="btn icon ghost sm" data-action="u-more" data-id="${esc(u.id)}" data-name="${esc(u.name)}" data-user="${esc(u.username)}" aria-label="More options">⋯</button></div>`; }).join('');
   }
   let searchT = null;
   function wireSearch() {
@@ -2720,11 +2734,6 @@
       <div class="mr-block"><div class="mr-h">${tierBadge(c.tier)}<span class="faint small">${fmt(c.rating)} CP in the last 14 days</span></div><div class="xpbar tierbar" style="--tc:${c.tier.color}"><i style="width:${tierPct}%"></i></div>
         <div class="faint small">${nx ? `${fmt(nx.min - c.rating)} CP to ${TIER_ICON[nx.id]} ${esc(nx.name)}.` : 'Top tier. Stay here!'}${dropTo && c.rating - c.tier.min < 60 ? ` <b class="warn-txt">Careful: ${fmt(c.rating - c.tier.min)} CP above ${esc(dropTo.name)}. A couple of bad days and you drop.</b>` : ''} Your tier uses your last 14 days, so it can go up or down.</div></div>
       <div class="mr-stats"><div><b>🔥 ${fmt(c.logStreak)}</b><span>day logging streak</span></div><div><b>💪 ${fmt(c.protStreak)}</b><span>day protein streak</span></div><div><b>🧊 ${fmt(c.freezes)}</b><span>streak freezes</span></div><div><b>${fmt(c.weekPts)}</b><span>CP this week</span></div></div>
-      <div class="mr-block"><div class="mr-h"><b>Weekly quest</b><span class="faint small">+150 XP and a streak freeze</span></div><div>${esc(wq.text)}: <b>${fmt(Math.min(wq.have, wq.need))} / ${wq.need}</b></div>
-        ${wq.done ? (wqClaimed ? '<div class="faint small">✅ Claimed</div>' : '<button class="btn primary" data-action="gg-claim-week">Claim reward</button>') : `<div class="xpbar"><i style="width:${wq.have / wq.need * 100}%"></i></div>`}</div>
-      ${c.events.map(e => `<div class="mr-block event"><div class="mr-h"><b>${esc(e.name)}</b><span class="faint small">${esc(shortDate(e.from))} – ${esc(shortDate(e.to))}</span></div>
-        <div>${esc(e.text)}${e.live ? `: <b>${fmt(Math.min(e.have, e.need))} / ${e.need}</b>` : ' · starts soon'}</div>
-        ${(g.badges || []).includes(e.id) ? '<div class="faint small">🏅 Badge earned</div>' : e.done ? '<button class="btn primary" data-action="gg-claim-event" data-id="' + e.id + '">Claim badge + 250 XP</button>' : e.live ? `<div class="xpbar"><i style="width:${e.have / e.need * 100}%"></i></div><div class="faint small">Limited time: this badge can't be earned after the event.</div>` : ''}</div>`).join('')}
       ${badges.length ? `<div class="mr-block"><b>Badges</b><div class="chips" style="margin-top:6px">${badges.map(b => `<span class="chip on">🏅 ${esc(b)}</span>`).join('')}</div></div>` : ''}
       <label class="check" style="margin-top:12px"><input type="checkbox" data-action="gg-hidew" ${g.hideWeight ? 'checked' : ''}> Hide my weight from friends (compete on habits only)</label>
       <p class="faint small">Fair play: eating far below your target or losing weight faster than about 1% of your body weight a week earns no extra CP. Consistency wins.</p>
@@ -2766,6 +2775,111 @@
       ${reacts.length ? `<div class="gg-reacts">${reacts.map(r => `<span title="${esc(who(r.from_id))}">${REACT_ICON[r.emoji] || ''} ${esc(who(r.from_id))}</span>`).join('')}</div>` : ''}
       <div class="gg-actions"><button class="btn ghost" data-action="go-ranked">Ranked · ${fmt(c.weekPts)} CP this week ›</button></div>
     </div>`;
+  }
+
+  // ---------------------------------------------------------------- safety: block, report, delete account
+  function safetySheet(d) {
+    card.className = 'modal-card narrow sheet-card';
+    card.innerHTML = `<div class="modal-head"><h2>${esc(d.name || 'Options')}</h2><button class="btn ghost" data-s="close">Close</button></div><div class="modal-body more-list">
+      <button data-s="report"><b>Report</b><span>Offensive name or picture, harassment, spam or cheating</span></button>
+      <button data-s="block"><b>Block</b><span>They can't find you, add you or react to your days</span></button></div>`;
+    modal.hidden = false;
+    card.onclick = async e => { const b = e.target.closest('[data-s]'); if (!b) return; closeModal(); if (b.dataset.s === 'report') reportUser(d); if (b.dataset.s === 'block') await blockUser(d); };
+  }
+  async function blockUser(d) {
+    if (!confirm(`Block ${d.name || 'this person'}? You'll stop being friends, they won't be able to find or add you, and their reactions are removed. They aren't told.`)) return;
+    try { await social.block(d.id); toast(`${d.name || 'They'} blocked.`); } catch (e) { toast(e.offline ? 'You\'re offline.' : e.message); return; }
+    F.view = null; F.data = null; if (typeof SR !== 'undefined' && SR.list) SR.list = SR.list.filter(u => u.id !== d.id);
+    await loadFriends(true); render();
+  }
+  function reportUser(d) {
+    const reasons = [['name_or_picture', 'Offensive name or picture'], ['harassment', 'Harassment or bullying'], ['spam_or_fake', 'Spam or fake account'], ['cheating', 'Cheating the ladder'], ['other', 'Something else']];
+    card.className = 'modal-card narrow';
+    card.innerHTML = `<div class="modal-head"><h2>Report ${esc(d.name || '')}</h2><button class="btn ghost" data-r="close">Cancel</button></div><div class="modal-body">
+      <div class="rep-reasons">${reasons.map(([v, l], i) => `<label class="check"><input type="radio" name="repR" value="${v}" ${i ? '' : 'checked'}> ${l}</label>`).join('')}</div>
+      <label class="field" style="margin-top:10px"><span>Anything else? (optional)</span><textarea id="repD" maxlength="1000" rows="3"></textarea></label>
+      <label class="check" style="margin-top:8px"><input type="checkbox" id="repB"> Also block them</label>
+      <p class="faint small">Reports are private. We review them and can remove names, pictures or accounts.</p>
+      <button class="btn primary" data-r="send">Send report</button></div>`;
+    modal.hidden = false;
+    card.onclick = async e => {
+      const b = e.target.closest('[data-r]'); if (!b) return;
+      if (b.dataset.r === 'close') return closeModal();
+      b.disabled = true;
+      const reason = (card.querySelector('input[name="repR"]:checked') || {}).value || 'other', also = $('#repB').checked;
+      try { await social.report({ id: d.id, username: d.user, reason, details: $('#repD').value.trim() }); }
+      catch (er) { b.disabled = false; toast(er.offline ? 'You\'re offline.' : 'Could not send: ' + er.message); return; }
+      closeModal(); toast('Thanks. Your report was sent.');
+      if (also) { try { await social.block(d.id); F.view = null; F.data = null; await loadFriends(true); render(); } catch (_) {} }
+    };
+  }
+  async function showBlocks() {
+    const el = $('#blockList'); if (!el) return;
+    el.innerHTML = '<p class="muted small">Loading…</p>';
+    try {
+      const list = await social.myBlocks();
+      el.innerHTML = list.length ? list.map(u => `<div class="frow"><span class="fname">${esc(u.name || '')}${u.username ? ` <small class="faint">@${esc(u.username)}</small>` : ''}</span><button class="btn ghost sm" data-action="u-unblock" data-id="${esc(u.id)}">Unblock</button></div>`).join('') : '<p class="muted small">You haven\'t blocked anyone.</p>';
+    } catch (e) { el.innerHTML = `<p class="small err">${esc(e.offline ? 'You\'re offline.' : e.message)}</p>`; }
+  }
+  function deleteAccountFlow() {
+    const word = ME().username || 'DELETE';
+    card.className = 'modal-card narrow';
+    card.innerHTML = `<div class="modal-head"><h2>Delete your account?</h2><button class="btn ghost" data-x="close">Cancel</button></div><div class="modal-body">
+      <p>This deletes <b>everything</b>: your food diary, weights, targets, friends, ranking, titles, and your login. It can't be undone.</p>
+      <p class="muted small">Want a copy first? Use “Save a backup file” in Settings before you delete.</p>
+      <label class="field"><span>Type <b>${esc(word)}</b> to confirm</span><input type="text" id="delIn" autocomplete="off" autocapitalize="off"></label>
+      <p class="small err" id="delMsg"></p>
+      <button class="btn danger-solid" data-x="go" disabled>Delete my account for good</button></div>`;
+    modal.hidden = false;
+    const inp = $('#delIn'), go = card.querySelector('[data-x="go"]');
+    inp.addEventListener('input', () => { go.disabled = inp.value.trim().toLowerCase() !== word.toLowerCase(); });
+    card.onclick = async e => {
+      const b = e.target.closest('[data-x]'); if (!b) return;
+      if (b.dataset.x === 'close') return closeModal();
+      if (go.disabled) return;
+      go.disabled = true; go.textContent = 'Deleting…';
+      try { await social.deleteAccount(); }
+      catch (er) { go.disabled = false; go.textContent = 'Delete my account for good'; $('#delMsg').textContent = er.offline ? 'You\'re offline. Connect to the internet to delete your account.' : 'Could not delete: ' + er.message; }
+    };
+  }
+
+  // ---------------------------------------------------------------- Quests page (its own tab)
+  function renderQuests() {
+    const c = gc(), k = c.today, d = c.days[k]; if (!d) { main.innerHTML = '<div class="page"><h1>Quests</h1></div>'; return; }
+    if (c.newTitles.length) setTimeout(() => c.newTitles.forEach(t => ggNote('title-' + t.id, `🏷️ New title: ${t.id}`, `${game().RARITY[t.rarity].name} · ${t.text}. Wear it from Ranked › Locker.`)), 0);
+    const g = gst(), gr = game().gradeOf(d.pts), wq = c.weekly, wqClaimed = (g.weeklyDone || []).includes(c.wk);
+    const done = d.quests.filter(q => q.ok).length, reacts = MY_REACTS.filter(r => r.day === k);
+    const who = id => { const f = (F.list || []).find(x => x.id === id); return f ? f.profile.name : 'A friend'; };
+    const h = new Date().getHours(), left = 24 - h;
+    main.innerHTML = `<div class="page qpage">
+      <div class="page-head"><div><h1>Quests</h1><p class="sub">Come back every day, hit your targets, climb the ladder. New quests at midnight${done < d.quests.length ? ` · ${left}h left today` : ''}.</p></div></div>
+      ${d.mult === 2 ? '<div class="gg-banner">⚡ Welcome back! Comeback bonus: double CP today.</div>' : ''}
+      <div class="panel q-hero">
+        <button class="gg-score" data-action="gg-result" data-k="${k}"><b class="num">${fmt(d.pts)}</b><span>CP today</span><i class="grade g-${gr}">${gr}</i></button>
+        <div class="q-stats"><div><b>🔥 ${fmt(c.logStreak)}</b><span>day streak</span></div><div><b>🧊 ${fmt(c.freezes)}</b><span>freezes</span></div><div>${tierBadge(c.tier)}<span>Lv ${fmt(c.level)}</span></div></div>
+      </div>
+      <div class="panel"><div class="q-head"><h2>Today's quests</h2><span class="faint small">${done} / ${d.quests.length} · +10 CP each</span></div>
+        <div class="xpbar"><i style="width:${done / Math.max(1, d.quests.length) * 100}%"></i></div>
+        <div class="gg-quests">${d.quests.map(q => `<div class="q ${q.ok ? 'ok' : ''}"><span>${q.ok ? '✅' : '⬜'} ${esc(q.text)}</span><small>${esc(q.prog || '')}</small></div>`).join('')}</div>
+        ${done === d.quests.length ? '<p class="small ok-txt" style="margin:8px 0 0">All done today 💪 Come back tomorrow to keep your streak.</p>' : ''}</div>
+      <div class="panel"><div class="q-head"><h2>Weekly quest</h2><span class="faint small">+150 XP and a streak freeze</span></div>
+        <div>${esc(wq.text)}: <b>${fmt(Math.min(wq.have, wq.need))} / ${wq.need}</b></div>
+        ${wq.done ? (wqClaimed ? '<div class="faint small">✅ Claimed. A new one starts Monday.</div>' : '<button class="btn primary" data-action="gg-claim-week" style="margin-top:8px">Claim reward</button>') : `<div class="xpbar" style="margin-top:6px"><i style="width:${wq.have / wq.need * 100}%"></i></div>`}</div>
+      ${c.events.map(e => `<div class="panel mr-block event"><div class="mr-h"><b>${esc(e.name)}</b><span class="faint small">${esc(shortDate(e.from))} – ${esc(shortDate(e.to))}</span></div>
+        <div>${esc(e.text)}${e.live ? `: <b>${fmt(Math.min(e.have, e.need))} / ${e.need}</b>` : ' · starts soon'}</div>
+        ${(g.badges || []).includes(e.id) ? '<div class="faint small">🏅 Badge earned</div>' : e.done ? '<button class="btn primary" data-action="gg-claim-event" data-id="' + e.id + '">Claim badge + 250 XP</button>' : e.live ? `<div class="xpbar"><i style="width:${e.have / e.need * 100}%"></i></div><div class="faint small">Limited time: this badge can't be earned after the event.</div>` : ''}</div>`).join('')}
+      <div class="panel"><div class="q-head"><h2>Today's points</h2><span class="faint small">every day, for using the app and hitting your targets</span></div>
+        <ul class="res-list">${d.items.map(i => `<li class="${i.ok ? 'ok' : ''}"><span>${i.ok ? '✅' : '▫️'} ${esc(i.label)}</span><b>${i.ok ? '+' + i.pts : '+' + (i.max || i.pts || 0)}</b></li>`).join('')}</ul></div>
+      ${reacts.length ? `<div class="panel"><h2>Friends hyped your day</h2><div class="gg-reacts">${reacts.map(r => `<span>${REACT_ICON[r.emoji] || ''} ${esc(who(r.from_id))}</span>`).join('')}</div></div>` : ''}
+      <button class="btn ghost wide" data-action="go-ranked">See the ladder · ${fmt(c.weekPts)} CP this week ›</button>
+    </div>`;
+  }
+  function questsLeft() { try { const c = gc(), d = c.days[c.today]; return d ? d.quests.filter(q => !q.ok).length : 0; } catch (_) { return 0; } }
+  function renderTabbarExtras() {
+    const tb = document.getElementById('tabbar'); if (!tb) return;
+    const qb = tb.querySelector('[data-view="quests"]'); if (qb) qb.classList.toggle('dot', questsLeft() > 0);
+    const mb = tb.querySelector('[data-view="more"] .tb-av');
+    if (mb) { const av = P().avatar; mb.innerHTML = av ? `<img src="${esc(av)}" alt="">` : esc((P().name || '?').charAt(0).toUpperCase()); mb.style.background = av ? 'none' : (P().color || '#888'); }
   }
   function shareText(t) { if (navigator.share) navigator.share({ text: t }).catch(() => {}); else { navigator.clipboard && navigator.clipboard.writeText(t); toast('Copied to share.'); } }
   function showResult(k) {
@@ -2980,7 +3094,11 @@
     if (act === 'react') {
       const on = !a.classList.contains('on');
       a.classList.toggle('on', on);
-      try { await social.react(a.dataset.to, a.dataset.day, a.dataset.e, on); FR_REACTS.key = ''; if (on) toast(`Sent ${REACT_ICON[a.dataset.e]}`); renderFriendProfile(); }
+      try {
+        await social.react(a.dataset.to, a.dataset.day, a.dataset.e, on); FR_REACTS.key = '';
+        if (on) { const rd = g.reactedDays || (g.reactedDays = []), t = todayKey(); if (!rd.includes(t)) { rd.push(t); rd.splice(0, Math.max(0, rd.length - 60)); save(); game().invalidate(); } toast(`Sent ${REACT_ICON[a.dataset.e]}`); }
+        renderFriendProfile();
+      }
       catch (err) { a.classList.toggle('on', !on); toast(err.offline ? 'You\'re offline.' : 'Could not send that reaction.'); }
       return true;
     }

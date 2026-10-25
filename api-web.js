@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.31';
+  const APP_VERSION = '2.0.32';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -164,6 +164,15 @@
     return Math.round((start - cur) / (start - goal) * 1000) / 10 + 0;
   }
   let lastProfilePush = '';
+  // Same check as the database (supabase/safety.sql): look-alike characters undone; usernames joined up, names word by word.
+  const BAD = /(fuck|fck|shit|cunt|bitch|biatch|whore|slut|nigg|faggot|retard|rapist|hitler|kike|chink|wanker|twat|pussy|porn|paedo|pedophile|paedophile|kkk|dickhead|motherf|cocksuck|bastard|tranny|spastic|raghead|towelhead|wetback|beaner)/;
+  function nameOk(t) {
+    if (!t) return true;
+    const map = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's', '!': 'i', '|': 'i' };
+    const n = String(t).toLowerCase().replace(/[013457@$!|]/g, c => map[c]).replace(/[^a-z ]/g, '');
+    return / /.test(t) ? !n.split(' ').some(w => w && BAD.test(w)) : !BAD.test(n.replace(/ /g, ''));
+  }
+  window.MHNameOk = nameOk;
   async function pushProfile() {
     const p = S.profiles.me, pts = pointsFor(S);
     const goal = p.profile.goal === 'lose-slow' ? 'lose' : (['lose', 'gain', 'maintain'].includes(p.profile.goal) ? p.profile.goal : 'maintain');
@@ -173,6 +182,7 @@
     let game = null; try { game = window.GG_PUBLIC ? JSON.stringify(window.GG_PUBLIC()) : null; } catch (_) {}
     const row = { name: (p.name || 'Me').slice(0, 40), color: p.color || '#E0263A', goal, points: pts, points_detail: hideW ? null : detail, points_updated: new Date().toISOString(), avatar: p.avatar || null };
     if (game) row.game = game;
+    if (!nameOk(row.name)) delete row.name;
     const sig = JSON.stringify({ ...row, points_updated: 0 });
     if (sig === lastProfilePush) return;
     try { await req(`/rest/v1/profiles?id=eq.${uid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) }); lastProfilePush = sig; }
@@ -399,10 +409,27 @@
     async usernameFree(u) { return !!(await req('/rest/v1/rpc/mh_username_free', { method: 'POST', body: JSON.stringify({ u }) })); },
     async setUsername(u) {
       try { await req(`/rest/v1/profiles?id=eq.${uid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ username: u }) }); }
-      catch (e) { if (e.status === 409 || /duplicate|unique/i.test(e.message)) throw Object.assign(new Error('That username was just taken. Try another.'), { taken: true }); throw e; }
+      catch (e) { if (/isn.t allowed|22023/i.test(e.message)) throw new Error('That username isn\'t allowed. Please choose another one.'); if (e.status === 409 || /duplicate|unique/i.test(e.message)) throw Object.assign(new Error('That username was just taken. Try another.'), { taken: true }); throw e; }
       if (window.MH_ME) window.MH_ME.username = u;
     },
     async setCountry(c) { await req(`/rest/v1/profiles?id=eq.${uid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ country: c || null }) }); if (window.MH_ME) window.MH_ME.country = c || null; },
+    async usernameStatus(u) {
+      if (!nameOk(u)) return 'not_allowed';
+      try { return await req('/rest/v1/rpc/mh_username_status', { method: 'POST', body: JSON.stringify({ u }) }); }
+      catch (e) { if (e.status !== 404) throw e; return (await this.usernameFree(u)) ? 'ok' : 'taken'; } // older database
+    },
+    async block(id) { return req('/rest/v1/rpc/mh_block', { method: 'POST', body: JSON.stringify({ target: id }) }); },
+    async unblock(id) { return req('/rest/v1/rpc/mh_unblock', { method: 'POST', body: JSON.stringify({ target: id }) }); },
+    async myBlocks() { return (await req('/rest/v1/rpc/mh_my_blocks', { method: 'POST', body: '{}' })) || []; },
+    async report(r) { return req('/rest/v1/reports', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ reporter: uid, reported: r.id, reported_username: r.username || null, reason: r.reason, details: (r.details || '').slice(0, 1000) || null }) }); },
+    // Deletes the account and everything in it from the server, then wipes this device.
+    async deleteAccount() {
+      await req('/rest/v1/rpc/mh_delete_me', { method: 'POST', body: '{}' });
+      try { localStorage.clear(); } catch (_) {}
+      try { indexedDB.deleteDatabase('gg-photos'); } catch (_) {}
+      try { if (window.caches) for (const k of await caches.keys()) await caches.delete(k); } catch (_) {}
+      location.replace(location.pathname + '?deleted=1');
+    },
     async searchUsers(q) { return (await req('/rest/v1/rpc/mh_search_users', { method: 'POST', body: JSON.stringify({ q }) })) || []; },
     async notifications() { return (await req(`/rest/v1/notifications?select=*&order=created_at.desc&limit=50`)) || []; },
     async markRead() { return req(`/rest/v1/notifications?recipient=eq.${uid}&read=eq.false`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ read: true }) }); },
@@ -515,6 +542,7 @@
     const box = $('#auth');
     box.hidden = false;
     const signup = mode === 'signup';
+    if (!info && !err && /[?&]deleted=1/.test(location.search)) info = 'Your account and all its data were deleted.';
     box.innerHTML = `<div class="auth-card">
       <img class="auth-logo" src="icons/icon-180.png" alt="">
       <h1>GG Gains</h1>
@@ -542,6 +570,7 @@
       const email = $('#aEmail').value.trim(), pass = $('#aPass').value, name = signup ? $('#aName').value.trim() : '';
       if (!email || !pass || (signup && !name)) return authScreen(mode, 'Fill in all the boxes.');
       if (signup && pass.length < 8) return authScreen(mode, 'Use a password of at least 8 characters.');
+      if (signup && !nameOk(name)) return authScreen(mode, 'That name isn\'t allowed. Please choose another one.');
       $('#aGo').disabled = true; $('#aGo').textContent = signup ? 'Creating…' : 'Signing in…';
       const s = makeSupa();
       try {

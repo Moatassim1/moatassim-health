@@ -36,8 +36,8 @@
     T('Hydrated', 'common', 7, 'water', 'Hit your water goal on 7 days'),
     T('Scale Watcher', 'common', 10, 'weighins', 'Weigh in 10 times'),
     T('Sweat Starter', 'common', 5, 'workouts', 'Train on 5 days'),
-    T('Walker', 'common', 10, 'steps8k', 'Walk 8,000+ steps on 10 days'),
-    T('Early Bird', 'common', 10, 'early', 'Log before 10am on 10 days'),
+    T('Walker', 'common', 10, 'steps8k', 'Hit your step goal on 10 days'),
+    T('Early Bird', 'common', 10, 'early', 'Log your first food before 11am on 10 days'),
     T('Week One', 'common', 7, 'bestLog', 'Reach a 7-day logging streak'),
     T('Weekend Warrior', 'common', 8, 'weekends', 'Log full days on 8 weekend days'),
     T('Quest Taker', 'common', 10, 'quests', 'Complete 10 daily quests'),
@@ -45,7 +45,7 @@
     T('Protein Machine', 'rare', 30, 'protein', 'Hit protein on 30 days'),
     T('Meal Prepper', 'rare', 50, 'full', 'Log 50 full days'),
     T('Gym Rat', 'rare', 30, 'workouts', 'Train on 30 days'),
-    T('Step Lord', 'rare', 30, 'steps10k', 'Walk 10,000+ steps on 30 days'),
+    T('Step Lord', 'rare', 30, 'steps10k', 'Hit your step goal on 30 days'),
     T('Hydro Homie', 'rare', 30, 'water', 'Hit your water goal on 30 days'),
     T('Clean Plate', 'rare', 30, 'within', 'Land within 10% of your calories on 30 days'),
     T('Snapshot', 'rare', 30, 'photos', 'Take 30 progress photos'),
@@ -59,7 +59,7 @@
     T('Consistency King', 'epic', 100, 'full', 'Log 100 full days'),
     T('Macro Master', 'epic', 60, 'perfect', 'Hit calories and protein on the same day 60 times'),
     T('Halfway Hero', 'epic', 50, 'goalPct', 'Get halfway to your goal weight'),
-    T('Marathoner', 'epic', 100, 'steps8k', 'Walk 8,000+ steps on 100 days'),
+    T('Marathoner', 'epic', 100, 'steps8k', 'Hit your step goal on 100 days'),
     T('Photo Finish', 'epic', 100, 'photos', 'Take 100 progress photos'),
     T('Weekly Warrior', 'epic', 10, 'weeklies', 'Complete 10 weekly quests'),
     T('Golden', 'epic', 1, 'tierGold', 'Reach Gold tier'),
@@ -89,27 +89,31 @@
   const REACTIONS = { fire: '🔥', muscle: '💪', gg: 'GG', laugh: '😂' };
 
   // Daily quest pool. Each returns [done, progressText].
+  // Daily quests: only ever about YOUR targets and coming back to the app every day.
+  const within = (v, t, pct) => t > 0 && Math.abs(v - t) <= t * pct;
   const QUESTS = [
     { id: 'protein', text: 'Hit your protein target', f: d => [d.t.p >= d.tg.p * 0.95, `${Math.round(d.t.p)} / ${Math.round(d.tg.p)} g`] },
-    { id: 'within5', text: 'Land within 5% of your calories', f: d => [d.full && Math.abs(d.t.kcal - d.tg.kcal) <= d.tg.kcal * 0.05, `${Math.round(d.t.kcal)} / ${Math.round(d.tg.kcal)} kcal`] },
-    { id: 'early', text: 'Log something before 10am', f: d => [d.entries.some(e => new Date(e.at || 0).getHours() < 10 && keyOf(new Date(e.at || 0)) === d.k), ''] },
+    { id: 'within5', text: 'Land within 5% of your calorie target', f: d => [d.full && within(d.t.kcal, d.tg.kcal, 0.05), `${Math.round(d.t.kcal)} / ${Math.round(d.tg.kcal)} kcal`] },
+    { id: 'carbfat', text: 'Keep carbs and fat within 10% of your targets', f: d => [d.full && within(d.t.c, d.tg.c, 0.1) && within(d.t.f, d.tg.f, 0.1), `${Math.round(d.t.c)}/${Math.round(d.tg.c)} C · ${Math.round(d.t.f)}/${Math.round(d.tg.f)} F`] },
+    { id: 'macros', text: 'Nail all three macros (within 10%)', f: d => [d.full && within(d.t.p, d.tg.p, 0.1) && within(d.t.c, d.tg.c, 0.1) && within(d.t.f, d.tg.f, 0.1), `${Math.round(d.t.p)}P ${Math.round(d.t.c)}C ${Math.round(d.t.f)}F`] },
     { id: 'meals3', text: 'Log breakfast, lunch and dinner', f: d => { const m = new Set(d.entries.map(e => e.meal)); const n = ['Breakfast', 'Lunch', 'Dinner'].filter(x => m.has(x)).length; return [n === 3, `${n} / 3`]; } },
-    { id: 'steps10k', text: 'Walk 10,000 steps', f: d => [(d.g && d.g.steps || 0) >= 10000, `${(d.g && d.g.steps || 0).toLocaleString('en-GB')} steps`], needs: 'garmin' },
-    { id: 'steps8k', text: 'Walk 8,000 steps', f: d => [(d.g && d.g.steps || 0) >= 8000, `${(d.g && d.g.steps || 0).toLocaleString('en-GB')} steps`], needs: 'garmin' },
+    { id: 'early', text: 'Log your first food before 11am', f: d => [d.entries.some(e => new Date(e.at || 0).getHours() < 11 && keyOf(new Date(e.at || 0)) === d.k), ''] },
+    { id: 'complete', text: 'Finish logging and mark your day complete', f: d => [d.complete, ''] },
     { id: 'water', text: 'Hit your water goal', f: d => [d.water >= d.waterGoal, `${(d.water / 1000).toFixed(1)} / ${(d.waterGoal / 1000).toFixed(1)} L`] },
-    { id: 'fibre', text: 'Eat 30 g of fibre', f: d => [d.t.fib >= 30, `${Math.round(d.t.fib || 0)} / 30 g`] },
-    { id: 'sugar', text: 'Keep sugar under 50 g (full day logged)', f: d => [d.full && (d.t.sug || 0) < 50, `${Math.round(d.t.sug || 0)} g so far`] },
-    { id: 'veg', text: 'Eat 3 different fruits or vegetables', f: d => { const n = d.fruitVeg; return [n >= 3, `${n} / 3`]; } },
-    { id: 'workout', text: 'Train today (log a workout or sauna)', f: d => [d.workout, ''] },
     { id: 'weigh', text: 'Weigh in', f: d => [d.weighed, ''] },
-    { id: 'vitc', text: 'Hit your vitamin C target', f: d => [(d.t.vc || 0) >= d.micro.vc, `${Math.round(d.t.vc || 0)} / ${d.micro.vc} mg`] }
+    { id: 'photo', text: 'Take today\'s progress photo', f: d => [d.photo, ''] },
+    { id: 'workout', text: 'Train today and log it', f: d => [d.workout, ''] },
+    { id: 'stepgoal', text: 'Hit your step goal', f: d => [d.stepsOk, `${(d.g && d.g.steps || 0).toLocaleString('en-GB')} / ${d.stepGoal.toLocaleString('en-GB')}`], needs: 'garmin' },
+    { id: 'react', text: 'React to a friend\'s day', f: d => [d.reacted, ''], needs: 'friends' }
   ];
   const WEEKLY = [
     { id: 'w-protein', text: 'Hit protein on 6 of 7 days', need: 6, f: s => s.protein },
     { id: 'w-log', text: 'Log a full day every day this week', need: 7, f: s => s.full },
-    { id: 'w-within', text: 'Land within 10% of calories on 5 days', need: 5, f: s => s.within },
-    { id: 'w-steps', text: 'Walk 8,000+ steps on 5 days', need: 5, f: s => s.steps8k, needs: 'garmin' },
-    { id: 'w-train', text: 'Train on 4 days this week', need: 4, f: s => s.workout }
+    { id: 'w-within', text: 'Land within 10% of your calories on 5 days', need: 5, f: s => s.within },
+    { id: 'w-steps', text: 'Hit your step goal on 5 days', need: 5, f: s => s.steps8k, needs: 'garmin' },
+    { id: 'w-train', text: 'Train on 4 days this week', need: 4, f: s => s.workout },
+    { id: 'w-weigh', text: 'Weigh in on 4 days this week', need: 4, f: s => s.weigh },
+    { id: 'w-photo', text: 'Take your progress photo on 5 days', need: 5, f: s => s.photo }
   ];
   // Limited-time events (dates inclusive). Badges can only be earned during the event.
   const EVENTS = [
@@ -117,7 +121,7 @@
     { id: 'xmas26', name: 'Christmas Survival 🎄', from: '2026-12-20', to: '2026-12-31', text: 'Stay within 10% of your calories on 8 days', need: 8, f: s => s.within },
     { id: 'ny27', name: 'New Year Reset 🎆', from: '2027-01-01', to: '2027-01-31', text: 'Log a full day on 25 days', need: 25, f: s => s.full },
     { id: 'ramadan27', name: 'Ramadan Mode 🌙', from: '2027-02-08', to: '2027-03-09', text: 'Hit protein on 20 days', need: 20, f: s => s.protein },
-    { id: 'summer27', name: 'Summer Shred ☀️', from: '2027-06-01', to: '2027-07-31', text: 'Walk 8,000+ steps on 40 days', need: 40, f: s => s.steps8k }
+    { id: 'summer27', name: 'Summer Shred ☀️', from: '2027-06-01', to: '2027-07-31', text: 'Hit your step goal on 40 days', need: 40, f: s => s.steps8k }
   ];
 
   // ---------------------------------------------------------------- helpers
@@ -147,18 +151,22 @@
     function dayData(k) {
       const p = ctx.P(), entries = ctx.dayEntries(k), t = ctx.totalsOf(entries), tg = ctx.targets(k), meta = p.dayMeta[k] || {};
       const g = ctx.garmin(k);
-      const fv = new Set(entries.filter(e => { const f = ctx.BUILTIN.find(b => b.id === e.foodId); return f && /Fruit|Vegetable/i.test(f.cat || ''); }).map(e => e.foodId)).size;
       const full = !!meta.complete || (k < ctx.today() && t.kcal >= tg.kcal * 0.5 && entries.length >= 2);
+      const stepGoal = (g && g.stepGoal) || 8000;
       return { k, entries, t, tg, full, g, water: meta.water || 0, waterGoal: ctx.waterGoal(),
         workout: (meta.ex || []).length > 0 || !!(g && (g.activities || []).length), weighed: p.weights[k] != null, photo: ctx.photoDays().has(k),
-        fruitVeg: fv, micro: ctx.microTargets() };
+        complete: !!meta.complete, stepGoal, stepsOk: !!(g && (g.steps || 0) >= stepGoal),
+        reacted: ((p.game || {}).reactedDays || []).includes(k) };
     }
+    const Q_TARGET = ['protein', 'within5', 'carbfat', 'macros'], Q_HABIT = ['meals3', 'early', 'complete', 'water', 'weigh', 'photo'];
     function questsFor(k) {
-      const hasG = !!ctx.garmin(k) || !!ctx.garmin(addD(k, -1));
-      const pool = QUESTS.filter(q => q.needs !== 'garmin' || hasG);
-      const r = rng('q|' + k + '|' + ctx.uid()), picks = [];
-      const bag = pool.slice();
-      while (picks.length < 3 && bag.length) picks.push(bag.splice(Math.floor(r() * bag.length), 1)[0]);
+      const hasG = !!ctx.garmin(k) || !!ctx.garmin(addD(k, -1)), hasF = ctx.hasFriends();
+      const pool = QUESTS.filter(q => (q.needs !== 'garmin' || hasG) && (q.needs !== 'friends' || hasF));
+      const r = rng('q|' + k + '|' + ctx.uid());
+      const take = list => { const l = list.filter(q => !picks.includes(q)); return l.length ? l[Math.floor(r() * l.length)] : null; };
+      const picks = [];
+      // one about your targets, one daily app habit, one wildcard (training, steps, friends or another of the above)
+      for (const group of [pool.filter(q => Q_TARGET.includes(q.id)), pool.filter(q => Q_HABIT.includes(q.id)), pool]) { const q = take(group); if (q) picks.push(q); }
       return picks;
     }
     // Points for one day, with a breakdown. Guardrails: eating far below target or crash-losing earns nothing.
@@ -170,7 +178,7 @@
       add('logged', 'Logged a full day', 10, d.full);
       add('calories', 'Within 10% of your calories', 15, d.full && !tooLow && Math.abs(t.kcal - tg.kcal) <= tg.kcal * 0.1, tooLow ? 'Too far under target: no points for under-eating' : `${Math.round(t.kcal)} / ${Math.round(tg.kcal)} kcal`);
       add('protein', 'Hit your protein', 15, any && t.p >= tg.p * 0.95, `${Math.round(t.p)} / ${Math.round(tg.p)} g`);
-      add('steps', '8,000+ steps', 10, (d.g && d.g.steps || 0) >= 8000, d.g && d.g.steps != null ? `${d.g.steps.toLocaleString('en-GB')} steps` : 'No step data');
+      add('steps', 'Hit your step goal', 10, d.stepsOk, d.g && d.g.steps != null ? `${d.g.steps.toLocaleString('en-GB')} / ${d.stepGoal.toLocaleString('en-GB')} steps` : 'No step data');
       add('workout', 'Trained', 10, d.workout);
       add('water', 'Hit your water goal', 5, d.water >= d.waterGoal);
       add('weigh', 'Weighed in', 5, d.weighed);
@@ -239,8 +247,8 @@
       for (const x of Object.keys(days).sort()) {
         const d = days[x], ok = id => (d.items.find(i => i.id === id) || {}).ok;
         if (d.d.full) st.full++; if (ok('protein')) st.protein++; if (ok('water')) st.water++; if (ok('weigh')) st.weighins++; if (ok('workout')) st.workouts++;
-        if (ok('steps')) st.steps8k++; if (d.d.g && (d.d.g.steps || 0) >= 10000) st.steps10k++; if (ok('calories')) st.within++; if (ok('calories') && ok('protein')) st.perfect++;
-        if (d.d.entries.some(e => new Date(e.at || 0).getHours() < 10 && keyOf(new Date(e.at || 0)) === x)) st.early++;
+        if (ok('steps')) st.steps8k++; if (d.d.stepsOk) st.steps10k++; if (ok('calories')) st.within++; if (ok('calories') && ok('protein')) st.perfect++;
+        if (d.d.entries.some(e => new Date(e.at || 0).getHours() < 11 && keyOf(new Date(e.at || 0)) === x)) st.early++;
         if (d.d.full && [0, 6].includes(dOf(x).getDay())) st.weekends++;
         if (d.d.full && d.pts >= 85) st.sGrades++;
         st.quests += d.quests.filter(q => q.ok).length;
@@ -263,11 +271,11 @@
       return out;
     }
     function weekStats(from, to, days) {
-      const s = { protein: 0, full: 0, within: 0, steps8k: 0, workout: 0 };
+      const s = { protein: 0, full: 0, within: 0, steps8k: 0, workout: 0, weigh: 0, photo: 0 };
       for (let x = from; x <= to; x = addD(x, 1)) {
         const d = days[x]; if (!d) continue;
         const it = id => (d.items.find(i => i.id === id) || {}).ok;
-        if (it('protein')) s.protein++; if (d.d.full) s.full++; if (it('calories')) s.within++; if (it('steps')) s.steps8k++; if (it('workout')) s.workout++;
+        if (it('protein')) s.protein++; if (d.d.full) s.full++; if (it('calories')) s.within++; if (it('steps')) s.steps8k++; if (it('workout')) s.workout++; if (it('weigh')) s.weigh++; if (it('photo')) s.photo++;
       }
       return s;
     }

@@ -108,9 +108,8 @@ jobs:
           if [ -d App.xcworkspace ]; then SRC="-workspace App.xcworkspace"; else SRC="-project App.xcodeproj"; fi
           xcodebuild $SRC -scheme App -configuration Release -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/App.xcarchive" archive \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey.p8 -authenticationKeyID "$KID" -authenticationKeyIssuerID "$ISS" \
-            DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic PRODUCT_BUNDLE_IDENTIFIER=com.gggains.app \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM="$TEAM" PRODUCT_BUNDLE_IDENTIFIER=com.gggains.app \
             TARGETED_DEVICE_FAMILY=1 MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             | tee "$RUNNER_TEMP/archive.log" | grep -E "error:|warning: .*sign|ARCHIVE|BUILD" || true
           if [ ! -d "$RUNNER_TEMP/App.xcarchive" ]; then

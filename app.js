@@ -327,7 +327,7 @@
     else { if (view === 'today') UI.date = todayKey(); nav(view); }
   });
 
-  document.title = 'Mabrouka Tracker';
+  document.title = 'GG Gains';
   $('#brandVer').textContent = 'v' + VERSION;
 
   function switchProfile(pid, quiet) {
@@ -2400,13 +2400,13 @@
             <p class="muted small" style="margin-top:0">Saved on this device and in your account, so it's the same on every device you sign in on. ${SYNC.error ? `<span class="err">${esc(SYNC.error)}</span>` : SYNC.lastSync ? 'Last synced ' + esc(new Date(SYNC.lastSync).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })) + '.' : ''}</p>
             <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-action="sync-now">Sync now</button><button class="btn" data-action="export">Save a backup file</button><button class="btn" data-action="import">Restore from a file</button></div>
             <h3 style="margin:16px 0 6px">Automatic backups</h3>
-            <p class="muted small" style="margin-top:0">Your account is backed up on the server every Monday, and the last 8 are kept.${window.desktop ? ' This PC also saves a backup file in Documents › Mabrouka Tracker Backups every week.' : ''}</p>
+            <p class="muted small" style="margin-top:0">Your account is backed up on the server every Monday, and the last 8 are kept.${window.desktop ? ' This PC also saves a backup file in Documents › GG Gains Backups every week.' : ''}</p>
             <div id="bkList" class="small muted">Loading…</div>
             <button class="btn" data-action="backup-now" style="margin-top:8px">Back up now</button></div>
           </div>
         </div>
       </div>
-      <p class="faint small" style="margin-top:20px">Mabrouka Tracker v${esc(VERSION)}. Nutrition values are averages from USDA FoodData Central and UK product labels; targets are general adult guidance, not medical advice.</p>
+      <p class="faint small" style="margin-top:20px">GG Gains v${esc(VERSION)}. Nutrition values are averages from USDA FoodData Central and UK product labels; targets are general adult guidance, not medical advice.</p>
     </div>`;
 
     main.querySelectorAll('[data-p]').forEach(el => el.addEventListener('change', () => {
@@ -2512,7 +2512,7 @@
   function showWhatsNew(u, again) {
     card.className = 'modal-card narrow';
     card.innerHTML = `<div class="modal-head"><h2>Updated to v${esc(u.version)}</h2><button class="btn ghost" data-f="close">Close</button></div>
-      <div class="modal-body"><p class="muted" style="margin-top:0">Mabrouka Tracker updated itself${u.from ? ' from v' + esc(u.from) : ''}. What's new:</p>
+      <div class="modal-body"><p class="muted" style="margin-top:0">GG Gains updated itself${u.from ? ' from v' + esc(u.from) : ''}. What's new:</p>
       <ul class="whatsnew">${(u.notes || []).map(n => `<li>${esc(n)}</li>`).join('') || '<li>Small fixes and improvements.</li>'}</ul></div>
       <div class="modal-foot"><button class="btn primary" data-f="close">Got it</button></div>`;
     modal.hidden = false;

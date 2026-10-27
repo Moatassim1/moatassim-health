@@ -16,6 +16,13 @@
       return C.registerPlugin ? C.registerPlugin(n) : null;
     } catch (_) { return null; }
   };
+  const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error(msg || 'Timed out'), { code: 'TIMEOUT' })), ms))]);
+  // Is our own native plugin really there? Ask it something harmless and wait at most 2.5 s.
+  let ggProbe = null;
+  const ggOk = () => ggProbe || (ggProbe = (async () => {
+    if (!isApp || N.platform !== 'ios') return false;
+    try { await withTimeout(plug('GGNative').healthAvailable({}), 2500); return true; } catch (_) { return false; }
+  })());
   const blobToB64 = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(b); });
 
   const N = {
@@ -59,15 +66,16 @@
     },
     // Sign in with Apple (iPhone only): returns { idToken, name, email }.
     // Secure sign-in sheet that returns to the app (ASWebAuthenticationSession). Resolves with the return URL.
-    async webAuth(url, scheme) { const G = plug('GGNative'); if (!G) throw new Error('Not available'); return (await G.webAuth({ url, scheme: scheme || SCHEME })).url; },
-    canWebAuth() { return !!plug('GGNative'); },
-    async googleSignIn(clientId) { const G = plug('GGNative'); return G.googleSignIn({ clientId }); },
-    async appleSignIn() { const G = plug('GGNative'); if (!G) throw new Error('Not available'); return G.signInWithApple({}); },
+    async webAuth(url, scheme) { const G = plug('GGNative'); if (!G || !(await ggOk())) throw new Error('Not available'); return (await G.webAuth({ url, scheme: scheme || SCHEME })).url; },
+    ggOk,
+    async canWebAuth() { return !!plug('GGNative') && await ggOk(); },
+    async googleSignIn(clientId) { const G = plug('GGNative'); if (!G || !(await ggOk())) throw Object.assign(new Error('Not available'), { code: 'UNAVAILABLE' }); return G.googleSignIn({ clientId }); },
+    async appleSignIn() { const G = plug('GGNative'); if (!G || !(await ggOk())) throw Object.assign(new Error('Apple sign-in isn\'t available in this version of the app yet. Please use another option.'), { code: 'UNAVAILABLE' }); return G.signInWithApple({}); },
     // Apple Health: steps, walking km and active calories per day.
     health: {
-      async available() { const G = plug('GGNative'); if (!G || N.platform !== 'ios') return false; try { return !!(await G.healthAvailable()).available; } catch (_) { return false; } },
-      async authorize() { const G = plug('GGNative'); return G.healthAuthorize(); },
-      async days(n) { const G = plug('GGNative'); return ((await G.healthDays({ days: n || 7 })) || {}).days || {}; }
+      async available() { const G = plug('GGNative'); if (!G || !(await ggOk())) return false; try { return !!(await G.healthAvailable()).available; } catch (_) { return false; } },
+      async authorize() { const G = plug('GGNative'); if (!G || !(await ggOk())) throw new Error('Apple Health isn\'t available in this version of the app yet.'); return G.healthAuthorize(); },
+      async days(n) { const G = plug('GGNative'); if (!G || !(await ggOk())) return {}; return ((await withTimeout(G.healthDays({ days: n || 7 }), 20000)) || {}).days || {}; }
     },
     onAppUrl(cb) { const A = plug('App'); if (A) A.addListener('appUrlOpen', e => cb(e && e.url)); },
     onResume(cb) { const A = plug('App'); if (A) A.addListener('resume', cb); }
@@ -79,8 +87,20 @@
 
   document.documentElement.classList.add('is-app', 'is-' + N.platform);
   // Coming back from Google/X sign-in: the login page sends us back to com.gggains.app://login-callback#access_token=…
+  async function diag() {
+    const d = document.createElement('pre');
+    d.style.cssText = 'position:fixed;inset:0;z-index:9999;margin:0;padding:60px 16px 16px;background:#fff;color:#000;font:13px/1.4 monospace;white-space:pre-wrap;overflow:auto';
+    const lines = ['GG Gains diagnostics', 'platform: ' + N.platform, 'nativePromise: ' + typeof C.nativePromise, 'registerPlugin: ' + typeof C.registerPlugin,
+      'Plugins: ' + Object.keys(C.Plugins || {}).join(', '), 'PluginHeaders: ' + ((C.PluginHeaders || []).map(h => h.name).join(', ') || '(none)')];
+    d.textContent = lines.join('\n') + '\nprobing GGNative…'; document.body.appendChild(d);
+    const ok = await ggOk(); lines.push('GGNative answers: ' + ok);
+    try { lines.push('healthAvailable: ' + JSON.stringify(await withTimeout(plug('GGNative').healthAvailable({}), 2500))); } catch (e) { lines.push('healthAvailable error: ' + e.message); }
+    d.textContent = lines.join('\n');
+  }
+  N.diag = diag;
   N.onAppUrl(async url => {
     if (!url || url.indexOf(SCHEME + '://') !== 0) return;
+    if (url.indexOf(SCHEME + '://diag') === 0) return diag();
     const frag = url.split('#')[1] || url.split('?')[1] || '';
     await N.closeBrowser();
     if (/access_token=|error_description=/.test(frag)) { location.replace(location.pathname + '#' + frag); location.reload(); }

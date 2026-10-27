@@ -706,7 +706,8 @@
       if (!providerCache) { const r = await fetch(CFG.url + '/auth/v1/settings', { headers: { apikey: CFG.key } }); providerCache = ((await r.json()) || {}).external || {}; }
       const app = window.MHNative && window.MHNative.isApp, ios = app && window.MHNative.platform === 'ios';
       // Apple sign-in is native on iPhone; on the web it isn't set up, so it's hidden there.
-      const on = PROVIDERS.filter(([id]) => providerCache[id] && (id !== 'apple' || ios)).sort((a, b) => (b[0] === 'apple') - (a[0] === 'apple'));
+      const appleOk = ios && await window.MHNative.ggOk();
+      const on = PROVIDERS.filter(([id]) => providerCache[id] && (id !== 'apple' || appleOk)).sort((a, b) => (b[0] === 'apple') - (a[0] === 'apple'));
       if (!on.length || !$('#aSocial')) return;
       const gis = !app && CFG.googleWebClientId && providerCache.google && !navigator.standalone; // Google's popup is unreliable in iPhone home-screen web apps
       box.innerHTML = on.map(([id, label, ic]) => id === 'google' && gis ? `<div class="gsi-slot" id="gsiSlot"><button class="social-btn sb-google" data-prov="google"><b>${ic}</b><span>${label}</span></button></div>` : `<button class="social-btn sb-${id}" data-prov="${id}"><b>${ic}</b><span>${label}</span></button>`).join('') + `<div class="auth-or"><span>or use your email</span></div>`;
@@ -715,11 +716,11 @@
         const b = e.target.closest('[data-prov]'); if (!b) return;
         const prov = b.dataset.prov, N = window.MHNative;
         if (app && prov === 'apple') return appleNative(b);
-        if (app && prov === 'google' && CFG.googleIosClientId) return googleNative(b);
+        if (app && prov === 'google' && CFG.googleIosClientId && await N.ggOk()) return googleNative(b);
         const back = app ? N.authRedirect : location.origin + location.pathname;
         const url = `${CFG.url}/auth/v1/authorize?provider=${encodeURIComponent(prov)}&redirect_to=${encodeURIComponent(back)}`;
         if (!app) { location.href = url; return; }
-        if (!N.canWebAuth()) { N.openUrl(url); return; }
+        if (!(await N.canWebAuth())) { N.openUrl(url); return; }
         b.disabled = true;
         try { const ret = await N.webAuth(url); await sessionFromHash((ret.split('#')[1] || ret.split('?')[1] || '')); }
         catch (er) { b.disabled = false; if (!(er && (er.code === 'CANCELLED' || /cancel/i.test(er.message || '')))) authScreen('signin', 'Sign-in didn\'t finish: ' + ((er && er.message) || 'unknown error')); }

@@ -1,0 +1,302 @@
+{
+ "missing": [],
+ "groups": {
+  "chest": {
+   "objects": 6,
+   "names": [
+    "(Abdominal part of pectoralis major muscle)",
+    "Clavicular head of pectoralis major muscle",
+    "Sternocostal head of pectoralis major muscle"
+   ],
+   "tris_in": 11081,
+   "target": 2200
+  },
+  "body": {
+   "objects": 405,
+   "names": [
+    "(Adductor minimus)",
+    "(Opponens digiti minimi muscle of foot)",
+    "Abductor digiti minimi of foot",
+    "Abductor digiti minimi of hand",
+    "Abductor hallucis",
+    "Abductor pollicis brevis",
+    "Body of sternum",
+    "Bucinator",
+    "Calcaneal tendon",
+    "Calcaneus",
+    "Capitate bone",
+    "Clavicle",
+    "Coccyx",
+    "Common tendinous ring",
+    "Corrugator supercilii",
+    "Cuboid bone",
+    "Deep head of flexor pollicis brevis",
+    "Deep part of masseter",
+    "Depressor anguli oris",
+    "Depressor labii inferioris",
+    "Depressor septi nasi",
+    "Distal phalanx of fifth finger of foot",
+    "Distal phalanx of fifth finger of hand",
+    "Distal phalanx of first finger of foot",
+    "Distal phalanx of first finger of hand",
+    "Distal phalanx of fourth finger of foot",
+    "Distal phalanx of fourth finger of hand",
+    "Distal phalanx of second finger of foot",
+    "Distal phalanx of second finger of hand",
+    "Distal phalanx of third finger of foot",
+    "Distal phalanx of third finger of hand",
+    "Dorsal interossei muscles of foot",
+    "Dorsal interossei muscles of hand",
+    "Dorsal parts of lateral intertransversarii lumborum muscles",
+    "Eighth rib",
+    "Eleventh rib",
+    "Epicranial aponeurosis",
+    "Extensor digitorum brevis",
+    "Extensor hallucis brevis",
+    "Extensor indicis",
+    "Extensor retinaculum of wrist",
+    "Femur",
+    "Fibula",
+    "Fibularis tertius muscle",
+    "Fifth metacarpal bone",
+    "Fifth metatarsal bone",
+    "Fifth rib",
+    "First metacarpal bone",
+    "First metatarsal bone",
+    "First rib",
+    "Flexor digiti minimi of foot",
+    "Flexor digiti minimi of hand",
+    "Flexor digitorum brevis",
+    "Flexor digitorum longus",
+    "Flexor hallucis longus",
+    "Flexor retinaculum of wrist",
+    "Fourth metacarpal bone",
+    "Fourth metatarsal bone",
+    "Fourth rib",
+    "Frontal bone",
+    "Frontalis muscle",
+    "Hamate bone",
+    "Hip bone",
+    "Humerus",
+    "Iliacus muscle",
+    "Iliocostalis colli muscle",
+    "Inferior extensor retinaculum of ankle",
+    "Inferior gemellus muscle",
+    "Inguinal ligament",
+    "Intermediate cuneiform bone",
+    "Interspinales colli muscles",
+    "Interspinales lumborum muscles",
+    "Interspinales thoracis muscles",
+    "Lateral cuneiform bone",
+    "Lateral head of flexor hallucis brevis",
+    "Levator anguli oris",
+    "Levator labii superioris",
+    "Levator nasolabialis",
+    "Longissimus capitis muscle",
+    "Longissimus colli muscle"
+   ],
+   "tris_in": 912829,
+   "target": 15000
+  },
+  "forearms": {
+   "objects": 44,
+   "names": [
+    "Abductor pollicis longus",
+    "Brachioradialis muscle",
+    "Deep head of pronator teres",
+    "Extensor carpi radialis brevis",
+    "Extensor carpi radialis longus",
+    "Extensor digiti minimi",
+    "Extensor digitorum",
+    "Extensor pollicis brevis",
+    "Extensor pollicis longus",
+    "Flexor carpi radialis",
+    "Flexor digitorum profundus",
+    "Flexor pollicis longus",
+    "Humeral head of extensor carpi ulnaris",
+    "Humeral head of flexor carpi ulnaris",
+    "Humero-ulnar head of flexor digitorum superficialis",
+    "Palmaris longus muscle",
+    "Pronator quadratus",
+    "Radial head of flexor digitorum superficialis",
+    "Superficial head of pronator teres",
+    "Supinator",
+    "Ulnar head of extensor carpi ulnaris",
+    "Ulnar head of flexor carpi ulnaris"
+   ],
+   "tris_in": 137084,
+   "target": 3200
+  },
+  "shoulders": {
+   "objects": 6,
+   "names": [
+    "Acromial part of deltoid muscle",
+    "Clavicular part of deltoid muscle",
+    "Scapular spinal part of deltoid muscle"
+   ],
+   "tris_in": 20360,
+   "target": 2200
+  },
+  "adductors": {
+   "objects": 10,
+   "names": [
+    "Adductor brevis",
+    "Adductor longus",
+    "Adductor magnus",
+    "Gracilis muscle",
+    "Pectineus muscle"
+   ],
+   "tris_in": 40859,
+   "target": 2200
+  },
+  "triceps": {
+   "objects": 8,
+   "names": [
+    "Anconeus muscle",
+    "Lateral head of triceps brachii",
+    "Long head of triceps brachii",
+    "Medial head of triceps brachii"
+   ],
+   "tris_in": 23224,
+   "target": 2200
+  },
+  "traps": {
+   "objects": 8,
+   "names": [
+    "Ascending part of trapezius muscle",
+    "Descending part of trapezius muscle",
+    "Levator scapulae",
+    "Transverse part of trapezius muscle"
+   ],
+   "tris_in": 34360,
+   "target": 2200
+  },
+  "biceps": {
+   "objects": 8,
+   "names": [
+    "Brachialis muscle",
+    "Coracobrachialis muscle",
+    "Long head of biceps brachii",
+    "Short head of biceps brachii"
+   ],
+   "tris_in": 20868,
+   "target": 2200
+  },
+  "calves": {
+   "objects": 18,
+   "names": [
+    "Extensor digitorum longus",
+    "Extensor hallucis longus",
+    "Fibularis brevis muscle",
+    "Fibularis longus muscle",
+    "Lateral head of gastrocnemius",
+    "Medial head of gastrocnemius",
+    "Plantaris muscle",
+    "Soleus muscle",
+    "Tibialis anterior muscle"
+   ],
+   "tris_in": 79212,
+   "target": 3000
+  },
+  "abdominals": {
+   "objects": 8,
+   "names": [
+    "External abdominal oblique muscle",
+    "Pyramidalis muscle",
+    "Rectus abdominis muscle",
+    "Serratus anterior muscle"
+   ],
+   "tris_in": 150821,
+   "target": 3000
+  },
+  "glutes": {
+   "objects": 4,
+   "names": [
+    "Gluteus maximus muscle",
+    "Gluteus medius muscle"
+   ],
+   "tris_in": 16932,
+   "target": 2200
+  },
+  "abductors": {
+   "objects": 4,
+   "names": [
+    "Gluteus minimus muscle",
+    "Tensor fasciae latae"
+   ],
+   "tris_in": 15534,
+   "target": 2200
+  },
+  "lower back": {
+   "objects": 12,
+   "names": [
+    "Iliocostalis lumborum muscle",
+    "Iliocostalis thoracis muscle",
+    "Longissimus thoracis muscle",
+    "Multifidus lumborum muscle",
+    "Quadratus lumborum muscle",
+    "Spinalis thoracis muscle"
+   ],
+   "tris_in": 70996,
+   "target": 2200
+  },
+  "middle back": {
+   "objects": 10,
+   "names": [
+    "Infraspinatus muscle",
+    "Rhomboid major muscle",
+    "Rhomboid minor muscle",
+    "Supraspinatus muscle",
+    "Teres minor muscle"
+   ],
+   "tris_in": 24260,
+   "target": 2200
+  },
+  "lats": {
+   "objects": 4,
+   "names": [
+    "Latissimus dorsi muscle",
+    "Teres major muscle"
+   ],
+   "tris_in": 45155,
+   "target": 2200
+  },
+  "hamstrings": {
+   "objects": 8,
+   "names": [
+    "Long head of biceps femoris",
+    "Semimembranosus muscle",
+    "Semitendinosus muscle",
+    "Short head of biceps femoris"
+   ],
+   "tris_in": 42498,
+   "target": 2200
+  },
+  "neck": {
+   "objects": 12,
+   "names": [
+    "Omohyoid muscle",
+    "Scalenus anterior muscle",
+    "Scalenus medius muscle",
+    "Splenius capitis muscle",
+    "Sternocleidomastoid muscle",
+    "Sternohyoid muscle"
+   ],
+   "tris_in": 33619,
+   "target": 2200
+  },
+  "quadriceps": {
+   "objects": 10,
+   "names": [
+    "Rectus femoris muscle",
+    "Sartorius muscle",
+    "Vastus intermedius muscle",
+    "Vastus lateralis muscle",
+    "Vastus medialis muscle"
+   ],
+   "tris_in": 69815,
+   "target": 3000
+  }
+ },
+ "size": 882456
+}

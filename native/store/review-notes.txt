@@ -1,0 +1,14 @@
+GG Gains is a free calorie, macro and habit tracker with a friends leaderboard. There are no in-app purchases or adverts.
+
+Demo account: use the email and password above. It is a fresh account, so you can log food, weigh-ins and photos yourself from the start.
+
+Where to find things:
+• Log food: Diary (home tab) › Add to breakfast, or scan a barcode from the food search.
+• Daily quests and Consistency Points: Quests tab (exclamation-mark icon).
+• Friends leaderboard: Ranked tab (trophy icon). Search people with the magnifying glass at the top.
+• Report or block a user: open their profile (or tap ⋯ in search) › Report / Block. Blocked people are listed in Settings.
+• Delete account: Menu (☰) › Settings › Delete my account. This removes all data from our server.
+• Apple Health (optional): Menu › Devices › Connect Apple Health. The app only reads steps, walking distance and active energy, and shows them in the diary.
+• Sign in with Apple is offered alongside Google and X on the sign-in screen.
+
+Progress photos are stored only on the device and are never uploaded.

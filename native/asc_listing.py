@@ -170,3 +170,17 @@ def availability():
         'territoryAvailabilities': {'data': [{'type': 'territoryAvailabilities', 'id': x['id']} for x in inc]}}}, 'included': inc})
     note(f'Available in {len(terrs)} countries')
 step('availability: all countries', availability)
+
+NOTES = open(os.path.join(os.path.dirname(__file__), 'store', 'review-notes.txt'), encoding='utf-8').read().strip()
+def review_details():
+    attrs = {'contactFirstName': 'Moatassim', 'contactLastName': 'Azizi', 'contactEmail': 'moatassime1310@gmail.com', 'notes': NOTES, 'demoAccountRequired': True}
+    try:
+        d = call('GET', f'/v1/appStoreVersions/{VER}/appStoreReviewDetail')['data']
+    except RuntimeError:
+        d = None
+    if d:
+        call('PATCH', f'/v1/appStoreReviewDetails/{d["id"]}', {'data': {'type': 'appStoreReviewDetails', 'id': d['id'], 'attributes': attrs}})
+    else:
+        call('POST', '/v1/appStoreReviewDetails', {'data': {'type': 'appStoreReviewDetails', 'attributes': attrs,
+             'relationships': {'appStoreVersion': {'data': {'type': 'appStoreVersions', 'id': VER}}}}})
+step('review contact and notes', review_details)

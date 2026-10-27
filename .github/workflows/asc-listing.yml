@@ -7,6 +7,10 @@ on:
         description: 'Build number to attach (empty = newest)'
         required: false
         default: ''
+      only:
+        description: 'Only run steps whose name contains these words (comma separated)'
+        required: false
+        default: ''
 jobs:
   listing:
     runs-on: ubuntu-latest
@@ -19,4 +23,5 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           BUILD: ${{ inputs.build }}
+          ONLY: ${{ inputs.only }}
         run: python3 native/asc_listing.py

@@ -6,8 +6,14 @@ API = 'https://api.appstoreconnect.apple.com'
 BUNDLE = 'com.gggains.app'
 SITE = 'https://moatassim1.github.io/moatassim-health/'
 
-def note(m): print('::notice::' + m[:900])
-def warn(m): print('::warning::' + m[:900])
+LOG = []
+def note(m): LOG.append(m)
+def warn(m): LOG.append('!! ' + m)
+import atexit
+def flush():
+    txt = ' || '.join(LOG).replace('\n', ' ')
+    for i in range(0, len(txt), 3500): print('::notice::' + txt[i:i + 3500])
+atexit.register(flush)
 
 def token():
     now = int(time.time())
@@ -20,11 +26,13 @@ def call(method, path, body=None, ok=(200, 201, 204)):
         raise RuntimeError(f'{method} {path} -> {r.status_code}: {r.text[:700]}')
     return r.json() if r.text else {}
 
+ONLY = [x.strip() for x in os.environ.get('ONLY', '').split(',') if x.strip()]
 def step(name, fn):
+    if ONLY and not any(o in name for o in ONLY): return
     try:
         fn(); note('OK: ' + name)
     except Exception as e:
-        warn('FAILED: ' + name + ' :: ' + str(e))
+        warn('FAILED: ' + name + ' :: ' + str(e)[:1500])
 
 DESC = open(os.path.join(os.path.dirname(__file__), 'store', 'description.txt'), encoding='utf-8').read().strip()
 SUBTITLE = 'Track macros. Climb the ranks.'

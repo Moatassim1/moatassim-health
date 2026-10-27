@@ -5,7 +5,17 @@
   const isApp = !!(C && C.isNativePlatform && C.isNativePlatform());
   const SITE = 'https://moatassim1.github.io/moatassim-health/';
   const SCHEME = 'com.gggains.app';
-  const plug = n => { if (!isApp) return null; try { return (C.Plugins && C.Plugins[n]) || (C.registerPlugin ? C.registerPlugin(n) : null); } catch (_) { return null; } };
+  // Native plugins. Our own (GGNative) is registered by the app at start-up, after Capacitor builds its plugin list,
+  // so it's called straight through the native bridge instead of relying on that list.
+  const viaBridge = n => new Proxy({}, { get: (_, m) => typeof m === 'string' && m !== 'then' ? (opts => C.nativePromise(n, m, opts || {})) : undefined });
+  const plug = n => {
+    if (!isApp) return null;
+    try {
+      if (C.Plugins && C.Plugins[n]) return C.Plugins[n];
+      if (typeof C.nativePromise === 'function') return viaBridge(n);
+      return C.registerPlugin ? C.registerPlugin(n) : null;
+    } catch (_) { return null; }
+  };
   const blobToB64 = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(b); });
 
   const N = {

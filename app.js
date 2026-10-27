@@ -1837,9 +1837,10 @@
       <div class="pf-body">${body}</div>
     </div>`;
     if (tab === 'training' && use3d()) mount3d();
+    else if (tab === 'training') { const w = () => import('./body3d.js?v=' + encodeURIComponent(VERSION || '1')).then(m => m.warm()).catch(() => {}); (window.requestIdleCallback || (f => setTimeout(f, 1200)))(w); }
   }
   // 3D figure (Z-Anatomy model, three.js), loaded only when shown. Falls back to the flat figure if it can't run.
-  const use3d = () => { try { const v = localStorage.getItem('gg.fig3d'); if (v) return v === '1'; } catch (_) {} return P().profile.sex !== 'female'; };
+  const use3d = () => { try { const v = localStorage.getItem('gg.fig3d'); if (v) return v === '1'; } catch (_) {} return false; };
   const set3d = on => { try { localStorage.setItem('gg.fig3d', on ? '1' : '0'); } catch (_) {} };
   let fig3d = null;
   async function mount3d() {

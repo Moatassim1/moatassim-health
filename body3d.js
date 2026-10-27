@@ -7,7 +7,7 @@ import { GLTFLoader } from './vendor/three/GLTFLoader.js';
 
 const V = (document.querySelector('script[src*="app.js"]') || {}).src || '';
 let modelP = null;
-const loadModel = () => modelP || (modelP = new GLTFLoader().loadAsync('models/body3d.glb?v=1').catch(e => { modelP = null; throw e; }));
+const loadModel = () => modelP || (modelP = new GLTFLoader().loadAsync('models/body3d.glb?v=2').catch(e => { modelP = null; throw e; }));
 const keyOf = n => n.replace(/_/g, ' ');
 const dark = () => document.documentElement.dataset.theme === 'dark';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -107,4 +107,5 @@ export async function mount(el, o = {}) {
     dispose() { alive = false; cancelAnimationFrame(raf); if (ro) ro.disconnect(); renderer.dispose(); for (const m of Object.values(mats)) m.dispose(); for (const m of Object.values(meshes)) m.geometry.dispose(); el.innerHTML = ''; }
   };
 }
-window.GGBody3D = { mount };
+export const warm = () => loadModel().catch(() => {});
+window.GGBody3D = { mount, warm };

@@ -451,69 +451,151 @@
   }
   const actIcon = t => /swim/.test(t) ? '🏊' : /run/.test(t) ? '🏃' : /cycl|bik|ride/.test(t) ? '🚴' : /walk|hik/.test(t) ? '🚶' : /strength|weight|gym|hiit|cardio/.test(t) ? '🏋️' : /yoga|pilates|breath/.test(t) ? '🧘' : '⚡';
   // ---------------------------------------------------------------- TRAINING: exercise library, sets, progressive overload
-  // Library: free-exercise-db (public domain). Loaded only when needed, so the app stays light.
-  const EX_IMG = 'https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/';
+  // Library: free-exercise-db (public domain), loaded only when needed. Muscle diagrams: bodymap.js.
   const EX_GROUPS = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio'];
   const EX_ICON = { Chest: '🏋️', Back: '🚣', Legs: '🦵', Shoulders: '🤸', Arms: '💪', Core: '🔥', Cardio: '🏃' };
+  const MUS_RED = '#E8473C', MUS_PINK = '#F4A3A0';
+  // Activities and sports, logged in minutes. Calories from MET × body weight × hours.
+  const ACTIVITIES = [['swim', 'Swimming', 7, '🏊'], ['sauna', 'Sauna', 1.5, '🧖'], ['run', 'Running', 9.8, '🏃'], ['walk', 'Walking', 3.5, '🚶'], ['cycle', 'Cycling', 7.5, '🚴'],
+    ['football', 'Football', 7, '⚽'], ['padel', 'Padel / tennis', 7, '🎾'], ['hiit', 'HIIT / circuits', 8, '⚡'], ['boxing', 'Boxing', 9, '🥊'], ['basket', 'Basketball', 6.5, '🏀'],
+    ['hike', 'Hiking', 6, '🥾'], ['yoga', 'Yoga / pilates', 3, '🧘'], ['row', 'Rowing', 7, '🚣'], ['stairs', 'Stair climber', 9, '🪜'], ['ellip', 'Elliptical', 5, '〰️'],
+    ['rope', 'Jump rope', 11, '🪢'], ['dance', 'Dancing', 5, '💃'], ['martial', 'Martial arts', 10, '🥋'], ['climb', 'Climbing', 8, '🧗'], ['other', 'Other activity', 5, '⏱️']]
+    .map(([id, n, met, ic], i) => ({ id: 'act_' + id, n, g: 'Cardio', c: 'cardio', m: '', e: '', p: [], s: [], i: [], met, ic, act: true, pop: i }));
   let exLoading = null;
   function loadExercises() {
-    if (window.GG_EXERCISES) return Promise.resolve(window.GG_EXERCISES);
-    return exLoading || (exLoading = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'exercises.js?v=' + encodeURIComponent(VERSION || '1'); s.onload = () => res(window.GG_EXERCISES || []); s.onerror = () => { exLoading = null; rej(new Error('Could not load the exercise list. Check your connection.')); }; document.head.appendChild(s); }));
+    if (window.GG_EXERCISES && window.GG_EXERCISES.__gg) return Promise.resolve(window.GG_EXERCISES);
+    const ready = () => { const L = window.GG_EXERCISES || []; if (!L.__gg) { L.unshift(...ACTIVITIES); L.__gg = true; } return L; };
+    if (window.GG_EXERCISES) return Promise.resolve(ready());
+    return exLoading || (exLoading = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'exercises.js?v=' + encodeURIComponent(VERSION || '1'); s.onload = () => res(ready()); s.onerror = () => { exLoading = null; rej(new Error('Could not load the exercise list. Check your connection.')); }; document.head.appendChild(s); }));
   }
-  const exById = id => (window.GG_EXERCISES || []).find(x => x.id === id) || null;
+  const exById = id => (window.GG_EXERCISES || ACTIVITIES).find(x => x.id === id) || ACTIVITIES.find(x => x.id === id) || null;
   const isCardio = x => x && (x.g === 'Cardio' || x.c === 'cardio');
-  // Estimated one-rep max (Epley). Reps above 12 get less reliable, so they're capped for the estimate.
-  const e1rm = (kg, reps) => !(kg > 0) || !(reps > 0) ? 0 : reps === 1 ? kg : kg * (1 + Math.min(reps, 12) / 30);
-  const bestSet = sets => (sets || []).reduce((b, s) => { const v = e1rm(s.kg, s.reps); return v > b.v ? { v, s } : b; }, { v: 0, s: null });
-  const fmtSet = s => s ? `${fmt(s.kg, s.kg % 1 ? 1 : 0)} kg × ${s.reps}` : '';
+  const cap = s => String(s || '').replace(/^./, c => c.toUpperCase());
+  // Estimated one-rep max (Epley), reps capped at 12 for the estimate. Bodyweight sets (0 kg) score by reps.
+  const e1rm = (kg, reps) => !(reps > 0) ? 0 : !(kg > 0) ? reps / 1000 : reps === 1 ? kg : kg * (1 + Math.min(reps, 12) / 30);
+  const done = sets => (sets || []).filter(s => s.reps > 0);
+  const bestSet = sets => done(sets).reduce((b, s) => { const v = e1rm(s.kg, s.reps); return v > b.v ? { v, s } : b; }, { v: 0, s: null });
+  const fmtKg = kg => fmt(kg, kg % 1 ? 1 : 0);
+  const fmtSet = s => !s ? '' : s.kg > 0 ? `${fmtKg(s.kg)} kg × ${s.reps}` : `${s.reps} reps`;
   const liftsOn = k => ((P().dayMeta[k] || {}).lifts || []);
-  // Every session of one exercise, oldest first: [{ k, sets, best, top }]
+  const musclesOf = l => { const x = exById(l.ex); return x ? { p: x.p, s: x.s } : { p: l.mp || [], s: l.ms || [] }; };
+  // Every session of one exercise, oldest first.
   function liftHistory(exId, beforeKey) {
     const out = [];
     for (const [k, m] of Object.entries(P().dayMeta || {})) {
       if (beforeKey && k >= beforeKey) continue;
-      for (const l of (m && m.lifts) || []) if (l.ex === exId && (l.sets || []).length) {
-        const b = bestSet(l.sets), top = l.sets.reduce((a, s) => (s.kg || 0) > (a.kg || 0) ? s : a, l.sets[0]);
-        out.push({ k, sets: l.sets, best: b.v, bestSet: b.s, top, vol: l.sets.reduce((a, s) => a + (s.kg || 0) * (s.reps || 0), 0) });
-      }
+      for (const l of (m && m.lifts) || []) { const d = done(l.sets); if (l.ex === exId && d.length) {
+        const b = bestSet(d), top = d.reduce((a, s) => (s.kg || 0) > (a.kg || 0) || ((s.kg || 0) === (a.kg || 0) && s.reps > a.reps) ? s : a, d[0]);
+        out.push({ k, sets: d, best: b.v, bestSet: b.s, top, vol: d.reduce((a, s) => a + (s.kg || 0) * (s.reps || 0), 0) });
+      } }
     }
     return out.sort((a, b) => a.k < b.k ? -1 : 1);
   }
-  // Double progression: once every set reaches the top of the rep range, add weight; otherwise add a rep.
+  // Double progression: once every set reaches 10+ reps, add weight; otherwise add a rep.
   function nextTarget(last) {
     if (!last || !last.sets.length) return null;
-    const work = last.sets.filter(s => s.kg > 0 && s.reps > 0); if (!work.length) return null;
-    const topKg = Math.max(...work.map(s => s.kg)), atTop = work.filter(s => s.kg === topKg), minReps = Math.min(...atTop.map(s => s.reps));
+    const work = last.sets; const topKg = Math.max(...work.map(s => s.kg || 0)), atTop = work.filter(s => (s.kg || 0) === topKg), minReps = Math.min(...atTop.map(s => s.reps));
+    if (!(topKg > 0)) return { kg: 0, reps: minReps + 1, why: `Beat last time: ${minReps + 1} reps on every set.` };
     const step = topKg >= 40 ? 2.5 : topKg >= 10 ? 1 : 0.5;
     return minReps >= 10 ? { kg: Math.round((topKg + step) * 10) / 10, reps: Math.max(6, minReps - 3), why: 'You hit all your reps last time, so add a little weight.' }
       : { kg: topKg, reps: minReps + 1, why: `Same weight, aim for ${minReps + 1} reps on every set.` };
   }
-  function prsOn(k) {
-    let n = 0;
-    for (const l of liftsOn(k)) {
-      const prev = liftHistory(l.ex, k), best = Math.max(0, ...prev.map(h => h.best)), now = bestSet(l.sets).v;
-      if (prev.length && now > best + 0.01) n++;
-    }
-    return n;
+  const priorBest = (exId, k) => Math.max(0, ...liftHistory(exId, k).map(h => h.best));
+  const isPR = (l, k) => { const h = liftHistory(l.ex, k); return h.length > 0 && bestSet(l.sets).v > Math.max(...h.map(x => x.best)) + 1e-6; };
+  const prsOn = k => liftsOn(k).filter(l => isPR(l, k)).length;
+  const favEx = () => P().profile.favEx || (P().profile.favEx = []);
+  function toggleFav(id) { const f = favEx(), i = f.indexOf(id); if (i >= 0) f.splice(i, 1); else f.unshift(id); save(); return i < 0; }
+  const muscleFill = (p, s) => Object.assign({}, ...(s || []).map(m => ({ [m]: MUS_PINK })), ...(p || []).map(m => ({ [m]: MUS_RED })));
+  const thumb = (x, cls) => x && x.act ? `<span class="ex-act-ic ${cls || ''}">${x.ic}</span>` : window.GGBody ? GGBody.svg({ view: GGBody.viewFor(x ? x.p : []), fill: muscleFill(x && x.p, x && x.s), cls: 'bm-thumb ' + (cls || '') }) : '';
+
+  // ---- Training card in the diary: sets are logged right here.
+  function liftBlock(l, k) {
+    const x = exById(l.ex) || { n: l.name, p: l.mp || [], s: l.ms || [] };
+    const hist = liftHistory(l.ex, k), last = hist[hist.length - 1], tgt = nextTarget(last), pr = isPR(l, k); PRS.set(l.id, pr);
+    const ph = tgt || (last ? { kg: last.top.kg, reps: last.top.reps } : null);
+    const sub = last ? `Last ${fmtSet(last.top)}${tgt ? ` · 🎯 ${fmtSet(tgt)}` : ''}` : 'First time: your progress starts today';
+    return `<div class="lift" data-lid="${esc(l.id)}">
+      <div class="lift-top">
+        <button class="lift-thumb" data-action="lift-info" data-ex="${esc(l.ex)}" aria-label="About ${esc(l.name)}">${thumb(x)}</button>
+        <button class="lift-title" data-action="lift-info" data-ex="${esc(l.ex)}"><b>${esc(l.name)}</b><small>${esc(sub)}</small></button>
+        <span class="pr-badge"${pr ? '' : ' hidden'}>🏆 PR</span>
+        <button class="lift-x" data-action="lift-del" data-id="${esc(l.id)}" aria-label="Remove exercise">✕</button>
+      </div>
+      <div class="lset-head"><span>Set</span><span>kg</span><span>Reps</span><span></span></div>
+      ${l.sets.map((s, i) => `<div class="lset${s.reps > 0 ? ' done' : ''}" data-i="${i}"><span class="lset-n">${i + 1}</span><input class="lset-kg" type="number" inputmode="decimal" step="0.5" min="0" max="999" value="${s.kg > 0 || s.reps > 0 ? (s.kg || 0) : ''}" placeholder="${ph ? fmtKg(ph.kg) : 'kg'}" aria-label="Set ${i + 1} kg"><input class="lset-reps" type="number" inputmode="numeric" min="1" max="100" value="${s.reps > 0 ? s.reps : ''}" placeholder="${ph ? ph.reps : 'reps'}" aria-label="Set ${i + 1} reps"><button class="lset-ok" data-action="lset-ok" data-id="${esc(l.id)}" data-i="${i}" aria-label="Set ${i + 1} done">✓</button></div>`).join('')}
+      <div class="lift-btns"><button class="btn ghost" data-action="lset-add" data-id="${esc(l.id)}">＋ Add set</button>${l.sets.length > 1 ? `<button class="btn ghost" data-action="lset-pop" data-id="${esc(l.id)}">− Remove set</button>` : ''}</div>
+    </div>`;
   }
   function trainingCard(k) {
     const m = P().dayMeta[k] || {}, lifts = m.lifts || [], ex = m.ex || [];
     const gd = P().garmin.days[k];
     const exK = ex.reduce((a, x) => a + (x.kcal || 0), 0);
-    const liftRows = lifts.map(l => {
-      const b = bestSet(l.sets), prev = liftHistory(l.ex, k), pr = prev.length && b.v > Math.max(0, ...prev.map(h => h.best)) + 0.01;
-      return `<li class="lift-row" data-action="lift-open" data-ex="${esc(l.ex)}" data-id="${esc(l.id)}"><span class="lift-ic">${EX_ICON[l.g] || '🏋️'}</span><span class="lift-main"><b>${esc(l.name)}</b><small>${l.sets.length} set${l.sets.length === 1 ? '' : 's'} · ${l.sets.map(s => `${fmt(s.kg, s.kg % 1 ? 1 : 0)}×${s.reps}`).join(', ')}</small></span>${pr ? '<span class="pr-badge">🏆 PR</span>' : ''}<span class="faint">›</span></li>`;
-    }).join('');
-    return `<div class="panel train-card">
-      <div class="tc-head"><h2>Training</h2>${lifts.length ? `<span class="faint small">${lifts.length} exercise${lifts.length === 1 ? '' : 's'}${m.prs ? ` · <b class="pr-txt">${m.prs} PR${m.prs > 1 ? 's' : ''}</b>` : ''}</span>` : ''}</div>
+    if (lifts.some(l => !l.mp) && !window.GG_EXERCISES) loadExercises().then(() => { if (UI.view === 'today') softRender(render); }).catch(() => {});
+    return `<div class="panel train-card" id="trainCard">
+      <div class="tc-head"><h2>Training</h2><span class="faint small" id="tcSum">${lifts.length ? `${lifts.length} exercise${lifts.length === 1 ? '' : 's'}${m.prs ? ` · <b class="pr-txt">${m.prs} PR${m.prs > 1 ? 's' : ''}</b>` : ''}` : ''}</span></div>
       ${gd && gd.steps != null ? (() => { const w = walkKcal(gd); return `<div class="steps-row"><span>👟 <b class="num">${fmt(gd.steps)}</b> steps <span class="faint">· ${fmt(w.km, 1)} km</span></span><span class="walk-kcal" title="Calories burned walking, on top of what your body burns at rest."><b class="num">${fmt(w.kcal)}</b> kcal</span></div>${gd.stepGoal ? `<div class="water-bar steps-bar"><i style="width:${Math.min(100, gd.steps / gd.stepGoal * 100)}%"></i></div><div class="faint small" style="margin-top:4px">Goal ${fmt(gd.stepGoal)} steps</div>` : ''}`; })() : healthOffer()}
-      ${lifts.length ? `<ul class="lift-list">${liftRows}</ul>` : ''}
+      ${lifts.map(l => liftBlock(l, k)).join('')}
+      ${ex.length ? `<ul class="ex-list act-list">${ex.map(x => { const a = exById(x.exId); return `<li><span>${a && a.ic ? a.ic + ' ' : ''}<b>${esc(x.name)}</b> <span class="faint">${fmt(x.min)} min</span></span><span class="num">${fmt(x.kcal)} kcal</span><button class="btn ghost j-x" data-action="ex-del" data-id="${esc(x.id)}" aria-label="Remove">✕</button></li>`; }).join('')}</ul><p class="small muted" style="margin:4px 0 0">${fmt(exK)} kcal from activities${gd && gd.kcalTotal != null ? ' · already part of your watch total, so it isn\'t added again' : ''}.</p>` : ''}
       ${gd && (gd.activities || []).length ? `<div class="faint small" style="margin:10px 0 2px">From your watch</div><ul class="ex-list g-acts">${gd.activities.map(x => `<li><span>${actIcon(x.type)} <b>${esc(x.name)}</b> <span class="faint">${[x.start, x.min != null ? fmt(x.min) + ' min' : '', x.km ? fmt(x.km, x.km < 2 ? 2 : 1) + ' km' : ''].filter(Boolean).join(' · ')}</span></span><span class="num">${x.kcal != null ? fmt(x.kcal) + ' kcal' : ''}</span></li>`).join('')}</ul>` : ''}
-      ${ex.length ? `<ul class="ex-list">${ex.map(x => `<li><span><b>${esc(x.name)}</b> <span class="faint">${fmt(x.min)} min</span></span><span class="num">${fmt(x.kcal)} kcal</span><button class="btn ghost j-x" data-action="ex-del" data-id="${esc(x.id)}" aria-label="Remove">✕</button></li>`).join('')}</ul><p class="small muted" style="margin:4px 0 0">${fmt(exK)} kcal burned in cardio${gd && gd.kcalTotal != null ? ' · already part of your watch total, so it isn\'t added again' : ''}.</p>` : ''}
-      ${!lifts.length && !ex.length && !(gd && (gd.activities || []).length) ? '<p class="muted small" style="margin:8px 0 0">Log your lifts to track progressive overload: weight, reps and sets over time, with a 🏆 for every personal record.</p>' : ''}
+      ${!lifts.length && !ex.length && !(gd && (gd.activities || []).length) ? '<p class="muted small" style="margin:8px 0 0">Log your lifts to track progressive overload (weight, reps and sets over time, with a 🏆 for every personal record), or log a swim, sauna, run or match.</p>' : ''}
       <button class="btn primary wide lift-add" data-action="lift-pick">＋ Log exercise</button>
     </div>`;
   }
+  const findLift = id => { const m = P().dayMeta[UI.date] || {}; return (m.lifts || []).find(l => l.id === id); };
+  // Typing in a set: update the model straight away, save shortly after, refresh only the PR badge and header.
+  let liftSaveT = null; const PRS = new Map();
+  function onSetInput(inp) {
+    const box = inp.closest('.lift'), row = inp.closest('.lset'); if (!box || !row) return;
+    const l = findLift(box.dataset.lid); if (!l) return;
+    const i = Number(row.dataset.i), s = l.sets[i] || (l.sets[i] = { kg: 0, reps: 0 });
+    const kg = row.querySelector('.lset-kg').value, reps = row.querySelector('.lset-reps').value;
+    s.kg = Math.max(0, Math.round(Number(kg) * 10) / 10 || 0); s.reps = Math.max(0, Math.round(Number(reps)) || 0);
+    row.classList.toggle('done', s.reps > 0);
+    liftChanged(l, box);
+  }
+  function liftChanged(l, box) {
+    const k = UI.date, m = P().dayMeta[k] || (P().dayMeta[k] = {});
+    const wasPR = !!PRS.get(l.id), pr = isPR(l, k); PRS.set(l.id, pr);
+    if (box) { const b = box.querySelector('.pr-badge'); if (b) b.hidden = !pr; }
+    m.prs = prsOn(k);
+    const sum = $('#tcSum'); if (sum) sum.innerHTML = `${m.lifts.length} exercise${m.lifts.length === 1 ? '' : 's'}${m.prs ? ` · <b class="pr-txt">${m.prs} PR${m.prs > 1 ? 's' : ''}</b>` : ''}`;
+    if (pr && !wasPR) { const b = bestSet(l.sets); toast(`🏆 New PR on ${l.name}: ${fmtSet(b.s)}${b.s && b.s.kg > 0 ? ` (≈ ${fmt(b.v, 1)} kg 1RM)` : ''}`); try { navigator.vibrate && navigator.vibrate(60); } catch (_) {} }
+    clearTimeout(liftSaveT); liftSaveT = setTimeout(save, 500);
+  }
+  function addLift(exId, k) {
+    const x = exById(exId); if (!x) return;
+    const m = P().dayMeta[k] || (P().dayMeta[k] = {});
+    let l = (m.lifts || []).find(z => z.ex === exId);
+    if (!l) {
+      const last = liftHistory(exId, k).pop();
+      l = { id: uid(), ex: exId, name: x.n, g: x.g, mp: x.p, ms: x.s, sets: Array.from({ length: last ? Math.min(6, last.sets.length) : 3 }, () => ({ kg: 0, reps: 0 })), at: Date.now() };
+      (m.lifts = m.lifts || []).push(l); save();
+    }
+    closeModal(); render();
+    setTimeout(() => { const el = document.querySelector(`.lift[data-lid="${l.id}"]`); if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('flash'); } }, 60);
+  }
+  function liftAction(act, a) {
+    const k = UI.date, m = P().dayMeta[k] || {};
+    if (act === 'lift-pick') return openExercisePicker(k);
+    if (act === 'lift-info') return openExercise(a.dataset.ex, a.dataset.k || k);
+    const l = findLift(a.dataset.id);
+    if (act === 'lift-del') {
+      if (!l) return; const idx = m.lifts.indexOf(l); m.lifts.splice(idx, 1); m.prs = prsOn(k); save(); render();
+      return toast(`Removed ${l.name}.`, 'Undo', () => { m.lifts.splice(idx, 0, l); m.prs = prsOn(k); save(); render(); });
+    }
+    if (!l) return;
+    const box = a.closest('.lift');
+    if (act === 'lset-ok') {
+      const row = a.closest('.lset'), i = Number(a.dataset.i), s = l.sets[i];
+      const kgI = row.querySelector('.lset-kg'), rI = row.querySelector('.lset-reps');
+      if (s.reps > 0) { s.reps = 0; rI.value = ''; row.classList.remove('done'); }
+      else { if (kgI.value === '' && kgI.placeholder !== 'kg') kgI.value = kgI.placeholder; if (rI.value === '' && rI.placeholder !== 'reps') rI.value = rI.placeholder; if (!(Number(rI.value) > 0)) { rI.focus(); return toast('Type the reps you did.'); } return onSetInput(rI); }
+      return liftChanged(l, box);
+    }
+    if (act === 'lset-add') { const prev = l.sets[l.sets.length - 1] || {}; l.sets.push({ kg: 0, reps: 0 }); save(); softRender(render); setTimeout(() => { const r = document.querySelectorAll(`.lift[data-lid="${l.id}"] .lset-kg`); const el = r[r.length - 1]; if (el) { if (prev.kg > 0) el.value = prev.kg; el.focus(); } }, 30); return; }
+    if (act === 'lset-pop') { l.sets.pop(); m.prs = prsOn(k); save(); softRender(render); }
+  }
+
   // ---- exercise picker
   const XP = { q: '', g: '', m: '', show: 40 };
   async function openExercisePicker(k) {
@@ -523,20 +605,25 @@
     modal.hidden = false;
     try { await loadExercises(); } catch (e) { card.querySelector('.modal-body').innerHTML = `<p class="err">${esc(e.message)}</p>`; card.onclick = ev => { if (ev.target.closest('[data-x=close]')) closeModal(); }; return; }
     XP.show = 40; XP.q = '';
-    const recentIds = [...new Set(Object.keys(P().dayMeta || {}).sort().reverse().flatMap(d => liftsOn(d).map(l => l.ex)))].slice(0, 8);
+    const recentIds = [...new Set(Object.keys(P().dayMeta || {}).sort().reverse().flatMap(d => [...liftsOn(d).map(l => l.ex), ...((P().dayMeta[d] || {}).ex || []).map(e => e.exId).filter(Boolean)]))].slice(0, 6);
+    const inToday = new Set([...liftsOn(k).map(l => l.ex), ...((P().dayMeta[k] || {}).ex || []).map(e => e.exId)]);
     const draw = () => {
-      const all = window.GG_EXERCISES, q = XP.q.trim().toLowerCase();
+      const all = window.GG_EXERCISES, q = XP.q.trim().toLowerCase(), favs = favEx();
       const words = q.split(/\s+/).filter(Boolean);
-      let list = all.filter(x => (!XP.g || x.g === XP.g) && (!XP.m || x.m === XP.m) && words.every(w => (x.n + ' ' + x.e + ' ' + x.p.join(' ')).toLowerCase().includes(w)));
+      let list = XP.g === 'fav' ? favs.map(exById).filter(Boolean) : all.filter(x => (!XP.g || x.g === XP.g) && (!XP.m || x.m === XP.m));
+      if (words.length) list = list.filter(x => words.every(w => (x.n + ' ' + x.e + ' ' + x.p.join(' ')).toLowerCase().includes(w)));
       if (q) list.sort((a, b) => ((a.pop != null ? 0 : 1) - (b.pop != null ? 0 : 1)) || (b.n.toLowerCase().startsWith(q) - a.n.toLowerCase().startsWith(q)) || ((a.pop ?? 999) - (b.pop ?? 999)) || (a.n.length - b.n.length));
-      const recent = !q && !XP.g && !XP.m ? recentIds.map(exById).filter(Boolean) : [];
-      const row = x => `<button class="ex-row" data-x="ex" data-id="${esc(x.id)}"><img loading="lazy" src="${EX_IMG}${esc(x.im[0])}" alt=""><span><b>${esc(x.n)}</b><small>${esc(cap(x.p[0] || x.g))}${x.e ? ' · ' + esc(cap(x.e)) : ''}</small></span>${x.m ? `<i class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</i>` : ''}</button>`;
+      const plain = !q && !XP.g && !XP.m;
+      const favL = plain ? favs.map(exById).filter(Boolean) : [], recent = plain ? recentIds.filter(id => !favs.includes(id)).map(exById).filter(Boolean) : [];
+      const row = x => `<div class="ex-row${inToday.has(x.id) ? ' in' : ''}" data-x="ex" data-id="${esc(x.id)}" role="button" tabindex="0">${thumb(x)}<span class="ex-row-t"><b>${esc(x.n)}</b><small>${x.act ? `Minutes${x.met ? ' · about ' + fmt(x.met * (currentWeight() || 75) / 60 * 30) + ' kcal / 30 min' : ''}` : esc(cap(x.p[0] || x.g)) + (x.e ? ' · ' + esc(cap(x.e)) : '')}</small></span>${inToday.has(x.id) ? '<i class="ex-in">Added</i>' : x.m ? `<i class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</i>` : ''}<button class="ex-star${favs.includes(x.id) ? ' on' : ''}" data-x="fav" data-id="${esc(x.id)}" aria-label="${favs.includes(x.id) ? 'Remove from' : 'Add to'} favourites">${favs.includes(x.id) ? '★' : '☆'}</button></div>`;
       card.querySelector('.modal-body').innerHTML = `
-        <div class="search-row"><span class="s-ic">🔍</span><input type="search" id="exQ" placeholder="Search, e.g. bench press, squat, curl" value="${esc(XP.q)}" autocomplete="off"></div>
-        <div class="chips ex-chips">${['', ...EX_GROUPS].map(g => `<button class="chip ${XP.g === g ? 'on' : ''}" data-x="g" data-v="${g}">${g ? (EX_ICON[g] + ' ' + g) : 'All'}</button>`).join('')}</div>
-        <div class="seg ex-mech">${[['', 'Any'], ['c', 'Compound'], ['i', 'Isolation']].map(([v, l]) => `<button class="${XP.m === v ? 'on' : ''}" data-x="m" data-v="${v}">${l}</button>`).join('')}</div>
-        ${recent.length ? `<div class="ex-sec">Recent</div>${recent.map(row).join('')}<div class="ex-sec">All exercises</div>` : ''}
-        <div class="ex-list-wrap">${list.slice(0, XP.show).map(row).join('') || '<p class="muted small">No exercises match. Try another word.</p>'}</div>
+        <div class="search-row"><span class="s-ic">🔍</span><input type="search" id="exQ" placeholder="Search, e.g. bench press, squat, sauna" value="${esc(XP.q)}" autocomplete="off"></div>
+        <div class="chips ex-chips"><button class="chip ${XP.g === '' ? 'on' : ''}" data-x="g" data-v="">All</button><button class="chip ${XP.g === 'fav' ? 'on' : ''}" data-x="g" data-v="fav">★ Favourites</button>${EX_GROUPS.map(g => `<button class="chip ${XP.g === g ? 'on' : ''}" data-x="g" data-v="${g}">${EX_ICON[g]} ${g === 'Cardio' ? 'Cardio & sports' : g}</button>`).join('')}</div>
+        ${XP.g !== 'Cardio' && XP.g !== 'fav' ? `<div class="seg ex-mech">${[['', 'Any'], ['c', 'Compound'], ['i', 'Isolation']].map(([v, l]) => `<button class="${XP.m === v ? 'on' : ''}" data-x="m" data-v="${v}">${l}</button>`).join('')}</div>` : ''}
+        ${favL.length ? `<div class="ex-sec">★ Favourites</div>${favL.map(row).join('')}` : ''}
+        ${recent.length ? `<div class="ex-sec">Recent</div>${recent.map(row).join('')}` : ''}
+        ${favL.length || recent.length ? '<div class="ex-sec">All exercises</div>' : ''}
+        <div class="ex-list-wrap">${list.slice(0, XP.show).map(row).join('') || (XP.g === 'fav' ? '<p class="muted small">No favourites yet. Tap ☆ next to any exercise to keep it here.</p>' : '<p class="muted small">No exercises match. Try another word.</p>')}</div>
         ${list.length > XP.show ? `<button class="btn ghost wide" data-x="more">Show more (${list.length - XP.show})</button>` : ''}`;
       const qi = $('#exQ'); qi.addEventListener('input', () => { XP.q = qi.value; XP.show = 40; const pos = qi.selectionStart; draw(); const n = $('#exQ'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (_) {} });
     };
@@ -545,76 +632,103 @@
       const b = e.target.closest('[data-x]'); if (!b) return;
       const x = b.dataset.x;
       if (x === 'close') return closeModal();
-      if (x === 'g') { XP.g = b.dataset.v; XP.show = 40; draw(); }
+      if (x === 'fav') { e.stopPropagation(); const on = toggleFav(b.dataset.id); toast(on ? 'Added to favourites ★' : 'Removed from favourites'); return draw(); }
+      if (x === 'g') { XP.g = b.dataset.v; XP.m = ''; XP.show = 40; draw(); }
       if (x === 'm') { XP.m = b.dataset.v; XP.show = 40; draw(); }
       if (x === 'more') { XP.show += 60; draw(); }
-      if (x === 'ex') openExercise(b.dataset.id, k, null);
+      if (x === 'ex') { const ex = exById(b.dataset.id); if (isCardio(ex)) openExercise(ex.id, k); else addLift(ex.id, k); }
     };
   }
-  const cap = s => String(s || '').replace(/^./, c => c.toUpperCase());
-  // ---- one exercise: demo, history, sets
-  async function openExercise(exId, k, editId) {
+  // ---- one exercise: muscles, how-to, history. Cardio/activities: log minutes here.
+  async function openExercise(exId, k) {
     try { await loadExercises(); } catch (e) { toast(e.message); return; }
     const x = exById(exId); if (!x) { toast('That exercise is no longer in the list.'); return; }
-    const m = P().dayMeta[k] || {}, existing = editId ? (m.lifts || []).find(l => l.id === editId) : (m.lifts || []).find(l => l.ex === exId);
-    const hist = liftHistory(exId, k), last = hist[hist.length - 1], best = hist.reduce((a, h) => h.best > (a ? a.best : 0) ? h : a, null);
-    const tgt = nextTarget(last);
-    const cardio = isCardio(x);
-    let sets = existing ? existing.sets.map(s => ({ ...s })) : cardio ? [] : (last ? last.sets.map(s => ({ kg: s.kg, reps: s.reps })) : [{ kg: '', reps: '' }]);
-    if (!existing && tgt && sets.length) sets = sets.map(s => ({ kg: tgt.kg, reps: tgt.reps }));
-    const cx = existing && cardio ? existing : (m.ex || []).find(e => e.exId === exId);
+    const cardio = isCardio(x), m = P().dayMeta[k] || {};
+    const hist = liftHistory(exId), before = liftHistory(exId, k), last = before[before.length - 1], best = hist.reduce((a, h) => h.best > (a ? a.best : 0) ? h : a, null);
+    const tgt = nextTarget(last), weighted = hist.some(h => h.sets.some(s => s.kg > 0));
+    const cx = (m.ex || []).find(e => e.exId === exId), inDiary = liftsOn(k).some(l => l.ex === exId);
+    const chart = hist.length >= 2 ? lineChart({ labels: hist.map(h => shortDate(h.k)), tipLabels: hist.map(h => longDate(h.k)), series: [{ label: weighted ? 'Estimated 1-rep max' : 'Best reps', color: MUS_RED, values: hist.map(h => weighted ? Math.round(h.best * 10) / 10 : h.bestSet.reps), connect: true, dots: true }], height: 150, tipFmt: v => weighted ? fmt(v, 1) + ' kg' : v + ' reps', yFmt: v => fmt(v, 0) }) : '';
     card.onclick = null;
     card.className = 'modal-card ex-sheet';
-    const chart = hist.length >= 2 ? lineChart({ labels: hist.map(h => shortDate(h.k)), tipLabels: hist.map(h => longDate(h.k)), series: [{ label: 'Estimated 1-rep max', color: COLORS().leaf, values: hist.map(h => Math.round(h.best * 10) / 10), connect: true, dots: true }], height: 150, tipFmt: v => fmt(v, 1) + ' kg', yFmt: v => fmt(v, 0) }) : '';
     const render1 = () => {
-      card.innerHTML = `<div class="modal-head"><h2>${esc(x.n)}</h2><button class="btn ghost" data-x="close">Close</button></div>
+      const fav = favEx().includes(exId);
+      card.innerHTML = `<div class="modal-head"><h2>${esc(x.n)}</h2><button class="ex-star big${fav ? ' on' : ''}" data-x="fav" aria-label="${fav ? 'Remove from' : 'Add to'} favourites">${fav ? '★' : '☆'}</button><button class="btn ghost" data-x="close">Close</button></div>
       <div class="modal-body">
-        <div class="ex-demo">${x.im.map((im, i) => `<img src="${EX_IMG}${esc(im)}" alt="${esc(x.n)} ${i ? 'end' : 'start'} position" class="${i ? 'f2' : 'f1'}">`).join('')}</div>
-        <div class="chips ex-musc">${x.m ? `<span class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</span>` : ''}${x.p.map(p => `<span class="chip on">${esc(cap(p))}</span>`).join('')}${x.s.slice(0, 3).map(p => `<span class="chip">${esc(cap(p))}</span>`).join('')}${x.e ? `<span class="chip">${esc(cap(x.e))}</span>` : ''}</div>
-        <details class="ex-how"><summary>How to do it</summary><ol>${x.i.map(t => `<li>${esc(t)}</li>`).join('')}</ol></details>
-        ${cardio ? `<div class="ex-cardio"><label class="field"><span>Minutes</span><input type="number" inputmode="numeric" id="cxMin" value="${cx ? cx.min : ''}" min="1" max="600"></label><label class="field"><span>Calories (optional)</span><input type="number" inputmode="numeric" id="cxKcal" value="${cx ? cx.kcal : ''}" min="0" max="5000" placeholder="auto"></label></div>`
-          : `${hist.length ? `<div class="ex-stats"><div><small>Last time</small><b>${fmtSet(last.top)}</b><span class="faint">${esc(shortDate(last.k))} · ${last.sets.length} sets</span></div><div><small>Best</small><b>${fmtSet(best.bestSet)}</b><span class="faint">≈ ${fmt(best.best, 1)} kg 1RM</span></div></div>` : '<p class="muted small" style="margin:6px 0">First time logging this one. Your progress chart starts today.</p>'}
-          ${tgt && !existing ? `<div class="ex-next"><b>🎯 Next goal: ${fmtSet(tgt)}</b><span class="faint">${esc(tgt.why)}</span></div>` : ''}
-          <div class="sets-head"><span>Set</span><span>kg</span><span>Reps</span><span></span></div>
-          <div class="sets">${sets.map((s, i) => `<div class="set-row" data-i="${i}"><b>${i + 1}</b><input type="number" inputmode="decimal" step="0.5" min="0" max="999" class="set-kg" value="${s.kg}" placeholder="kg"><input type="number" inputmode="numeric" min="1" max="100" class="set-reps" value="${s.reps}" placeholder="reps"><button class="btn ghost j-x" data-x="del-set" data-i="${i}" aria-label="Remove set">✕</button></div>`).join('')}</div>
-          <button class="btn ghost wide" data-x="add-set">＋ Add set</button>
-          ${chart ? `<div class="ex-chart"><div class="faint small">Estimated 1-rep max over time</div>${chart}</div>` : ''}`}
-        <div class="ex-btns">${existing || cx ? '<button class="btn ghost danger" data-x="remove">Remove</button>' : ''}<button class="btn primary" data-x="save">Save</button></div>
+        ${x.act ? `<div class="ex-act-hero">${x.ic}</div>` : `<div class="ex-demo">${GGBody.svg({ view: 'both', fill: muscleFill(x.p, x.s), cls: 'bm-big' })}</div>
+        <div class="bm-legend"><span><i style="background:${MUS_RED}"></i>Main muscle${x.p.length > 1 ? 's' : ''}: ${x.p.map(p => esc(GGBody.NAMES[p] || cap(p))).join(', ')}</span>${x.s.length ? `<span><i style="background:${MUS_PINK}"></i>Also works: ${x.s.map(p => esc(GGBody.NAMES[p] || cap(p))).join(', ')}</span>` : ''}</div>
+        <div class="chips ex-musc">${x.m ? `<span class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</span>` : ''}${x.e ? `<span class="chip">${esc(cap(x.e))}</span>` : ''}${x.l ? `<span class="chip">${esc(cap(x.l))}</span>` : ''}</div>`}
+        ${x.i && x.i.length ? `<details class="ex-how"><summary>How to do it</summary><ol>${x.i.map(t => `<li>${esc(t)}</li>`).join('')}</ol></details>` : ''}
+        ${cardio ? `<div class="ex-cardio"><label class="field"><span>Minutes</span><input type="number" inputmode="numeric" id="cxMin" value="${cx ? cx.min : ''}" min="1" max="600" placeholder="e.g. 30"></label><label class="field"><span>Calories (optional)</span><input type="number" inputmode="numeric" id="cxKcal" value="${cx ? cx.kcal : ''}" min="0" max="5000" placeholder="auto"></label></div>`
+          : `${hist.length ? `<div class="ex-stats"><div><small>Last time</small><b>${last ? fmtSet(last.top) : 'Today is the first'}</b><span class="faint">${last ? `${esc(shortDate(last.k))} · ${last.sets.length} sets` : ''}</span></div><div><small>Best</small><b>${fmtSet(best.bestSet)}</b><span class="faint">${weighted ? `≈ ${fmt(best.best, 1)} kg 1RM` : esc(shortDate(best.k))}</span></div></div>` : '<p class="muted small" style="margin:6px 0">You haven\'t logged this one yet. Your progress chart starts the first time you do.</p>'}
+          ${tgt ? `<div class="ex-next"><b>🎯 Next goal: ${fmtSet(tgt)}</b><span class="faint">${esc(tgt.why)}</span></div>` : ''}
+          ${chart ? `<div class="ex-chart"><div class="faint small">${weighted ? 'Estimated 1-rep max' : 'Best reps'} over time</div>${chart}</div>` : ''}
+          ${hist.length ? `<div class="ex-sec">History</div><ul class="ex-hist">${hist.slice(-8).reverse().map(h => `<li><span>${esc(shortDate(h.k))}</span><span>${h.sets.map(s => s.kg > 0 ? `${fmtKg(s.kg)}×${s.reps}` : `${s.reps}`).join(' · ')}</span></li>`).join('')}</ul>` : ''}`}
+        <div class="ex-btns">${cardio ? `${cx ? '<button class="btn ghost danger" data-x="remove">Remove</button>' : ''}<button class="btn primary" data-x="save">${cx ? 'Save' : 'Log it'}</button>` : inDiary ? '<button class="btn primary" data-x="close">Done</button>' : `<button class="btn primary" data-x="add">＋ Add to ${k === todayKey() ? 'today' : esc(shortDate(k))}</button>`}</div>
       </div>`;
     };
-    const readSets = () => { sets = [...card.querySelectorAll('.set-row')].map(r => ({ kg: r.querySelector('.set-kg').value, reps: r.querySelector('.set-reps').value })); };
     render1();
     modal.hidden = false;
     card.onclick = e => {
       const b = e.target.closest('[data-x]'); if (!b) return;
       const a = b.dataset.x;
       if (a === 'close') return closeModal();
-      if (a === 'add-set') { readSets(); const prev = sets[sets.length - 1] || {}; sets.push({ kg: prev.kg || '', reps: prev.reps || '' }); render1(); const r = card.querySelectorAll('.set-reps'); if (r.length) r[r.length - 1].focus(); }
-      if (a === 'del-set') { readSets(); sets.splice(Number(b.dataset.i), 1); render1(); }
-      if (a === 'remove') {
-        const mm = P().dayMeta[k] || {};
-        if (cardio) mm.ex = (mm.ex || []).filter(e2 => e2.exId !== exId); else mm.lifts = (mm.lifts || []).filter(l => l.id !== (existing && existing.id));
-        mm.prs = prsOn(k); save(); closeModal(); render(); toast('Removed.');
-      }
+      if (a === 'fav') { const on = toggleFav(exId); toast(on ? 'Added to favourites ★' : 'Removed from favourites'); return render1(); }
+      if (a === 'add') { if (UI.view !== 'today') { UI.date = k; nav('today'); } return addLift(exId, k); }
+      if (a === 'remove') { const mm = P().dayMeta[k] || {}; mm.ex = (mm.ex || []).filter(e2 => e2.exId !== exId); save(); closeModal(); render(); toast('Removed.'); }
       if (a === 'save') {
         const mm = P().dayMeta[k] || (P().dayMeta[k] = {});
-        if (cardio) {
-          const mn = Number($('#cxMin').value); if (!(mn > 0)) { toast('Type how many minutes.'); return; }
-          const met = /run|jog/i.test(x.n) ? 9.8 : /walk/i.test(x.n) ? 3.5 : /bike|bicycl|cycl/i.test(x.n) ? 7.5 : /row/i.test(x.n) ? 7 : /stair/i.test(x.n) ? 9 : 7;
-          const kc = Number($('#cxKcal').value) > 0 ? Number($('#cxKcal').value) : Math.round(met * (currentWeight() || 75) * mn / 60);
-          mm.ex = (mm.ex || []).filter(e2 => e2.exId !== exId); mm.ex.push({ id: cx ? cx.id : uid(), exId, name: x.n, min: mn, kcal: kc });
-          save(); closeModal(); render(); toast(`Logged ${x.n}: ${fmt(mn)} min, ${fmt(kc)} kcal.`); return;
-        }
-        readSets();
-        const clean = sets.map(s => ({ kg: Math.round(Number(s.kg) * 10) / 10 || 0, reps: Math.round(Number(s.reps)) || 0 })).filter(s => s.reps > 0);
-        if (!clean.length) { toast('Add at least one set with reps.'); return; }
-        const prevBest = Math.max(0, ...hist.map(h => h.best)), nowBest = bestSet(clean).v;
-        const entry = { id: existing ? existing.id : uid(), ex: exId, name: x.n, g: x.g, sets: clean, at: existing ? existing.at : Date.now() };
-        mm.lifts = (mm.lifts || []).filter(l => l.id !== entry.id); mm.lifts.push(entry);
-        mm.prs = prsOn(k); save(); closeModal(); render();
-        if (hist.length && nowBest > prevBest + 0.01) { toast(`🏆 New PR on ${x.n}: ${fmtSet(bestSet(clean).s)} (≈ ${fmt(nowBest, 1)} kg 1RM)`); try { navigator.vibrate && navigator.vibrate(60); } catch (_) {} }
-        else toast(`Saved ${x.n}: ${clean.length} set${clean.length === 1 ? '' : 's'}.`);
+        const mn = Number($('#cxMin').value); if (!(mn > 0)) { toast('Type how many minutes.'); return; }
+        const met = x.met || (/run|jog/i.test(x.n) ? 9.8 : /walk/i.test(x.n) ? 3.5 : /bike|bicycl|cycl/i.test(x.n) ? 7.5 : /row/i.test(x.n) ? 7 : /stair|step/i.test(x.n) ? 9 : 7);
+        const kc = Number($('#cxKcal').value) > 0 ? Number($('#cxKcal').value) : Math.round(met * (currentWeight() || 75) * mn / 60);
+        mm.ex = (mm.ex || []).filter(e2 => e2.exId !== exId); mm.ex.push({ id: cx ? cx.id : uid(), exId, name: x.n, min: mn, kcal: kc });
+        save(); closeModal(); if (UI.view !== 'today') { UI.date = k; nav('today'); } else render(); toast(`Logged ${x.n}: ${fmt(mn)} min, ${fmt(kc)} kcal.`);
       }
+    };
+  }
+
+  // ---- calendar with 🔥 on logged days
+  const dayLogged = k => dayEntries(k).length > 0 || !!((P().dayMeta[k] || {}).lifts || []).some(l => done(l.sets).length) || !!((P().dayMeta[k] || {}).ex || []).length;
+  function streakInfo() {
+    const today = todayKey(); let cur = 0, d = dayLogged(today) ? today : addDays(today, -1);
+    while (dayLogged(d)) { cur++; d = addDays(d, -1); }
+    const keys = [...new Set([...Object.keys(P().diary || {}), ...Object.keys(P().dayMeta || {})])].filter(dayLogged).sort();
+    let best = 0, run = 0, prev = null;
+    for (const k of keys) { run = prev && addDays(prev, 1) === k ? run + 1 : 1; best = Math.max(best, run); prev = k; }
+    return { cur, best: Math.max(best, cur), total: keys.length, first: keys[0] || null };
+  }
+  function openCalendar() {
+    let mo = UI.date.slice(0, 7);
+    const st = streakInfo(), today = todayKey(), maxK = addDays(today, 30);
+    card.onclick = null; card.className = 'modal-card cal-card';
+    const draw = () => {
+      const [y, mth] = mo.split('-').map(Number), first = new Date(y, mth - 1, 1), days = new Date(y, mth, 0).getDate(), lead = (first.getDay() + 6) % 7;
+      const cells = [];
+      for (let i = 0; i < lead; i++) cells.push('<span></span>');
+      let monthLogged = 0;
+      for (let d = 1; d <= days; d++) {
+        const k = `${y}-${String(mth).padStart(2, '0')}-${String(d).padStart(2, '0')}`, lg = dayLogged(k), cm = !!(P().dayMeta[k] || {}).complete;
+        if (lg) monthLogged++;
+        cells.push(`<button class="cal-d${lg ? ' lg' : ''}${cm ? ' cm' : ''}${k === today ? ' td' : ''}${k === UI.date ? ' sel' : ''}" data-x="d" data-k="${k}" ${k > maxK ? 'disabled' : ''}><span>${d}</span>${lg ? '<i>🔥</i>' : ''}</button>`);
+      }
+      const title = first.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      card.innerHTML = `<div class="modal-head"><h2>Calendar</h2><button class="btn ghost" data-x="close">Close</button></div>
+      <div class="modal-body">
+        <div class="cal-streak"><div><b>🔥 ${st.cur}</b><small>day streak</small></div><div><b>${st.best}</b><small>best streak</small></div><div><b>${st.total}</b><small>days logged</small></div></div>
+        <div class="cal-nav"><button class="btn icon" data-x="m" data-d="-1" aria-label="Previous month">‹</button><b>${esc(title)}</b><button class="btn icon" data-x="m" data-d="1" aria-label="Next month" ${mo >= maxK.slice(0, 7) ? 'disabled' : ''}>›</button></div>
+        <div class="cal-grid cal-wk">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(d => `<span>${d}</span>`).join('')}</div>
+        <div class="cal-grid">${cells.join('')}</div>
+        <p class="faint small cal-foot">🔥 = you logged that day · ${monthLogged} day${monthLogged === 1 ? '' : 's'} this month</p>
+        ${UI.date !== today ? '<button class="btn wide" data-x="today">Go to today</button>' : ''}
+      </div>`;
+    };
+    draw(); modal.hidden = false;
+    card.onclick = e => {
+      const b = e.target.closest('[data-x]'); if (!b || b.disabled) return;
+      const a = b.dataset.x;
+      if (a === 'close') closeModal();
+      else if (a === 'm') { const [y, m] = mo.split('-').map(Number), d = new Date(y, m - 1 + Number(b.dataset.d), 1); mo = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; draw(); }
+      else if (a === 'd') { UI.date = b.dataset.k; closeModal(); render(); }
+      else if (a === 'today') { UI.date = today; closeModal(); render(); }
     };
   }
   // ---------------------------------------------------------------- EXPORT TO AI
@@ -678,16 +792,6 @@
       else if (x === 'share') { const t = $('#aiTxt').value; if (window.MHNative && MHNative.isApp) MHNative.share({ title: 'My GG Gains data', text: t }); else try { await navigator.share({ title: 'My GG Gains data', text: t }); } catch (_) {} }
       else if (x === 'open') { await copy(); toast('Copied. Paste it into the chat.'); if (window.MHNative && MHNative.isApp) MHNative.openUrl(b.dataset.u); else window.open(b.dataset.u, '_blank', 'noopener'); }
     };
-  }
-  // Strength progress summary for Daily Performance.
-  function strengthPanel() {
-    const sessions = {};
-    for (const [k, m] of Object.entries(P().dayMeta || {})) for (const l of (m && m.lifts) || []) (sessions[l.ex] = sessions[l.ex] || { name: l.name, g: l.g, list: [] }).list.push({ k, best: bestSet(l.sets).v, set: bestSet(l.sets).s });
-    const rows = Object.entries(sessions).map(([id, s]) => { s.list.sort((a, b) => a.k < b.k ? -1 : 1); const first = s.list[0], lastS = s.list[s.list.length - 1], top = s.list.reduce((a, b) => b.best > a.best ? b : a); return { id, ...s, first, last: lastS, top, change: first.best ? (lastS.best - first.best) / first.best * 100 : 0 }; })
-      .sort((a, b) => a.last.k < b.last.k ? 1 : -1).slice(0, 12);
-    if (!rows.length) return `<div class="panel"><h2>Strength</h2><p class="muted small" style="margin:0">Log your lifts in the diary (Training › Log exercise) and your progressive overload shows up here: best sets, estimated 1-rep max and how much stronger you're getting.</p></div>`;
-    return `<div class="panel"><h2>Strength</h2><p class="muted small" style="margin-top:-6px">Estimated 1-rep max per exercise, from your first session to your latest.</p>
-      <ul class="str-list">${rows.map(r => `<li data-action="lift-open" data-ex="${esc(r.id)}" data-k="${todayKey()}"><span class="lift-ic">${EX_ICON[r.g] || '🏋️'}</span><span class="lift-main"><b>${esc(r.name)}</b><small>${r.list.length} session${r.list.length === 1 ? '' : 's'} · best ${fmtSet(r.top.set)}</small></span><span class="str-val"><b>${fmt(r.last.best, 1)} kg</b>${r.list.length > 1 ? `<small class="${r.change >= 0 ? 'up' : 'down'}">${r.change >= 0 ? '▲' : '▼'} ${fmt(Math.abs(r.change), 0)}%</small>` : ''}</span></li>`).join('')}</ul></div>`;
   }
   function wireWeight(k) {
     const inp = $('#wIn'); if (!inp) return;
@@ -787,7 +891,7 @@
         <div><h1>${isToday ? 'Today' : esc(longDate(k))}</h1><p class="sub">${isToday ? esc(longDate(k)) : (k > todayKey() ? 'Planned day' : 'Past day')}</p></div>
         <div class="datebar">
           <button class="btn icon" data-action="day" data-d="-1" aria-label="Previous day">‹</button>
-          <input type="date" id="datePick" value="${k}" max="${addDays(todayKey(), 30)}">
+          <button class="btn cal-btn" data-action="cal-open" aria-label="Open calendar">📅 ${esc(k === todayKey() ? 'Today' : shortDate(k))}${(() => { const c = streakInfo().cur; return c ? ` <span class="cal-fire">🔥${c}</span>` : ''; })()}</button>
           <button class="btn icon" data-action="day" data-d="1" aria-label="Next day">›</button>
           ${isToday ? '' : '<button class="btn" data-action="goto-today">Today</button>'}
         </div>
@@ -827,7 +931,7 @@
             <div class="meal-tools" style="margin-top:10px"><button class="tool-chip" data-action="quick-add" data-meal="${guessMeal()}">⚡ Quick add calories</button>${(P().diary[addDays(k, -1)] || []).length ? `<button class="tool-chip" data-action="copy-day">↻ Copy all of yesterday</button>` : ''}${(P().profile.favMeals || []).length ? `<button class="tool-chip" data-action="add" data-meal="${guessMeal()}" data-fav="1">★ Favourite meals</button>` : ''}</div>`}
           ${entries.length ? `<div class="day-actions">
             ${complete ? `<span class="complete-badge">Day marked complete</span><button class="btn ghost" data-action="toggle-complete">Undo</button>`
-              : `<span class="muted small">Finished logging? Marking the day complete stops the reminder and counts it in Daily Performance.</span><button class="btn" data-action="toggle-complete">Mark day complete</button>`}
+              : `<span class="muted small">Finished logging? Marking the day complete stops the reminder and counts it in Performance.</span><button class="btn" data-action="toggle-complete">Mark day complete</button>`}
           </div>` : ''}
         </div>
         <div class="stack">
@@ -844,10 +948,13 @@
     </div>`;
     wireWeight(k); photoThumbs();
 
-    $('#datePick').addEventListener('change', e => { if (e.target.value) { UI.date = e.target.value; render(); } });
   }
 
+  main.addEventListener('input', e => { if (e.target.matches && e.target.matches('.lset-kg, .lset-reps')) onSetInput(e.target); });
+  main.addEventListener('change', e => { const t = e.target; if (t.matches && t.matches('select[data-pf]')) { PF[t.dataset.pf] = Number(t.value); if (t.dataset.pf === 'mus') PF.sel = null; renderTrends(); } });
   main.addEventListener('click', (e) => {
+    const bm = e.target.closest && e.target.closest('#bmWrap .bm-m');
+    if (bm) { PF.sel = bm.dataset.m; renderTrends(); const el = $('#pfMus'); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return; }
     const a = e.target.closest('[data-action]');
     if (!a) return;
     if (a.tagName === 'A') e.preventDefault();
@@ -862,8 +969,11 @@
     else if (act === 'go-forecast') nav('forecast');
     else if (act === 'add') { openAdd({ meal: a.dataset.meal, date: UI.date }); if (a.dataset.fav) setTab('fav'); else if (a.dataset.meal === 'Supplements') setTab('sup'); }
     else if (act === 'quick-add') quickAdd(a.dataset.meal, UI.date);
-    else if (act === 'lift-pick') openExercisePicker(UI.date);
-    else if (act === 'lift-open') openExercise(a.dataset.ex, a.dataset.k || UI.date, a.dataset.id || null);
+    else if (['lift-pick', 'lift-info', 'lift-del', 'lset-ok', 'lset-add', 'lset-pop'].includes(act)) liftAction(act, a);
+    else if (act === 'cal-open') openCalendar();
+    else if (act === 'pf-tab') { PF.tab = a.dataset.t; render(); main.scrollTop = 0; window.scrollTo(0, 0); }
+    else if (act === 'pf-mus') { PF.sel = a.dataset.m; renderTrends(); const el = $('#pfMus'); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+    else if (act === 'pf-add') { UI.date = todayKey(); nav('today'); addLift(a.dataset.ex, todayKey()); toast('Added to today\'s training.'); }
     else if (act === 'ex-del') { const m = P().dayMeta[UI.date] || {}; m.ex = (m.ex || []).filter(x => x.id !== a.dataset.id); save(); render(); }
     else if (act === 'copy-meal' || act === 'copy-day') {
       const from = (P().diary[addDays(UI.date, -1)] || []).filter(e => act === 'copy-day' || e.meal === a.dataset.meal);
@@ -1618,102 +1728,207 @@
   });
 
   // ---------------------------------------------------------------- TRENDS
-  function renderTrends() {
-    const n = UI.trendDays, today = todayKey();
-    const keys = rangeKeys(today, n);
+  // ---------------------------------------------------------------- PERFORMANCE
+  const PERF_RANGES = [[7, 'Last 7 days'], [14, 'Last 14 days'], [30, 'Last 30 days'], [90, 'Last 90 days'], [365, 'Last 12 months'], [0, 'All time']];
+  const PF = UI.pf || (UI.pf = { tab: 'overview', nut: 0, vit: 0, mus: 30, sel: null });
+  function firstLogKey() {
+    const ks = [...Object.keys(P().diary || {}).filter(k => (P().diary[k] || []).length), ...Object.keys(P().dayMeta || {}).filter(dayLogged)].sort();
+    return ks[0] || todayKey();
+  }
+  const daysBetween = (a, b) => Math.round((dateOf(b) - dateOf(a)) / 864e5);
+  const rangeDays = v => v || Math.max(7, daysBetween(firstLogKey(), todayKey()) + 1);
+  const rangeLabel = v => (PERF_RANGES.find(r => r[0] === v) || [, 'All time'])[1];
+  const rangeSel = (key, v) => `<label class="rsel"><span class="sr">Period</span><select data-pf="${key}">${PERF_RANGES.map(([d, l]) => `<option value="${d}" ${d === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+  // Training volume per muscle: main muscle = 1 set, helper muscle = ½ set. Weekly average over the period.
+  const MUS_LEVELS = [
+    { k: 'none', label: 'Not trained', note: '0 sets a week', col: '#9b9ba3' },
+    { k: 'low', label: 'Undertrained', note: 'under 4 sets a week', col: '#5BA8F5' },
+    { k: 'build', label: 'Building', note: '4–9 sets a week', col: '#F5B841' },
+    { k: 'good', label: 'Well trained', note: '10–20 sets a week', col: '#2FBF71' },
+    { k: 'high', label: 'Very high', note: 'over 20 sets a week', col: '#E8473C' }];
+  const musLevel = w => w <= 0 ? MUS_LEVELS[0] : w < 4 ? MUS_LEVELS[1] : w < 10 ? MUS_LEVELS[2] : w <= 20 ? MUS_LEVELS[3] : MUS_LEVELS[4];
+  function muscleStats(days) {
+    const from = addDays(todayKey(), -days + 1), out = {}, last = {};
+    let sessions = 0, sets = 0, vol = 0, prs = 0;
+    for (const m of GGBody.MUSCLES) out[m] = 0;
+    for (const [k, mm] of Object.entries(P().dayMeta || {})) {
+      if (!mm || k < from || k > todayKey()) continue;
+      const ls = (mm.lifts || []).filter(l => done(l.sets).length); if (!ls.length) continue;
+      sessions++; prs += mm.prs || 0;
+      for (const l of ls) {
+        const n = done(l.sets).length, mu = musclesOf(l); sets += n; vol += done(l.sets).reduce((a, s) => a + (s.kg || 0) * s.reps, 0);
+        for (const p of mu.p) { out[p] = (out[p] || 0) + n; if (!last[p] || k > last[p]) last[p] = k; }
+        for (const s of mu.s) { out[s] = (out[s] || 0) + n / 2; if (!last[s] || k > last[s]) last[s] = k; }
+      }
+    }
+    const weeks = Math.max(1, days / 7), perWeek = {};
+    for (const [m, v] of Object.entries(out)) perWeek[m] = v / weeks;
+    return { perWeek, last, sessions, sets, vol, prs };
+  }
+  function recommendFor(mu, n) {
+    const L = window.GG_EXERCISES || [];
+    return L.filter(x => !x.act && x.p.includes(mu)).sort((a, b) => ((a.pop ?? 999) - (b.pop ?? 999)) || ((a.m === 'c' ? 0 : 1) - (b.m === 'c' ? 0 : 1)) || ((a.l === 'beginner' ? 0 : 1) - (b.l === 'beginner' ? 0 : 1))).slice(0, n || 3);
+  }
+  // Big muscles first when suggesting what to train next.
+  const MUS_PRIORITY = ['chest', 'lats', 'quadriceps', 'hamstrings', 'glutes', 'shoulders', 'middle back', 'triceps', 'biceps', 'abdominals', 'calves', 'traps', 'lower back', 'forearms', 'adductors', 'abductors', 'neck'];
+  function focusList(ms) { return MUS_PRIORITY.filter(m => ms.perWeek[m] < 4 && m !== 'neck'); }
+  function ring(pct, col, inner) {
+    const r = 34, c = 2 * Math.PI * r, p = Math.max(0, Math.min(1, pct));
+    return `<svg class="ring" viewBox="0 0 84 84"><circle cx="42" cy="42" r="${r}" fill="none" stroke="var(--line)" stroke-width="9"/><circle cx="42" cy="42" r="${r}" fill="none" stroke="${col}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${c * p} ${c}" transform="rotate(-90 42 42)"/><text x="42" y="47" text-anchor="middle">${inner}</text></svg>`;
+  }
+  // Group long periods by week so the chart stays readable.
+  function bucket(keys, n) {
+    if (n <= 92) return keys.map(k => [k]);
+    const out = []; for (let i = keys.length; i > 0; i -= 7) out.unshift(keys.slice(Math.max(0, i - 7), i)); return out;
+  }
+  function nutritionData(n) {
+    const today = todayKey(), keys = rangeKeys(today, n);
     const counted = keys.filter(k => dayEntries(k).length && (k !== today || (P().dayMeta[k] && P().dayMeta[k].complete)));
-    const tg = targets(), C = COLORS();
-    const per = keys.map(k => totalsOf(dayEntries(k)));
-    const sum = totalsOf(counted.flatMap(dayEntries));
-    const dn = counted.length || 1;
-    const avg = k => sum[k] / dn;
-    const kcalMac = avg('p') * 4 + avg('c') * 4 + avg('f') * 9 || 1;
-    const labels = keys.map(k => n <= 14 ? dayName(k) : shortDate(k));
-    const tipLabels = keys.map(longDate);
-    const burned = keys.map(k => P().garmin.days[k] && P().garmin.days[k].kcalTotal != null ? P().garmin.days[k].kcalTotal : null);
-    const hasBurn = burned.some(v => v != null);
-    const wts = keys.map(k => weightOn(k));
-    const hasW = wts.some(v => v != null);
-    const WCOL = getComputedStyle(document.documentElement).getPropertyValue('--weight').trim();
-    // Garmin: sleep, average and peak heart rate per day.
-    const gday = k => P().garmin.days[k] || null;
-    const avgHrOf = d => d ? (d.avgHr ?? (d.hrCurve && d.hrCurve.length ? Math.round(d.hrCurve.reduce((a, p) => a + p[1], 0) / d.hrCurve.length) : null)) : null;
-    const sleepH = keys.map(k => gday(k) && gday(k).sleepSec ? Math.round(gday(k).sleepSec / 360) / 10 : null);
-    const avgHr = keys.map(k => avgHrOf(gday(k)));
-    const peakHr = keys.map(k => gday(k) && gday(k).maxHr ? gday(k).maxHr : null);
-    const hasG = [...sleepH, ...avgHr, ...peakHr].some(v => v != null);
-    const mean = arr => { const v = arr.filter(x => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-    const SLEEP = '#5B7FD6', HRAVG = C.fat, HRPEAK = C.low;
-
-    // Foods that gave the most calories
-    const byFood = {};
-    counted.forEach(k => dayEntries(k).forEach(e => {
-      const r = byFood[e.name] || (byFood[e.name] = { kcal: 0, g: 0, times: 0, p: 0 });
-      r.kcal += e.n.kcal * e.grams / 100; r.g += e.grams; r.times++; r.p += (e.n.p || 0) * e.grams / 100;
-    }));
-    const top = Object.entries(byFood).sort((a, b) => b[1].kcal - a[1].kcal).slice(0, 8);
-
-    // Micronutrient table
-    const mt = microTargets();
-    const rows = ALL_MICROS.map(m => {
-      const v = avg(m.k), pct = v / mt[m.k] * 100;
-      let pill = '';
-      if (m.limit) pill = pct > 100 ? '<span class="pill low">Above limit</span>' : '<span class="pill ok">Within limit</span>';
-      else pill = pct < 70 ? '<span class="pill low">Low</span>' : pct < 100 ? '<span class="pill">Close</span>' : '<span class="pill ok">Met</span>';
-      return `<tr><td>${m.name}</td><td class="n">${fmtSmart(v)} ${m.unit}</td><td class="n faint">${m.limit ? 'max ' : ''}${fmtSmart(mt[m.k])} ${m.unit}</td><td style="width:32%"><div class="bar ${!m.limit && pct < 70 ? '' : ''}" style="height:6px"><i style="width:${Math.min(100, pct)}%;background:${(m.limit ? pct > 100 : pct < 70) ? C.low : m.limit ? C.muted : C.ok}"></i></div></td><td class="n">${fmt(pct)}%</td><td>${pill}</td></tr>`;
-    }).join('');
-
-    main.innerHTML = `<div class="page">
-      <div class="page-head">
-        <div><h1>Daily Performance</h1><p class="sub">${counted.length ? `Daily average over ${counted.length} logged day${counted.length === 1 ? '' : 's'} in the last ${n} days. Today counts once you mark it complete.` : `No logged days in the last ${n} days yet.`}</p></div>
-        <div class="seg" id="trendSeg">${[7, 14, 30, 90].map(d => `<button data-action="trend" data-n="${d}" class="${d === n ? 'on' : ''}">${d} days</button>`).join('')}</div>
-      </div>
-      <div class="stats">
-        <div class="stat"><div class="k">Calories</div><div class="v">${fmt(avg('kcal'))}<small>kcal</small></div><div class="d">Target ${fmt(tg.kcal)} · ${counted.length ? (avg('kcal') >= tg.kcal ? '+' : '') + fmt(avg('kcal') - tg.kcal) : '–'}</div></div>
-        <div class="stat"><div class="k" style="color:${C.pro}">Protein</div><div class="v">${fmt(avg('p'))}<small>g</small></div><div class="d">${fmt(avg('p') * 4 / kcalMac * 100)}% of calories · target ${fmt(tg.p)} g</div></div>
-        <div class="stat"><div class="k" style="color:${C.carb}">Carbs</div><div class="v">${fmt(avg('c'))}<small>g</small></div><div class="d">${fmt(avg('c') * 4 / kcalMac * 100)}% of calories · target ${fmt(tg.c)} g</div></div>
-        <div class="stat"><div class="k" style="color:${C.fat}">Fat</div><div class="v">${fmt(avg('f'))}<small>g</small></div><div class="d">${fmt(avg('f') * 9 / kcalMac * 100)}% of calories · target ${fmt(tg.f)} g</div></div>
-        <div class="stat"><div class="k">Fibre</div><div class="v">${fmt(avg('fib'))}<small>g</small></div><div class="d">Target ${fmt(mt.fib)} g</div></div>
-      </div>
-      <div class="stats" style="margin-top:12px">
-        <div class="stat"><div class="k" style="color:${SLEEP}">Sleep</div><div class="v">${mean(sleepH) != null ? hm(mean(sleepH) * 3600) : '–'}</div><div class="d">average a night${mean(sleepH) == null ? ' · from Garmin' : ''}</div></div>
-        <div class="stat"><div class="k" style="color:${HRAVG}">Average heart rate</div><div class="v">${fmt(mean(avgHr))}<small>bpm</small></div><div class="d">across the whole day</div></div>
-        <div class="stat"><div class="k" style="color:${HRPEAK}">Peak heart rate</div><div class="v">${fmt(mean(peakHr))}<small>bpm</small></div><div class="d">average daily peak${peakHr.some(v => v != null) ? ' · highest ' + fmt(Math.max(...peakHr.filter(v => v != null))) : ''}</div></div>
-        <div class="stat"><div class="k">Resting heart rate</div><div class="v">${fmt(mean(keys.map(k => gday(k) && gday(k).restingHr)))}<small>bpm</small></div><div class="d">average</div></div>
-        ${metabolismTile()}
-        ${maintenanceTile()}
-      </div>
-
-      <div class="panel" style="margin-top:16px">
-        <h2>Calories each day</h2>
-        <div class="chart-key"><span><i class="sw" style="background:${C.pro}"></i>Protein</span><span><i class="sw" style="background:${C.carb}"></i>Carbs</span><span><i class="sw" style="background:${C.fat}"></i>Fat</span><span>– – Target ${fmt(tg.kcal)} kcal</span>${hasBurn ? `<span><i class="sw" style="background:${C.ink}"></i>Burned (Garmin)</span>` : ''}<span><i class="sw" style="background:${WCOL};border-radius:50%"></i>Weight, kg (right scale)${hasW ? '' : ' · add it on the Food diary page'}</span></div>
-        ${barChart({ labels, tipLabels, height: 240, target: tg.kcal, unit: 'kcal',
-          series: [{ label: 'Protein', color: C.pro, values: per.map(t => t.p * 4) }, { label: 'Carbs', color: C.carb, values: per.map(t => t.c * 4) }, { label: 'Fat', color: C.fat, values: per.map(t => t.f * 9) }],
-          tipFmt: v => fmt(v) + ' kcal',
-          line: hasBurn ? { label: 'Burned', color: C.ink, values: burned } : null,
-          line2: hasW ? { label: 'Weight', color: WCOL, values: wts, unit: 'kg', fmt: v => fmt(v, 1) + ' kg' } : null, padRight: true })}
-        <h3 style="margin:22px 0 8px">Sleep and heart rate</h3>
-        ${hasG ? `<div class="chart-key"><span><i class="sw" style="background:${SLEEP}"></i>Sleep, hours</span><span><i class="sw" style="background:${HRAVG};border-radius:50%"></i>Average heart rate, bpm (right scale)</span><span><i class="sw" style="background:${HRPEAK};border-radius:50%"></i>Peak heart rate, bpm (right scale)</span></div>
-        ${barChart({ labels, tipLabels, height: 200, padRight: true, yFmt: v => fmt(v, 1).replace(/\.0$/, '') + 'h', tipFmt: v => hm(v * 3600),
-          series: [{ label: 'Sleep', color: SLEEP, values: sleepH.map(v => v || 0) }],
-          line2: [{ label: 'Peak heart rate', color: HRPEAK, values: peakHr, unit: 'bpm', fmt: v => v + ' bpm', r: 3 }, { label: 'Average heart rate', color: HRAVG, values: avgHr, unit: 'bpm', fmt: v => v + ' bpm', r: 3 }] })}`
-          : `<p class="muted">Connect ${esc(P().name)}'s Garmin on the Garmin tab to see sleep, average heart rate and peak heart rate for each day here.</p>`}
-      </div>
-      <div style="margin-top:16px">${strengthPanel()}</div>
-
-      <div class="grid-2" style="margin-top:16px">
-        <div class="panel">
-          <h2>Vitamins & minerals, daily average</h2>
-          ${counted.length ? `<table class="t"><thead><tr><th>Nutrient</th><th class="n">Average</th><th class="n">Target</th><th></th><th class="n">%</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">Log a few days of food to see your averages.</p>'}
-          ${counted.length && Object.keys(sum.missing).some(k => ALL_MICROS.some(m => m.k === k)) ? '<div class="note">Some foods you logged have no vitamin or mineral data (often online products), so a few averages may be a little low.</div>' : ''}
-        </div>
-        <div class="panel">
-          <h2>Biggest calorie sources</h2>
-          ${top.length ? `<table class="t"><thead><tr><th>Food</th><th class="n">kcal/day</th><th class="n">Times</th></tr></thead><tbody>${top.map(([name, r]) => `<tr><td>${esc(name)}</td><td class="n">${fmt(r.kcal / dn)}</td><td class="n">${r.times}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Nothing logged in this period.</p>'}
-        </div>
-      </div>
+    const sum = totalsOf(counted.flatMap(dayEntries)), dn = counted.length || 1;
+    return { keys, counted, sum, dn, avg: k => sum[k] / dn };
+  }
+  function renderTrends() {
+    if (!window.GG_EXERCISES && Object.values(P().dayMeta || {}).some(m => m && (m.lifts || []).length)) loadExercises().then(() => { if (UI.view === 'trends') softRender(renderTrends); }).catch(() => {});
+    const tab = PF.tab, today = todayKey(), tg = targets(), C = COLORS(), st = streakInfo();
+    const tabs = [['overview', 'Overview'], ['nutrition', 'Nutrition'], ['training', 'Training'], ['vitamins', 'Vitamins']];
+    let body = '';
+    if (tab === 'overview') body = perfOverview(st, tg, C);
+    else if (tab === 'nutrition') body = perfNutrition(tg, C);
+    else if (tab === 'training') body = perfTraining();
+    else body = perfVitamins(C);
+    main.innerHTML = `<div class="page perf">
+      <div class="page-head"><div><h1>Performance</h1><p class="sub">${st.total ? `${st.total} day${st.total === 1 ? '' : 's'} logged since ${esc(shortDate(firstLogKey()))}${st.cur ? ` · 🔥 ${st.cur}-day streak` : ''}` : 'Log your first day to see your numbers here.'}</p></div></div>
+      <div class="pf-tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" class="${k === tab ? 'on' : ''}" data-action="pf-tab" data-t="${k}">${l}</button>`).join('')}</div>
+      <div class="pf-body">${body}</div>
     </div>`;
   }
+  function perfOverview(st, tg, C) {
+    const nd = nutritionData(rangeDays(PF.nut)), avgK = nd.avg('kcal'), avgP = nd.avg('p');
+    const protHit = nd.counted.filter(k => totalsOf(dayEntries(k)).p >= targets(k).p * 0.9).length;
+    const kcalHit = nd.counted.filter(k => Math.abs(totalsOf(dayEntries(k)).kcal - targets(k).kcal) <= targets(k).kcal * 0.1).length;
+    const last30 = rangeKeys(todayKey(), 30).filter(dayLogged).length;
+    const ws = Object.keys(P().weights || {}).filter(k => k >= nd.keys[0]).sort(), w0 = ws.length ? P().weights[ws[0]] : null, w1 = ws.length ? P().weights[ws[ws.length - 1]] : null;
+    const ms = window.GGBody ? muscleStats(rangeDays(PF.mus)) : null, focus = ms ? focusList(ms) : [];
+    const trained = ms && ms.sessions;
+    return `
+      <div class="pf-hero">
+        <div class="pf-fire"><span class="pf-flame${st.cur ? '' : ' off'}">🔥</span><b class="num">${st.cur}</b><small>day streak</small></div>
+        <div class="pf-hero-stats"><div><b class="num">${st.best}</b><small>best streak</small></div><div><b class="num">${last30}<span>/30</span></b><small>of the last 30 days</small></div><div><b class="num">${st.total}</b><small>days logged in total</small></div></div>
+        <div class="pf-dots">${rangeKeys(todayKey(), 30).map(k => `<i class="${dayLogged(k) ? 'on' : ''}${k === todayKey() ? ' td' : ''}" title="${esc(longDate(k))}"></i>`).join('')}</div>
+      </div>
+      <div class="pf-sec-head"><h2>Nutrition</h2>${rangeSel('nut', PF.nut)}</div>
+      <div class="pf-grid">
+        <button class="pf-tile" data-action="pf-tab" data-t="nutrition">${ring(nd.counted.length ? avgK / tg.kcal : 0, avgK > tg.kcal * 1.1 ? C.low : C.ok, nd.counted.length ? Math.round(avgK / tg.kcal * 100) + '%' : '–')}<div><small>Calories a day</small><b class="num">${nd.counted.length ? fmt(avgK) : '–'}</b><span class="faint">target ${fmt(tg.kcal)}</span></div></button>
+        <button class="pf-tile" data-action="pf-tab" data-t="nutrition">${ring(nd.counted.length ? avgP / tg.p : 0, C.pro, nd.counted.length ? Math.round(avgP / tg.p * 100) + '%' : '–')}<div><small>Protein a day</small><b class="num">${nd.counted.length ? fmt(avgP) + ' g' : '–'}</b><span class="faint">target ${fmt(tg.p)} g</span></div></button>
+        <div class="pf-tile"><div class="pf-big">🎯</div><div><small>Calories on target</small><b class="num">${nd.counted.length ? Math.round(kcalHit / nd.counted.length * 100) + '%' : '–'}</b><span class="faint">${kcalHit} of ${nd.counted.length} days within 10%</span></div></div>
+        <div class="pf-tile"><div class="pf-big">🥩</div><div><small>Protein goal hit</small><b class="num">${nd.counted.length ? Math.round(protHit / nd.counted.length * 100) + '%' : '–'}</b><span class="faint">${protHit} of ${nd.counted.length} days</span></div></div>
+        <button class="pf-tile" data-action="go-forecast"><div class="pf-big">⚖️</div><div><small>Weight change</small><b class="num">${w0 != null && ws.length > 1 ? `${w1 - w0 > 0 ? '+' : ''}${fmt(w1 - w0, 1)} kg` : '–'}</b><span class="faint">${w1 != null ? `now ${fmt(w1, 1)} kg · see projection ›` : 'log your weight in the diary'}</span></div></button>
+        <button class="pf-tile" data-action="pf-tab" data-t="training"><div class="pf-big">🏋️</div><div><small>Gym sessions · ${esc(rangeLabel(PF.mus).toLowerCase())}</small><b class="num">${ms ? ms.sessions : 0}</b><span class="faint">${ms ? `${fmt(ms.sets)} sets · ${ms.prs} PR${ms.prs === 1 ? '' : 's'}` : ''}</span></div></button>
+      </div>
+      ${ms ? `<div class="pf-card pf-mini" data-action="pf-tab" data-t="training" role="button">
+        <div class="pf-mini-map">${GGBody.svg({ view: 'both', fill: Object.fromEntries(Object.entries(ms.perWeek).map(([m, w]) => [m, musLevel(w).col])), cls: 'bm-mid' })}</div>
+        <div class="pf-mini-t"><h2>Muscle balance</h2>${trained ? `<p class="muted small">${esc(rangeLabel(PF.mus))}.${focus.length ? ` Train next: <b>${focus.slice(0, 3).map(m => esc(GGBody.NAMES[m])).join(', ')}</b>.` : ' Every big muscle is getting work. Nice.'}</p>` : '<p class="muted small">Log your lifts in the diary and this map lights up with the muscles you train, and the ones you skip.</p>'}<span class="pf-link">Open training ›</span></div>
+      </div>` : ''}
+      <div class="pf-sec-head"><h2>Metabolism</h2></div>
+      <div class="stats">${metabolismTile()}${maintenanceTile()}</div>
+      ${perfRecovery(C)}`;
+  }
+  function perfRecovery(C) {
+    const keys = rangeKeys(todayKey(), 14), gday = k => P().garmin.days[k] || null;
+    const avgHrOf = d => d ? (d.avgHr ?? (d.hrCurve && d.hrCurve.length ? Math.round(d.hrCurve.reduce((a, p) => a + p[1], 0) / d.hrCurve.length) : null)) : null;
+    const sleepH = keys.map(k => gday(k) && gday(k).sleepSec ? Math.round(gday(k).sleepSec / 360) / 10 : null), avgHr = keys.map(k => avgHrOf(gday(k))), peakHr = keys.map(k => gday(k) && gday(k).maxHr ? gday(k).maxHr : null);
+    if (![...sleepH, ...avgHr, ...peakHr].some(v => v != null)) return '';
+    const mean = arr => { const v = arr.filter(x => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+    const SLEEP = '#5B7FD6', HRAVG = C.fat, HRPEAK = C.low;
+    return `<div class="pf-sec-head"><h2>Sleep & heart</h2><span class="faint small">Last 14 days</span></div>
+      <div class="stats"><div class="stat"><div class="k" style="color:${SLEEP}">Sleep</div><div class="v">${mean(sleepH) != null ? hm(mean(sleepH) * 3600) : '–'}</div><div class="d">average a night</div></div>
+        <div class="stat"><div class="k">Resting heart rate</div><div class="v">${fmt(mean(keys.map(k => gday(k) && gday(k).restingHr)))}<small>bpm</small></div><div class="d">average</div></div>
+        <div class="stat"><div class="k" style="color:${HRPEAK}">Peak heart rate</div><div class="v">${fmt(mean(peakHr))}<small>bpm</small></div><div class="d">average daily peak</div></div></div>
+      <div class="pf-card">${barChart({ labels: keys.map(dayName), tipLabels: keys.map(longDate), height: 190, padRight: true, yFmt: v => fmt(v, 1).replace(/\.0$/, '') + 'h', tipFmt: v => hm(v * 3600), series: [{ label: 'Sleep', color: SLEEP, values: sleepH.map(v => v || 0) }], line2: [{ label: 'Peak heart rate', color: HRPEAK, values: peakHr, unit: 'bpm', fmt: v => v + ' bpm', r: 3 }, { label: 'Average heart rate', color: HRAVG, values: avgHr, unit: 'bpm', fmt: v => v + ' bpm', r: 3 }] })}
+      <div class="chart-key"><span><i class="sw" style="background:${SLEEP}"></i>Sleep</span><span><i class="sw" style="background:${HRAVG};border-radius:50%"></i>Average HR</span><span><i class="sw" style="background:${HRPEAK};border-radius:50%"></i>Peak HR</span></div></div>`;
+  }
+  function perfNutrition(tg, C) {
+    const n = rangeDays(PF.nut), nd = nutritionData(n), { keys, counted, avg } = nd;
+    const kcalMac = avg('p') * 4 + avg('c') * 4 + avg('f') * 9 || 1, mt = microTargets();
+    const WCOL = getComputedStyle(document.documentElement).getPropertyValue('--weight').trim();
+    const groups = bucket(keys, n), weekly = n > 92;
+    const gTot = g => { const ks = g.filter(k => dayEntries(k).length); const t = totalsOf(ks.flatMap(dayEntries)), d = ks.length || 1; return { p: t.p / d, c: t.c / d, f: t.f / d, kcal: t.kcal / d }; };
+    const per = groups.map(gTot);
+    const labels = groups.map(g => weekly ? shortDate(g[0]) : n <= 14 ? dayName(g[0]) : shortDate(g[0])), tipLabels = groups.map(g => weekly ? `Week of ${longDate(g[0])} (daily average)` : longDate(g[0]));
+    const wts = groups.map(g => { const v = g.map(k => weightOn(k)).filter(x => x != null); return v.length ? v[v.length - 1] : null; });
+    const burned = groups.map(g => { const v = g.map(k => P().garmin.days[k] && P().garmin.days[k].kcalTotal).filter(x => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; });
+    const hasBurn = burned.some(v => v != null), hasW = wts.some(v => v != null);
+    const byFood = {};
+    counted.forEach(k => dayEntries(k).forEach(e => { const r = byFood[e.name] || (byFood[e.name] = { kcal: 0, times: 0 }); r.kcal += e.n.kcal * e.grams / 100; r.times++; }));
+    const top = Object.entries(byFood).sort((a, b) => b[1].kcal - a[1].kcal).slice(0, 8), topMax = top.length ? top[0][1].kcal : 1;
+    const mac = [['p', 'Protein', C.pro, 4], ['c', 'Carbs', C.carb, 4], ['f', 'Fat', C.fat, 9]];
+    return `
+      <div class="pf-sec-head"><h2>Macros</h2>${rangeSel('nut', PF.nut)}</div>
+      <p class="muted small pf-note">${counted.length ? `Daily average over ${counted.length} logged day${counted.length === 1 ? '' : 's'} · ${esc(rangeLabel(PF.nut).toLowerCase())}. Today counts once you mark it complete.` : 'No logged days in this period yet.'}</p>
+      <div class="pf-macros">
+        <div class="pf-kcal">${ring(counted.length ? avg('kcal') / tg.kcal : 0, C.ok, counted.length ? Math.round(avg('kcal') / tg.kcal * 100) + '%' : '–')}<div><small>Calories a day</small><b class="num">${counted.length ? fmt(avg('kcal')) : '–'} <span>kcal</span></b><span class="faint">Target ${fmt(tg.kcal)}${counted.length ? ` · ${avg('kcal') >= tg.kcal ? '+' : ''}${fmt(avg('kcal') - tg.kcal)}` : ''}</span></div></div>
+        <div class="pf-split">${mac.map(([k]) => `<i style="flex:${Math.max(0.001, avg(k) * mac.find(x => x[0] === k)[3])};background:${mac.find(x => x[0] === k)[2]}"></i>`).join('')}</div>
+        ${mac.map(([k, l, col, kc]) => `<div class="pf-mac"><span class="dot" style="background:${col}"></span><b>${l}</b><span class="num">${fmt(avg(k))} g</span><span class="faint">${fmt(avg(k) * kc / kcalMac * 100)}% · target ${fmt(tg[k])} g</span><div class="bar"><i style="width:${Math.min(100, avg(k) / (tg[k] || 1) * 100)}%;background:${col}"></i></div></div>`).join('')}
+        <div class="pf-mac"><span class="dot" style="background:var(--leaf)"></span><b>Fibre</b><span class="num">${fmt(avg('fib'))} g</span><span class="faint">target ${fmt(mt.fib)} g</span><div class="bar"><i style="width:${Math.min(100, avg('fib') / mt.fib * 100)}%;background:var(--leaf)"></i></div></div>
+      </div>
+      <div class="pf-card">
+        <h3>Calories ${weekly ? 'per week (daily average)' : 'each day'}</h3>
+        ${barChart({ labels, tipLabels, height: 230, target: tg.kcal, unit: 'kcal', labelEvery: Math.ceil(groups.length / 10),
+          series: [{ label: 'Protein', color: C.pro, values: per.map(t => t.p * 4) }, { label: 'Carbs', color: C.carb, values: per.map(t => t.c * 4) }, { label: 'Fat', color: C.fat, values: per.map(t => t.f * 9) }],
+          tipFmt: v => fmt(v) + ' kcal', line: hasBurn ? { label: 'Burned', color: C.ink, values: burned } : null,
+          line2: hasW ? { label: 'Weight', color: WCOL, values: wts, unit: 'kg', fmt: v => fmt(v, 1) + ' kg' } : null, padRight: true })}
+        <div class="chart-key"><span><i class="sw" style="background:${C.pro}"></i>Protein</span><span><i class="sw" style="background:${C.carb}"></i>Carbs</span><span><i class="sw" style="background:${C.fat}"></i>Fat</span><span>– – Target</span>${hasBurn ? `<span><i class="sw" style="background:${C.ink}"></i>Burned</span>` : ''}${hasW ? `<span><i class="sw" style="background:${WCOL};border-radius:50%"></i>Weight (right)</span>` : ''}</div>
+      </div>
+      <div class="pf-card"><h3>Biggest calorie sources</h3>
+        ${top.length ? `<ul class="pf-foods">${top.map(([name, r]) => `<li><span class="pf-fn">${esc(name)}</span><span class="num">${fmt(r.kcal / nd.dn)} kcal/day</span><div class="bar"><i style="width:${r.kcal / topMax * 100}%"></i></div><small class="faint">${r.times}×</small></li>`).join('')}</ul>` : '<p class="muted small">Nothing logged in this period.</p>'}
+      </div>`;
+  }
+  function perfVitamins(C) {
+    const nd = nutritionData(rangeDays(PF.vit)), mt = microTargets();
+    const items = ALL_MICROS.map(m => { const v = nd.avg(m.k), pct = v / mt[m.k] * 100; return { m, v, pct, st: m.limit ? (pct > 100 ? 'over' : 'ok') : pct < 70 ? 'low' : pct < 100 ? 'close' : 'ok' }; });
+    const lows = items.filter(i => i.st === 'low' || i.st === 'over');
+    const met = items.filter(i => !i.m.limit && i.st === 'ok').length, tot = items.filter(i => !i.m.limit).length;
+    const pill = i => i.m.limit ? (i.st === 'over' ? '<span class="pill low">Above limit</span>' : '<span class="pill ok">Within limit</span>') : i.st === 'low' ? '<span class="pill low">Low</span>' : i.st === 'close' ? '<span class="pill">Close</span>' : '<span class="pill ok">Met</span>';
+    return `
+      <div class="pf-sec-head"><h2>Vitamins & minerals</h2>${rangeSel('vit', PF.vit)}</div>
+      ${nd.counted.length ? `<div class="pf-vit-sum">${ring(met / tot, C.ok, `${met}/${tot}`)}<div><b>${met} of ${tot} targets met</b><span class="muted small">Daily average over ${nd.counted.length} logged day${nd.counted.length === 1 ? '' : 's'}.${lows.length ? ` Watch: ${lows.slice(0, 4).map(i => esc(i.m.name)).join(', ')}.` : ''}</span></div></div>
+      <div class="pf-card"><ul class="pf-vits">${items.map(i => `<li class="st-${i.st}"><span class="pf-vn">${esc(i.m.name)}</span><span class="num">${fmtSmart(i.v)} ${i.m.unit}<small class="faint"> / ${i.m.limit ? 'max ' : ''}${fmtSmart(mt[i.m.k])}</small></span><div class="bar"><i style="width:${Math.min(100, i.pct)}%;background:${(i.m.limit ? i.pct > 100 : i.pct < 70) ? C.low : i.m.limit ? C.muted : i.pct < 100 ? C.carb : C.ok}"></i></div>${pill(i)}</li>`).join('')}</ul>
+      ${Object.keys(nd.sum.missing).some(k => ALL_MICROS.some(m => m.k === k)) ? '<div class="note">Some foods you logged have no vitamin or mineral data (often online products), so a few averages may be a little low.</div>' : ''}</div>`
+      : '<div class="pf-card"><p class="muted">Log a few days of food to see your vitamin and mineral averages.</p></div>'}`;
+  }
+  function perfTraining() {
+    if (!window.GGBody) return '<p class="muted">Loading…</p>';
+    const days = rangeDays(PF.mus), ms = muscleStats(days), focus = focusList(ms), lib = !!window.GG_EXERCISES;
+    const fill = Object.fromEntries(Object.entries(ms.perWeek).map(([m, w]) => [m, musLevel(w).col]));
+    const sel = PF.sel && GGBody.NAMES[PF.sel] ? PF.sel : (ms.sessions ? focus[0] : null) || 'chest';
+    const lv = musLevel(ms.perWeek[sel]);
+    const recs = lib ? recommendFor(sel, 3) : [];
+    // Strength progress per exercise (all time)
+    const sessions = {};
+    for (const [k, m] of Object.entries(P().dayMeta || {})) for (const l of (m && m.lifts) || []) if (done(l.sets).length) (sessions[l.ex] = sessions[l.ex] || { name: l.name, l, list: [] }).list.push({ k, best: bestSet(l.sets).v, set: bestSet(l.sets).s });
+    const rows = Object.entries(sessions).map(([id, s]) => { s.list.sort((a, b) => a.k < b.k ? -1 : 1); const first = s.list[0], lastS = s.list[s.list.length - 1], top = s.list.reduce((a, b) => b.best > a.best ? b : a); return { id, ...s, first, last: lastS, top, change: first.best ? (lastS.best - first.best) / first.best * 100 : 0 }; })
+      .sort((a, b) => a.last.k < b.last.k ? 1 : -1).slice(0, 15);
+    const mapSide = v => `<div class="bm-side"><span>${v === 'front' ? 'Front' : 'Back'}</span>${GGBody.svg({ view: v, fill, cls: 'bm-perf', tap: true })}</div>`;
+    return `
+      <div class="pf-sec-head"><h2>Muscle balance</h2>${rangeSel('mus', PF.mus)}</div>
+      <div class="pf-stats4"><div><b class="num">${ms.sessions}</b><small>sessions</small></div><div><b class="num">${fmt(ms.sets)}</b><small>sets</small></div><div><b class="num">${ms.vol >= 10000 ? fmt(ms.vol / 1000, 1) + 't' : fmt(ms.vol) + ' kg'}</b><small>lifted</small></div><div><b class="num">${ms.prs}</b><small>PRs 🏆</small></div></div>
+      <div class="pf-card pf-body-card">
+        <div class="bm-wrap" id="bmWrap">${mapSide('front')}${mapSide('back')}</div>
+        <div class="bm-key">${MUS_LEVELS.map(l => `<span><i style="background:${l.col}"></i><b>${l.label}</b><small>${l.note}</small></span>`).join('')}</div>
+        <p class="faint small" style="margin:6px 0 0;text-align:center">Tap a muscle. Main muscle of an exercise = 1 set, helper muscle = ½ set.</p>
+      </div>
+      <div class="pf-card pf-mus" id="pfMus">
+        <div class="pf-mus-head"><span class="pf-mus-dot" style="background:${lv.col}"></span><div><h3>${esc(GGBody.NAMES[sel])}</h3><span class="muted small">${lv.label} · ${fmt(ms.perWeek[sel], 1)} sets a week${ms.last[sel] ? ` · last trained ${esc(shortDate(ms.last[sel]))}` : ' · not trained in this period'}</span></div></div>
+        ${lv.k === 'good' ? '<p class="small" style="margin:8px 0 0">Right in the sweet spot. Keep adding weight or reps over time.</p>' : lv.k === 'high' ? '<p class="small" style="margin:8px 0 0">A lot of volume. Make sure you\'re recovering; quality sets beat more sets.</p>' : `<p class="small" style="margin:8px 0 0">Aim for 10–20 sets a week. ${lib ? 'Try one of these:' : ''}</p>`}
+        ${recs.length && lv.k !== 'good' && lv.k !== 'high' ? `<div class="pf-recs">${recs.map(x => `<div class="pf-rec">${thumb(x)}<button class="pf-rec-t" data-action="lift-info" data-ex="${esc(x.id)}" data-k="${todayKey()}"><b>${esc(x.n)}</b><small>${x.m === 'c' ? 'Compound' : x.m === 'i' ? 'Isolation' : ''}${x.e ? ' · ' + esc(cap(x.e)) : ''}</small></button><button class="btn" data-action="pf-add" data-ex="${esc(x.id)}">＋ Today</button></div>`).join('')}</div>` : ''}
+      </div>
+      ${ms.sessions && focus.length ? `<div class="pf-card"><h3>Train next</h3><p class="muted small" style="margin:-4px 0 10px">Undertrained in the ${esc(rangeLabel(PF.mus).toLowerCase())}, biggest muscles first.</p><div class="pf-focus">${focus.slice(0, 8).map(m => `<button class="chip${m === sel ? ' on' : ''}" data-action="pf-mus" data-m="${esc(m)}"><i style="background:${musLevel(ms.perWeek[m]).col}"></i>${esc(GGBody.NAMES[m])}</button>`).join('')}</div></div>` : ''}
+      <div class="pf-card"><h3>Strength progress</h3>
+        ${rows.length ? `<p class="muted small" style="margin:-4px 0 6px">Estimated 1-rep max, first session → latest. Tap for history.</p><ul class="str-list">${rows.map(r => { const x = exById(r.id) || { p: r.l.mp, s: r.l.ms }; const bw = !(r.top.set && r.top.set.kg > 0); return `<li data-action="lift-info" data-ex="${esc(r.id)}" data-k="${todayKey()}"><span class="str-th">${thumb(x)}</span><span class="lift-main"><b>${esc(r.name)}</b><small>${r.list.length} session${r.list.length === 1 ? '' : 's'} · best ${fmtSet(r.top.set)}</small></span><span class="str-val"><b>${bw ? r.last.set.reps + ' reps' : fmt(r.last.best, 1) + ' kg'}</b>${r.list.length > 1 ? `<small class="${r.change >= 0 ? 'up' : 'down'}">${r.change >= 0 ? '▲' : '▼'} ${fmt(Math.abs(r.change), 0)}%</small>` : ''}</span></li>`; }).join('')}</ul>`
+          : '<p class="muted small" style="margin:0">Log your lifts in the diary (Training › Log exercise) and your progressive overload shows up here.</p>'}
+      </div>`;
+  }
+
 
 
   // ---------------------------------------------------------------- FRIENDS + RANKING
@@ -2079,7 +2294,7 @@
     </div>`;
   }
 
-  // Metabolism tile for Daily Performance.
+  // Metabolism tile for Performance.
   function metabolismTile() {
     const met = metabolismModel();
     if (!met.ready) {
@@ -2366,7 +2581,6 @@
     else if (act === 'push-enable') { const r = await social.enablePush(); if (r.ok) { toast('Notifications are on.'); render(); } else { const m = $('#pushMsg'); if (m) { m.textContent = r.error; m.className = 'small err'; } } }
     else if (act === 'push-test') { const r = await social.testPush(); toast(r.ok ? (r.sent ? 'Test sent. It should pop up in a moment.' : 'No device is set up for notifications yet.') : (r.error || 'Could not send.')); }
     else if (act === 'dev-pick') { UI.device = a.dataset.id || null; G.err = ''; render(); }
-    else if (act === 'trend') { UI.trendDays = Number(a.dataset.n); render(); }
     else if (act === 'plan-kcal') { P().profile.planKcal = Number(a.dataset.v); save(); render(); }
     else if (act === 'fc-range') { UI.forecastMonths = Math.min(12, Number(a.dataset.n)); render(); }
     else if (act === 'go-today') nav('today');

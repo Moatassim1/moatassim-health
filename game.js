@@ -153,8 +153,9 @@
       const g = ctx.garmin(k);
       const full = !!meta.complete || (k < ctx.today() && t.kcal >= tg.kcal * 0.5 && entries.length >= 2);
       const stepGoal = (g && g.stepGoal) || 8000;
-      return { k, entries, t, tg, full, g, lifts: (meta.lifts || []).length, prs: meta.prs || 0,
-        workout: (meta.ex || []).length > 0 || (meta.lifts || []).length > 0 || !!(g && (g.activities || []).length), weighed: p.weights[k] != null, photo: ctx.photoDays().has(k),
+      const liftN = (meta.lifts || []).filter(l => (l.sets || []).some(z => z.reps > 0)).length;
+      return { k, entries, t, tg, full, g, lifts: liftN, prs: meta.prs || 0,
+        workout: (meta.ex || []).length > 0 || liftN > 0 || !!(g && (g.activities || []).length), weighed: p.weights[k] != null, photo: ctx.photoDays().has(k),
         complete: !!meta.complete, stepGoal, stepsOk: !!(g && (g.steps || 0) >= stepGoal),
         reacted: ((p.game || {}).reactedDays || []).includes(k) };
     }

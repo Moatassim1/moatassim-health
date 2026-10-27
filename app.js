@@ -440,8 +440,6 @@
       <a href="#" data-action="go-forecast">See the projection</a></p>
     </div>`;
   }
-  // Water and exercise, stored with the day so they sync.
-  const EXERCISES = [['Running', 9.8], ['Walking', 3.5], ['Cycling', 7.5], ['Gym / weights', 5], ['HIIT / circuits', 8], ['Swimming', 7], ['Football', 7], ['Padel / tennis', 7], ['Sauna (80°C)', 1.5], ['Other', 5]];
   const waterGoal = () => Math.max(1500, Math.round((currentWeight() || 75) * 35 / 250) * 250);
   // Walking: about 0.5 kcal per kg of body weight per km above resting (ACSM walking equation).
   // Distance is Garmin's when it has it, otherwise steps x stride (stride ≈ 41.5% of height).
@@ -452,33 +450,244 @@
     return { km, kcal: Math.round(0.5 * kg * km) };
   }
   const actIcon = t => /swim/.test(t) ? '🏊' : /run/.test(t) ? '🏃' : /cycl|bik|ride/.test(t) ? '🚴' : /walk|hik/.test(t) ? '🚶' : /strength|weight|gym|hiit|cardio/.test(t) ? '🏋️' : /yoga|pilates|breath/.test(t) ? '🧘' : '⚡';
-  function waterExerciseCard(k) {
-    const m = P().dayMeta[k] || {}, ml = m.water || 0, goal = waterGoal();
-    const ex = m.ex || [];
-    const exK = ex.reduce((a, x) => a + (x.kcal || 0), 0);
+  // ---------------------------------------------------------------- TRAINING: exercise library, sets, progressive overload
+  // Library: free-exercise-db (public domain). Loaded only when needed, so the app stays light.
+  const EX_IMG = 'https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/';
+  const EX_GROUPS = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio'];
+  const EX_ICON = { Chest: '🏋️', Back: '🚣', Legs: '🦵', Shoulders: '🤸', Arms: '💪', Core: '🔥', Cardio: '🏃' };
+  let exLoading = null;
+  function loadExercises() {
+    if (window.GG_EXERCISES) return Promise.resolve(window.GG_EXERCISES);
+    return exLoading || (exLoading = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'exercises.js?v=' + encodeURIComponent(VERSION || '1'); s.onload = () => res(window.GG_EXERCISES || []); s.onerror = () => { exLoading = null; rej(new Error('Could not load the exercise list. Check your connection.')); }; document.head.appendChild(s); }));
+  }
+  const exById = id => (window.GG_EXERCISES || []).find(x => x.id === id) || null;
+  const isCardio = x => x && (x.g === 'Cardio' || x.c === 'cardio');
+  // Estimated one-rep max (Epley). Reps above 12 get less reliable, so they're capped for the estimate.
+  const e1rm = (kg, reps) => !(kg > 0) || !(reps > 0) ? 0 : reps === 1 ? kg : kg * (1 + Math.min(reps, 12) / 30);
+  const bestSet = sets => (sets || []).reduce((b, s) => { const v = e1rm(s.kg, s.reps); return v > b.v ? { v, s } : b; }, { v: 0, s: null });
+  const fmtSet = s => s ? `${fmt(s.kg, s.kg % 1 ? 1 : 0)} kg × ${s.reps}` : '';
+  const liftsOn = k => ((P().dayMeta[k] || {}).lifts || []);
+  // Every session of one exercise, oldest first: [{ k, sets, best, top }]
+  function liftHistory(exId, beforeKey) {
+    const out = [];
+    for (const [k, m] of Object.entries(P().dayMeta || {})) {
+      if (beforeKey && k >= beforeKey) continue;
+      for (const l of (m && m.lifts) || []) if (l.ex === exId && (l.sets || []).length) {
+        const b = bestSet(l.sets), top = l.sets.reduce((a, s) => (s.kg || 0) > (a.kg || 0) ? s : a, l.sets[0]);
+        out.push({ k, sets: l.sets, best: b.v, bestSet: b.s, top, vol: l.sets.reduce((a, s) => a + (s.kg || 0) * (s.reps || 0), 0) });
+      }
+    }
+    return out.sort((a, b) => a.k < b.k ? -1 : 1);
+  }
+  // Double progression: once every set reaches the top of the rep range, add weight; otherwise add a rep.
+  function nextTarget(last) {
+    if (!last || !last.sets.length) return null;
+    const work = last.sets.filter(s => s.kg > 0 && s.reps > 0); if (!work.length) return null;
+    const topKg = Math.max(...work.map(s => s.kg)), atTop = work.filter(s => s.kg === topKg), minReps = Math.min(...atTop.map(s => s.reps));
+    const step = topKg >= 40 ? 2.5 : topKg >= 10 ? 1 : 0.5;
+    return minReps >= 10 ? { kg: Math.round((topKg + step) * 10) / 10, reps: Math.max(6, minReps - 3), why: 'You hit all your reps last time, so add a little weight.' }
+      : { kg: topKg, reps: minReps + 1, why: `Same weight, aim for ${minReps + 1} reps on every set.` };
+  }
+  function prsOn(k) {
+    let n = 0;
+    for (const l of liftsOn(k)) {
+      const prev = liftHistory(l.ex, k), best = Math.max(0, ...prev.map(h => h.best)), now = bestSet(l.sets).v;
+      if (prev.length && now > best + 0.01) n++;
+    }
+    return n;
+  }
+  function trainingCard(k) {
+    const m = P().dayMeta[k] || {}, lifts = m.lifts || [], ex = m.ex || [];
     const gd = P().garmin.days[k];
-    return `<div class="panel water-card">
-      <h2>Water</h2>
-      <div class="water-row"><div class="water-num num">${fmtAmt(ml, 'ml')}<small> / ${fmtAmt(goal, 'ml')}</small></div>
-        <div class="water-btns"><button class="btn" data-action="water" data-ml="-250" aria-label="Remove a glass">−</button><button class="btn" data-action="water" data-ml="250">+ Glass</button><button class="btn" data-action="water" data-ml="500">+ Bottle</button></div></div>
-      <div class="water-bar"><i style="width:${Math.min(100, ml / goal * 100)}%"></i></div>
-      <h2 style="margin-top:18px">Exercise</h2>
-      ${gd && gd.steps != null ? (() => { const w = walkKcal(gd); return `<div class="steps-row"><span>👟 <b class="num">${fmt(gd.steps)}</b> steps <span class="faint">· ${fmt(w.km, 1)} km</span></span><span class="walk-kcal" title="Calories burned walking, on top of what your body burns at rest. Worked out from your weight and ${gd.distanceKm ? 'the distance your Garmin measured' : 'your stride length (from your height)'}."><b class="num">${fmt(w.kcal)}</b> kcal</span></div>${gd.stepGoal ? `<div class="water-bar steps-bar"><i style="width:${Math.min(100, gd.steps / gd.stepGoal * 100)}%"></i></div><div class="faint small" style="margin-top:4px">Goal ${fmt(gd.stepGoal)} steps · calories burned walking, from your weight and ${gd.distanceKm ? 'Garmin distance' : 'height'}</div>` : ''}`; })() : healthOffer()}
-      ${gd && (gd.activities || []).length ? `<div class="faint small" style="margin:10px 0 2px">From your Garmin</div><ul class="ex-list g-acts">${gd.activities.map(x => `<li><span>${actIcon(x.type)} <b>${esc(x.name)}</b> <span class="faint">${[x.start, x.min != null ? fmt(x.min) + ' min' : '', x.km ? fmt(x.km, x.km < 2 ? 2 : 1) + ' km' : ''].filter(Boolean).join(' · ')}</span></span><span class="num">${x.kcal != null ? fmt(x.kcal) + ' kcal' : ''}</span></li>`).join('')}</ul>` : ''}
-      ${ex.length ? `<ul class="ex-list">${ex.map(x => `<li><span><b>${esc(x.name)}</b> <span class="faint">${fmt(x.min)} min</span></span><span class="num">${fmt(x.kcal)} kcal</span><button class="btn ghost j-x" data-action="ex-del" data-id="${esc(x.id)}" aria-label="Remove">✕</button></li>`).join('')}</ul><p class="small muted" style="margin:4px 0 10px">${fmt(exK)} kcal burned in workouts${gd && gd.kcalTotal != null ? ' · already part of your Garmin total, so it isn\'t added again' : ''}.</p>` : (gd && (gd.activities || []).length ? '' : '<p class="muted small" style="margin-top:0">Log a workout to keep a record of it. Workouts recorded on your Garmin show up here by themselves.</p>')}
-      <div class="ex-form">
-        <select id="exAct">${EXERCISES.map(([n]) => `<option>${n}</option>`).join('')}</select>
-        <input type="number" id="exMin" inputmode="numeric" min="1" max="600" placeholder="min">
-        <input type="number" id="exKcal" inputmode="numeric" min="0" max="5000" placeholder="kcal">
-        <button class="btn" data-action="ex-add">Add</button>
-      </div>
-      <p class="faint small" style="margin:6px 0 0">Calories are worked out from your weight and time; type your own if your watch shows a number.</p>
+    const exK = ex.reduce((a, x) => a + (x.kcal || 0), 0);
+    const liftRows = lifts.map(l => {
+      const b = bestSet(l.sets), prev = liftHistory(l.ex, k), pr = prev.length && b.v > Math.max(0, ...prev.map(h => h.best)) + 0.01;
+      return `<li class="lift-row" data-action="lift-open" data-ex="${esc(l.ex)}" data-id="${esc(l.id)}"><span class="lift-ic">${EX_ICON[l.g] || '🏋️'}</span><span class="lift-main"><b>${esc(l.name)}</b><small>${l.sets.length} set${l.sets.length === 1 ? '' : 's'} · ${l.sets.map(s => `${fmt(s.kg, s.kg % 1 ? 1 : 0)}×${s.reps}`).join(', ')}</small></span>${pr ? '<span class="pr-badge">🏆 PR</span>' : ''}<span class="faint">›</span></li>`;
+    }).join('');
+    return `<div class="panel train-card">
+      <div class="tc-head"><h2>Training</h2>${lifts.length ? `<span class="faint small">${lifts.length} exercise${lifts.length === 1 ? '' : 's'}${m.prs ? ` · <b class="pr-txt">${m.prs} PR${m.prs > 1 ? 's' : ''}</b>` : ''}</span>` : ''}</div>
+      ${gd && gd.steps != null ? (() => { const w = walkKcal(gd); return `<div class="steps-row"><span>👟 <b class="num">${fmt(gd.steps)}</b> steps <span class="faint">· ${fmt(w.km, 1)} km</span></span><span class="walk-kcal" title="Calories burned walking, on top of what your body burns at rest."><b class="num">${fmt(w.kcal)}</b> kcal</span></div>${gd.stepGoal ? `<div class="water-bar steps-bar"><i style="width:${Math.min(100, gd.steps / gd.stepGoal * 100)}%"></i></div><div class="faint small" style="margin-top:4px">Goal ${fmt(gd.stepGoal)} steps</div>` : ''}`; })() : healthOffer()}
+      ${lifts.length ? `<ul class="lift-list">${liftRows}</ul>` : ''}
+      ${gd && (gd.activities || []).length ? `<div class="faint small" style="margin:10px 0 2px">From your watch</div><ul class="ex-list g-acts">${gd.activities.map(x => `<li><span>${actIcon(x.type)} <b>${esc(x.name)}</b> <span class="faint">${[x.start, x.min != null ? fmt(x.min) + ' min' : '', x.km ? fmt(x.km, x.km < 2 ? 2 : 1) + ' km' : ''].filter(Boolean).join(' · ')}</span></span><span class="num">${x.kcal != null ? fmt(x.kcal) + ' kcal' : ''}</span></li>`).join('')}</ul>` : ''}
+      ${ex.length ? `<ul class="ex-list">${ex.map(x => `<li><span><b>${esc(x.name)}</b> <span class="faint">${fmt(x.min)} min</span></span><span class="num">${fmt(x.kcal)} kcal</span><button class="btn ghost j-x" data-action="ex-del" data-id="${esc(x.id)}" aria-label="Remove">✕</button></li>`).join('')}</ul><p class="small muted" style="margin:4px 0 0">${fmt(exK)} kcal burned in cardio${gd && gd.kcalTotal != null ? ' · already part of your watch total, so it isn\'t added again' : ''}.</p>` : ''}
+      ${!lifts.length && !ex.length && !(gd && (gd.activities || []).length) ? '<p class="muted small" style="margin:8px 0 0">Log your lifts to track progressive overload: weight, reps and sets over time, with a 🏆 for every personal record.</p>' : ''}
+      <button class="btn primary wide lift-add" data-action="lift-pick">＋ Log exercise</button>
     </div>`;
   }
-  function wireWaterExercise(k) {
-    const act = $('#exAct'), mins = $('#exMin'), kc = $('#exKcal'); if (!act) return;
-    const est = () => { const met = (EXERCISES.find(x => x[0] === act.value) || [, 5])[1]; const mn = Number(mins.value); kc.placeholder = mn > 0 ? String(Math.round(met * (currentWeight() || 75) * mn / 60)) : 'kcal'; };
-    act.addEventListener('change', est); mins.addEventListener('input', est);
+  // ---- exercise picker
+  const XP = { q: '', g: '', m: '', show: 40 };
+  async function openExercisePicker(k) {
+    card.onclick = null;
+    card.className = 'modal-card ex-pick';
+    card.innerHTML = `<div class="modal-head"><h2>Log exercise</h2><button class="btn ghost" data-x="close">Close</button></div><div class="modal-body"><p class="muted">Loading exercises…</p></div>`;
+    modal.hidden = false;
+    try { await loadExercises(); } catch (e) { card.querySelector('.modal-body').innerHTML = `<p class="err">${esc(e.message)}</p>`; card.onclick = ev => { if (ev.target.closest('[data-x=close]')) closeModal(); }; return; }
+    XP.show = 40; XP.q = '';
+    const recentIds = [...new Set(Object.keys(P().dayMeta || {}).sort().reverse().flatMap(d => liftsOn(d).map(l => l.ex)))].slice(0, 8);
+    const draw = () => {
+      const all = window.GG_EXERCISES, q = XP.q.trim().toLowerCase();
+      const words = q.split(/\s+/).filter(Boolean);
+      let list = all.filter(x => (!XP.g || x.g === XP.g) && (!XP.m || x.m === XP.m) && words.every(w => (x.n + ' ' + x.e + ' ' + x.p.join(' ')).toLowerCase().includes(w)));
+      if (q) list.sort((a, b) => ((a.pop != null ? 0 : 1) - (b.pop != null ? 0 : 1)) || (b.n.toLowerCase().startsWith(q) - a.n.toLowerCase().startsWith(q)) || ((a.pop ?? 999) - (b.pop ?? 999)) || (a.n.length - b.n.length));
+      const recent = !q && !XP.g && !XP.m ? recentIds.map(exById).filter(Boolean) : [];
+      const row = x => `<button class="ex-row" data-x="ex" data-id="${esc(x.id)}"><img loading="lazy" src="${EX_IMG}${esc(x.im[0])}" alt=""><span><b>${esc(x.n)}</b><small>${esc(cap(x.p[0] || x.g))}${x.e ? ' · ' + esc(cap(x.e)) : ''}</small></span>${x.m ? `<i class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</i>` : ''}</button>`;
+      card.querySelector('.modal-body').innerHTML = `
+        <div class="search-row"><span class="s-ic">🔍</span><input type="search" id="exQ" placeholder="Search, e.g. bench press, squat, curl" value="${esc(XP.q)}" autocomplete="off"></div>
+        <div class="chips ex-chips">${['', ...EX_GROUPS].map(g => `<button class="chip ${XP.g === g ? 'on' : ''}" data-x="g" data-v="${g}">${g ? (EX_ICON[g] + ' ' + g) : 'All'}</button>`).join('')}</div>
+        <div class="seg ex-mech">${[['', 'Any'], ['c', 'Compound'], ['i', 'Isolation']].map(([v, l]) => `<button class="${XP.m === v ? 'on' : ''}" data-x="m" data-v="${v}">${l}</button>`).join('')}</div>
+        ${recent.length ? `<div class="ex-sec">Recent</div>${recent.map(row).join('')}<div class="ex-sec">All exercises</div>` : ''}
+        <div class="ex-list-wrap">${list.slice(0, XP.show).map(row).join('') || '<p class="muted small">No exercises match. Try another word.</p>'}</div>
+        ${list.length > XP.show ? `<button class="btn ghost wide" data-x="more">Show more (${list.length - XP.show})</button>` : ''}`;
+      const qi = $('#exQ'); qi.addEventListener('input', () => { XP.q = qi.value; XP.show = 40; const pos = qi.selectionStart; draw(); const n = $('#exQ'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (_) {} });
+    };
+    draw();
+    card.onclick = e => {
+      const b = e.target.closest('[data-x]'); if (!b) return;
+      const x = b.dataset.x;
+      if (x === 'close') return closeModal();
+      if (x === 'g') { XP.g = b.dataset.v; XP.show = 40; draw(); }
+      if (x === 'm') { XP.m = b.dataset.v; XP.show = 40; draw(); }
+      if (x === 'more') { XP.show += 60; draw(); }
+      if (x === 'ex') openExercise(b.dataset.id, k, null);
+    };
+  }
+  const cap = s => String(s || '').replace(/^./, c => c.toUpperCase());
+  // ---- one exercise: demo, history, sets
+  async function openExercise(exId, k, editId) {
+    try { await loadExercises(); } catch (e) { toast(e.message); return; }
+    const x = exById(exId); if (!x) { toast('That exercise is no longer in the list.'); return; }
+    const m = P().dayMeta[k] || {}, existing = editId ? (m.lifts || []).find(l => l.id === editId) : (m.lifts || []).find(l => l.ex === exId);
+    const hist = liftHistory(exId, k), last = hist[hist.length - 1], best = hist.reduce((a, h) => h.best > (a ? a.best : 0) ? h : a, null);
+    const tgt = nextTarget(last);
+    const cardio = isCardio(x);
+    let sets = existing ? existing.sets.map(s => ({ ...s })) : cardio ? [] : (last ? last.sets.map(s => ({ kg: s.kg, reps: s.reps })) : [{ kg: '', reps: '' }]);
+    if (!existing && tgt && sets.length) sets = sets.map(s => ({ kg: tgt.kg, reps: tgt.reps }));
+    const cx = existing && cardio ? existing : (m.ex || []).find(e => e.exId === exId);
+    card.onclick = null;
+    card.className = 'modal-card ex-sheet';
+    const chart = hist.length >= 2 ? lineChart({ labels: hist.map(h => shortDate(h.k)), tipLabels: hist.map(h => longDate(h.k)), series: [{ label: 'Estimated 1-rep max', color: COLORS().leaf, values: hist.map(h => Math.round(h.best * 10) / 10), connect: true, dots: true }], height: 150, tipFmt: v => fmt(v, 1) + ' kg', yFmt: v => fmt(v, 0) }) : '';
+    const render1 = () => {
+      card.innerHTML = `<div class="modal-head"><h2>${esc(x.n)}</h2><button class="btn ghost" data-x="close">Close</button></div>
+      <div class="modal-body">
+        <div class="ex-demo">${x.im.map((im, i) => `<img src="${EX_IMG}${esc(im)}" alt="${esc(x.n)} ${i ? 'end' : 'start'} position" class="${i ? 'f2' : 'f1'}">`).join('')}</div>
+        <div class="chips ex-musc">${x.m ? `<span class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</span>` : ''}${x.p.map(p => `<span class="chip on">${esc(cap(p))}</span>`).join('')}${x.s.slice(0, 3).map(p => `<span class="chip">${esc(cap(p))}</span>`).join('')}${x.e ? `<span class="chip">${esc(cap(x.e))}</span>` : ''}</div>
+        <details class="ex-how"><summary>How to do it</summary><ol>${x.i.map(t => `<li>${esc(t)}</li>`).join('')}</ol></details>
+        ${cardio ? `<div class="ex-cardio"><label class="field"><span>Minutes</span><input type="number" inputmode="numeric" id="cxMin" value="${cx ? cx.min : ''}" min="1" max="600"></label><label class="field"><span>Calories (optional)</span><input type="number" inputmode="numeric" id="cxKcal" value="${cx ? cx.kcal : ''}" min="0" max="5000" placeholder="auto"></label></div>`
+          : `${hist.length ? `<div class="ex-stats"><div><small>Last time</small><b>${fmtSet(last.top)}</b><span class="faint">${esc(shortDate(last.k))} · ${last.sets.length} sets</span></div><div><small>Best</small><b>${fmtSet(best.bestSet)}</b><span class="faint">≈ ${fmt(best.best, 1)} kg 1RM</span></div></div>` : '<p class="muted small" style="margin:6px 0">First time logging this one. Your progress chart starts today.</p>'}
+          ${tgt && !existing ? `<div class="ex-next"><b>🎯 Next goal: ${fmtSet(tgt)}</b><span class="faint">${esc(tgt.why)}</span></div>` : ''}
+          <div class="sets-head"><span>Set</span><span>kg</span><span>Reps</span><span></span></div>
+          <div class="sets">${sets.map((s, i) => `<div class="set-row" data-i="${i}"><b>${i + 1}</b><input type="number" inputmode="decimal" step="0.5" min="0" max="999" class="set-kg" value="${s.kg}" placeholder="kg"><input type="number" inputmode="numeric" min="1" max="100" class="set-reps" value="${s.reps}" placeholder="reps"><button class="btn ghost j-x" data-x="del-set" data-i="${i}" aria-label="Remove set">✕</button></div>`).join('')}</div>
+          <button class="btn ghost wide" data-x="add-set">＋ Add set</button>
+          ${chart ? `<div class="ex-chart"><div class="faint small">Estimated 1-rep max over time</div>${chart}</div>` : ''}`}
+        <div class="ex-btns">${existing || cx ? '<button class="btn ghost danger" data-x="remove">Remove</button>' : ''}<button class="btn primary" data-x="save">Save</button></div>
+      </div>`;
+    };
+    const readSets = () => { sets = [...card.querySelectorAll('.set-row')].map(r => ({ kg: r.querySelector('.set-kg').value, reps: r.querySelector('.set-reps').value })); };
+    render1();
+    modal.hidden = false;
+    card.onclick = e => {
+      const b = e.target.closest('[data-x]'); if (!b) return;
+      const a = b.dataset.x;
+      if (a === 'close') return closeModal();
+      if (a === 'add-set') { readSets(); const prev = sets[sets.length - 1] || {}; sets.push({ kg: prev.kg || '', reps: prev.reps || '' }); render1(); const r = card.querySelectorAll('.set-reps'); if (r.length) r[r.length - 1].focus(); }
+      if (a === 'del-set') { readSets(); sets.splice(Number(b.dataset.i), 1); render1(); }
+      if (a === 'remove') {
+        const mm = P().dayMeta[k] || {};
+        if (cardio) mm.ex = (mm.ex || []).filter(e2 => e2.exId !== exId); else mm.lifts = (mm.lifts || []).filter(l => l.id !== (existing && existing.id));
+        mm.prs = prsOn(k); save(); closeModal(); render(); toast('Removed.');
+      }
+      if (a === 'save') {
+        const mm = P().dayMeta[k] || (P().dayMeta[k] = {});
+        if (cardio) {
+          const mn = Number($('#cxMin').value); if (!(mn > 0)) { toast('Type how many minutes.'); return; }
+          const met = /run|jog/i.test(x.n) ? 9.8 : /walk/i.test(x.n) ? 3.5 : /bike|bicycl|cycl/i.test(x.n) ? 7.5 : /row/i.test(x.n) ? 7 : /stair/i.test(x.n) ? 9 : 7;
+          const kc = Number($('#cxKcal').value) > 0 ? Number($('#cxKcal').value) : Math.round(met * (currentWeight() || 75) * mn / 60);
+          mm.ex = (mm.ex || []).filter(e2 => e2.exId !== exId); mm.ex.push({ id: cx ? cx.id : uid(), exId, name: x.n, min: mn, kcal: kc });
+          save(); closeModal(); render(); toast(`Logged ${x.n}: ${fmt(mn)} min, ${fmt(kc)} kcal.`); return;
+        }
+        readSets();
+        const clean = sets.map(s => ({ kg: Math.round(Number(s.kg) * 10) / 10 || 0, reps: Math.round(Number(s.reps)) || 0 })).filter(s => s.reps > 0);
+        if (!clean.length) { toast('Add at least one set with reps.'); return; }
+        const prevBest = Math.max(0, ...hist.map(h => h.best)), nowBest = bestSet(clean).v;
+        const entry = { id: existing ? existing.id : uid(), ex: exId, name: x.n, g: x.g, sets: clean, at: existing ? existing.at : Date.now() };
+        mm.lifts = (mm.lifts || []).filter(l => l.id !== entry.id); mm.lifts.push(entry);
+        mm.prs = prsOn(k); save(); closeModal(); render();
+        if (hist.length && nowBest > prevBest + 0.01) { toast(`🏆 New PR on ${x.n}: ${fmtSet(bestSet(clean).s)} (≈ ${fmt(nowBest, 1)} kg 1RM)`); try { navigator.vibrate && navigator.vibrate(60); } catch (_) {} }
+        else toast(`Saved ${x.n}: ${clean.length} set${clean.length === 1 ? '' : 's'}.`);
+      }
+    };
+  }
+  // ---------------------------------------------------------------- EXPORT TO AI
+  // A plain-text summary someone can paste into ChatGPT, Claude or Gemini to talk through their progress.
+  function aiExportText(days) {
+    const pr = P().profile, today = todayKey(), keys = rangeKeys(today, days), T = targets(today);
+    const L = [];
+    L.push(`# My GG Gains data (last ${days} days, exported ${longDate(today)})`, '');
+    L.push('I track my food, weight, steps and gym training in the GG Gains app. Please look at this data like a coach would: tell me what is going well, what is holding me back, and give me 3 specific changes for the next 2 weeks. Ask me questions if anything is unclear.', '');
+    L.push('## About me');
+    L.push(`- Sex: ${pr.sex || 'not set'} · Age: ${pr.age || '?'} · Height: ${pr.heightCm || '?'} cm · Current weight: ${fmt(currentWeight(), 1)} kg`);
+    L.push(`- Goal: ${pr.goal || 'not set'}${pr.goalWeightKg ? ` · Goal weight: ${fmt(pr.goalWeightKg, 1)} kg` : ''}`);
+    L.push(`- Daily targets: ${fmt(T.kcal)} kcal · protein ${fmt(T.p)} g · carbs ${fmt(T.c)} g · fat ${fmt(T.f)} g`, '');
+    L.push('## Day by day', '', '| Date | kcal | Protein g | Carbs g | Fat g | Fibre g | Weight kg | Steps | Training |', '|---|---|---|---|---|---|---|---|---|');
+    let logged = 0; const foods = {};
+    for (const k of keys) {
+      const en = dayEntries(k), t = totalsOf(en), m = P().dayMeta[k] || {}, gd = P().garmin.days[k] || {}, w = P().weights[k];
+      const tr = [...(m.lifts || []).map(l => `${l.name} ${l.sets.map(s => `${s.kg}x${s.reps}`).join(' ')}`), ...(m.ex || []).map(x => `${x.name} ${x.min}min`), ...((gd.activities || []).map(x => `${x.name}${x.min ? ' ' + Math.round(x.min) + 'min' : ''}`))].join('; ');
+      if (!en.length && w == null && gd.steps == null && !tr) continue;
+      if (en.length) logged++;
+      for (const e of en) { const r = foods[e.name] || (foods[e.name] = { kcal: 0, n: 0 }); r.kcal += (totalsOf([e]).kcal || 0); r.n++; }
+      L.push(`| ${k} | ${en.length ? fmt(t.kcal) : '-'} | ${en.length ? fmt(t.p) : '-'} | ${en.length ? fmt(t.c) : '-'} | ${en.length ? fmt(t.f) : '-'} | ${en.length ? fmt(t.fib) : '-'} | ${w != null ? fmt(w, 1) : '-'} | ${gd.steps != null ? gd.steps : '-'} | ${tr || '-'} |`);
+    }
+    L.push('', `Days with food logged: ${logged} of ${days}.`, '');
+    const lifts = {};
+    for (const [k, m] of Object.entries(P().dayMeta || {})) for (const l of (m && m.lifts) || []) (lifts[l.name] = lifts[l.name] || []).push({ k, b: bestSet(l.sets) });
+    const ln = Object.entries(lifts);
+    if (ln.length) {
+      L.push('## Strength progress (all time, best set per session, estimated 1-rep max)');
+      for (const [name, list] of ln) { list.sort((a, b) => a.k < b.k ? -1 : 1); L.push(`- ${name}: ${list.map(x => `${x.k} ${fmtSet(x.b.s)} (~${fmt(x.b.v, 1)}kg)`).join(' → ')}`); }
+      L.push('');
+    }
+    const top = Object.entries(foods).sort((a, b) => b[1].kcal - a[1].kcal).slice(0, 12);
+    if (top.length) { L.push('## Foods that gave me the most calories'); for (const [n, r] of top) L.push(`- ${n}: ${fmt(r.kcal)} kcal over ${r.n} servings`); L.push(''); }
+    L.push('(Calories and macros are from the foods I logged; steps come from my watch or phone.)');
+    return L.join('\n');
+  }
+  function openAiExport() {
+    let days = 30;
+    card.onclick = null; card.className = 'modal-card ai-exp';
+    const draw = () => {
+      card.innerHTML = `<div class="modal-head"><h2>Export to AI</h2><button class="btn ghost" data-x="close">Close</button></div>
+      <div class="modal-body">
+        <p class="muted small" style="margin-top:0">Turns your food, weight, steps and lifts into a summary your favourite AI can read. Copy it, open the AI, paste, and ask away: "Why am I not losing weight?", "Is my bench progressing?", "Plan my next week".</p>
+        <div class="seg">${[14, 30, 90].map(d => `<button class="${days === d ? 'on' : ''}" data-x="days" data-v="${d}">${d} days</button>`).join('')}</div>
+        <textarea id="aiTxt" class="ai-txt" readonly>${esc(aiExportText(days))}</textarea>
+        <div class="ai-btns"><button class="btn primary" data-x="copy">Copy</button>${navigator.share || (window.MHNative && MHNative.isApp) ? '<button class="btn" data-x="share">Share…</button>' : ''}</div>
+        <div class="faint small" style="margin:12px 0 6px">Then open:</div>
+        <div class="ai-btns"><button class="btn" data-x="open" data-u="https://chatgpt.com/">ChatGPT</button><button class="btn" data-x="open" data-u="https://claude.ai/new">Claude</button><button class="btn" data-x="open" data-u="https://gemini.google.com/app">Gemini</button></div>
+        <p class="faint small">Only what you see above is shared, and only when you paste it. Your photos are never included.</p>
+      </div>`;
+    };
+    draw(); modal.hidden = false;
+    const copy = async () => { const t = $('#aiTxt').value; try { await navigator.clipboard.writeText(t); return true; } catch (_) { const ta = $('#aiTxt'); ta.removeAttribute('readonly'); ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (_) {} ta.setAttribute('readonly', ''); return ok; } };
+    card.onclick = async e => {
+      const b = e.target.closest('[data-x]'); if (!b) return;
+      const x = b.dataset.x;
+      if (x === 'close') closeModal();
+      else if (x === 'days') { days = Number(b.dataset.v); draw(); }
+      else if (x === 'copy') toast(await copy() ? 'Copied. Now paste it into your AI.' : 'Select the text and copy it.');
+      else if (x === 'share') { const t = $('#aiTxt').value; if (window.MHNative && MHNative.isApp) MHNative.share({ title: 'My GG Gains data', text: t }); else try { await navigator.share({ title: 'My GG Gains data', text: t }); } catch (_) {} }
+      else if (x === 'open') { await copy(); toast('Copied. Paste it into the chat.'); if (window.MHNative && MHNative.isApp) MHNative.openUrl(b.dataset.u); else window.open(b.dataset.u, '_blank', 'noopener'); }
+    };
+  }
+  // Strength progress summary for Daily Performance.
+  function strengthPanel() {
+    const sessions = {};
+    for (const [k, m] of Object.entries(P().dayMeta || {})) for (const l of (m && m.lifts) || []) (sessions[l.ex] = sessions[l.ex] || { name: l.name, g: l.g, list: [] }).list.push({ k, best: bestSet(l.sets).v, set: bestSet(l.sets).s });
+    const rows = Object.entries(sessions).map(([id, s]) => { s.list.sort((a, b) => a.k < b.k ? -1 : 1); const first = s.list[0], lastS = s.list[s.list.length - 1], top = s.list.reduce((a, b) => b.best > a.best ? b : a); return { id, ...s, first, last: lastS, top, change: first.best ? (lastS.best - first.best) / first.best * 100 : 0 }; })
+      .sort((a, b) => a.last.k < b.last.k ? 1 : -1).slice(0, 12);
+    if (!rows.length) return `<div class="panel"><h2>Strength</h2><p class="muted small" style="margin:0">Log your lifts in the diary (Training › Log exercise) and your progressive overload shows up here: best sets, estimated 1-rep max and how much stronger you're getting.</p></div>`;
+    return `<div class="panel"><h2>Strength</h2><p class="muted small" style="margin-top:-6px">Estimated 1-rep max per exercise, from your first session to your latest.</p>
+      <ul class="str-list">${rows.map(r => `<li data-action="lift-open" data-ex="${esc(r.id)}" data-k="${todayKey()}"><span class="lift-ic">${EX_ICON[r.g] || '🏋️'}</span><span class="lift-main"><b>${esc(r.name)}</b><small>${r.list.length} session${r.list.length === 1 ? '' : 's'} · best ${fmtSet(r.top.set)}</small></span><span class="str-val"><b>${fmt(r.last.best, 1)} kg</b>${r.list.length > 1 ? `<small class="${r.change >= 0 ? 'up' : 'down'}">${r.change >= 0 ? '▲' : '▼'} ${fmt(Math.abs(r.change), 0)}%</small>` : ''}</span></li>`).join('')}</ul></div>`;
   }
   function wireWeight(k) {
     const inp = $('#wIn'); if (!inp) return;
@@ -624,7 +833,7 @@
         <div class="stack">
           ${weightCard(k)}
           ${photoCard(k)}
-          ${waterExerciseCard(k)}
+          ${trainingCard(k)}
           <div class="panel vit-panel">
             <h2>Vitamins & minerals</h2>
             ${(() => { const w = dayLimitWarnings(entries); return w.length ? `<div class="limit-warn"><b>⚠ Above a safe upper limit</b>${w.map(x => `<p>${x}</p>`).join('')}<p class="faint small">Limits are EFSA adult safe upper levels. Check with a pharmacist or GP before taking high doses long-term.</p></div>` : ''; })()}
@@ -633,7 +842,7 @@
         </div>
       </div>
     </div>`;
-    wireWeight(k); wireWaterExercise(k); photoThumbs();
+    wireWeight(k); photoThumbs();
 
     $('#datePick').addEventListener('change', e => { if (e.target.value) { UI.date = e.target.value; render(); } });
   }
@@ -653,19 +862,8 @@
     else if (act === 'go-forecast') nav('forecast');
     else if (act === 'add') { openAdd({ meal: a.dataset.meal, date: UI.date }); if (a.dataset.fav) setTab('fav'); else if (a.dataset.meal === 'Supplements') setTab('sup'); }
     else if (act === 'quick-add') quickAdd(a.dataset.meal, UI.date);
-    else if (act === 'water') {
-      const m = P().dayMeta[UI.date] || (P().dayMeta[UI.date] = {});
-      m.water = Math.max(0, (m.water || 0) + Number(a.dataset.ml)); save(); render();
-    }
-    else if (act === 'ex-add') {
-      const name = $('#exAct').value, mn = Number($('#exMin').value);
-      if (!(mn > 0)) { toast('Type how many minutes.'); return; }
-      const met = (EXERCISES.find(x => x[0] === name) || [, 5])[1];
-      const kc = Number($('#exKcal').value) > 0 ? Number($('#exKcal').value) : Math.round(met * (currentWeight() || 75) * mn / 60);
-      const m = P().dayMeta[UI.date] || (P().dayMeta[UI.date] = {});
-      m.ex = [...(m.ex || []), { id: uid(), name, min: mn, kcal: kc }]; save(); render();
-      toast(`Logged ${name.toLowerCase()}: ${fmt(mn)} min, ${fmt(kc)} kcal.`);
-    }
+    else if (act === 'lift-pick') openExercisePicker(UI.date);
+    else if (act === 'lift-open') openExercise(a.dataset.ex, a.dataset.k || UI.date, a.dataset.id || null);
     else if (act === 'ex-del') { const m = P().dayMeta[UI.date] || {}; m.ex = (m.ex || []).filter(x => x.id !== a.dataset.id); save(); render(); }
     else if (act === 'copy-meal' || act === 'copy-day') {
       const from = (P().diary[addDays(UI.date, -1)] || []).filter(e => act === 'copy-day' || e.meal === a.dataset.meal);
@@ -1501,6 +1699,7 @@
           line2: [{ label: 'Peak heart rate', color: HRPEAK, values: peakHr, unit: 'bpm', fmt: v => v + ' bpm', r: 3 }, { label: 'Average heart rate', color: HRAVG, values: avgHr, unit: 'bpm', fmt: v => v + ' bpm', r: 3 }] })}`
           : `<p class="muted">Connect ${esc(P().name)}'s Garmin on the Garmin tab to see sleep, average heart rate and peak heart rate for each day here.</p>`}
       </div>
+      <div style="margin-top:16px">${strengthPanel()}</div>
 
       <div class="grid-2" style="margin-top:16px">
         <div class="panel">
@@ -2469,6 +2668,11 @@
             <p class="small"><a href="https://fdc.nal.usda.gov/api-key-signup" target="_blank">Get a free USDA key</a></p>
           </div>
           <div class="panel">
+            <h2>Export my data to AI</h2>
+            <p class="muted small" style="margin-top:0">Get a summary of your food, weight, steps and lifts to paste into ChatGPT, Claude or Gemini, and talk your progress through with it.</p>
+            <button class="btn primary" data-action="ai-export">Export to AI</button>
+          </div>
+          <div class="panel">
             <h2>Your data</h2>
             <p class="muted small" style="margin-top:0">Saved on this device and in your account, so it's the same on every device you sign in on. ${SYNC.error ? `<span class="err">${esc(SYNC.error)}</span>` : SYNC.lastSync ? 'Last synced ' + esc(new Date(SYNC.lastSync).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })) + '.' : ''}</p>
             <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-action="sync-now">Sync now</button><button class="btn" data-action="export">Save a backup file</button><button class="btn" data-action="import">Restore from a file</button></div>
@@ -2560,6 +2764,7 @@
     if (act === 'cat') { UI.foodCat = a.dataset.c; renderFoods(); }
     else if (act === 'food') { const f = allFoods().find(x => x.id === a.dataset.id); if (f) foodDetail(f); }
     else if (act === 'new-food') foodForm(null);
+    else if (act === 'ai-export') openAiExport();
     else if (act === 'export') { const r = await api.exportData(); if (r.ok) toast('Backup saved.'); }
     else if (act === 'import') {
       if (!confirm('Restore a backup? This replaces everything currently in the app.')) return;
@@ -2775,7 +2980,7 @@
       const gap = rv.week - meRow.week;
       rival = `<div class="rival">⚔️ This week's rival: <b>${esc(rv.name)}</b> · ${gap > 0 ? `${fmt(gap)} CP ahead of you` : gap < 0 ? `${fmt(-gap)} CP behind you` : 'level with you'}</div>`;
     }
-    const sub = tab === 'week' ? `Consistency points (CP) this week. Resets every Monday. Earn CP for logging, hitting calories and protein, steps, training, water, weigh-ins, your progress photo and quests.` :
+    const sub = tab === 'week' ? `Consistency points (CP) this week. Resets every Monday. Earn CP for logging, hitting calories and protein, steps, training, personal records, weigh-ins, your progress photo and quests.` :
       tab === 'season' ? `Consistency points in Season ${c.season} (the whole of ${c.season}). A new season starts every 1 January.` :
       'How far each person has got from their start weight to their goal (7-day average weight).';
     const leader = Math.max(1, ...list.map(r => val(r) || 0));

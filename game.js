@@ -33,7 +33,7 @@
     T('Rookie', 'common', 1, 'full', 'Log your first full day'),
     T('Day One', 'common', 1, 'photos', 'Take your first progress photo'),
     T('Protein Pup', 'common', 7, 'protein', 'Hit protein on 7 days'),
-    T('Hydrated', 'common', 7, 'water', 'Hit your water goal on 7 days'),
+    T('Iron Starter', 'common', 5, 'liftDays', 'Log a lifting session on 5 days'),
     T('Scale Watcher', 'common', 10, 'weighins', 'Weigh in 10 times'),
     T('Sweat Starter', 'common', 5, 'workouts', 'Train on 5 days'),
     T('Walker', 'common', 10, 'steps8k', 'Hit your step goal on 10 days'),
@@ -46,7 +46,7 @@
     T('Meal Prepper', 'rare', 50, 'full', 'Log 50 full days'),
     T('Gym Rat', 'rare', 30, 'workouts', 'Train on 30 days'),
     T('Step Lord', 'rare', 30, 'steps10k', 'Hit your step goal on 30 days'),
-    T('Hydro Homie', 'rare', 30, 'water', 'Hit your water goal on 30 days'),
+    T('PR Hunter', 'rare', 20, 'prs', 'Set 20 personal records'),
     T('Clean Plate', 'rare', 30, 'within', 'Land within 10% of your calories on 30 days'),
     T('Snapshot', 'rare', 30, 'photos', 'Take 30 progress photos'),
     T('Locked In', 'rare', 14, 'bestLog', 'Reach a 14-day logging streak'),
@@ -99,7 +99,7 @@
     { id: 'meals3', text: 'Log breakfast, lunch and dinner', f: d => { const m = new Set(d.entries.map(e => e.meal)); const n = ['Breakfast', 'Lunch', 'Dinner'].filter(x => m.has(x)).length; return [n === 3, `${n} / 3`]; } },
     { id: 'early', text: 'Log your first food before 11am', f: d => [d.entries.some(e => new Date(e.at || 0).getHours() < 11 && keyOf(new Date(e.at || 0)) === d.k), ''] },
     { id: 'complete', text: 'Finish logging and mark your day complete', f: d => [d.complete, ''] },
-    { id: 'water', text: 'Hit your water goal', f: d => [d.water >= d.waterGoal, `${(d.water / 1000).toFixed(1)} / ${(d.waterGoal / 1000).toFixed(1)} L`] },
+    { id: 'pr', text: 'Beat a personal record in the gym', f: d => [d.prs > 0, d.prs ? d.prs + ' PR' + (d.prs > 1 ? 's' : '') : ''], needs: 'lifts' },
     { id: 'weigh', text: 'Weigh in', f: d => [d.weighed, ''] },
     { id: 'photo', text: 'Take today\'s progress photo', f: d => [d.photo, ''] },
     { id: 'workout', text: 'Train today and log it', f: d => [d.workout, ''] },
@@ -153,15 +153,16 @@
       const g = ctx.garmin(k);
       const full = !!meta.complete || (k < ctx.today() && t.kcal >= tg.kcal * 0.5 && entries.length >= 2);
       const stepGoal = (g && g.stepGoal) || 8000;
-      return { k, entries, t, tg, full, g, water: meta.water || 0, waterGoal: ctx.waterGoal(),
-        workout: (meta.ex || []).length > 0 || !!(g && (g.activities || []).length), weighed: p.weights[k] != null, photo: ctx.photoDays().has(k),
+      return { k, entries, t, tg, full, g, lifts: (meta.lifts || []).length, prs: meta.prs || 0,
+        workout: (meta.ex || []).length > 0 || (meta.lifts || []).length > 0 || !!(g && (g.activities || []).length), weighed: p.weights[k] != null, photo: ctx.photoDays().has(k),
         complete: !!meta.complete, stepGoal, stepsOk: !!(g && (g.steps || 0) >= stepGoal),
         reacted: ((p.game || {}).reactedDays || []).includes(k) };
     }
-    const Q_TARGET = ['protein', 'within5', 'carbfat', 'macros'], Q_HABIT = ['meals3', 'early', 'complete', 'water', 'weigh', 'photo'];
+    const Q_TARGET = ['protein', 'within5', 'carbfat', 'macros'], Q_HABIT = ['meals3', 'early', 'complete', 'weigh', 'photo'];
     function questsFor(k) {
       const hasG = !!ctx.garmin(k) || !!ctx.garmin(addD(k, -1)), hasF = ctx.hasFriends();
-      const pool = QUESTS.filter(q => (q.needs !== 'garmin' || hasG) && (q.needs !== 'friends' || hasF));
+      const meta = ctx.P().dayMeta || {}, hasL = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].some(i => ((meta[addD(k, -i)] || {}).lifts || []).length);
+      const pool = QUESTS.filter(q => (q.needs !== 'garmin' || hasG) && (q.needs !== 'friends' || hasF) && (q.needs !== 'lifts' || hasL));
       const r = rng('q|' + k + '|' + ctx.uid());
       const take = list => { const l = list.filter(q => !picks.includes(q)); return l.length ? l[Math.floor(r() * l.length)] : null; };
       const picks = [];
@@ -180,7 +181,7 @@
       add('protein', 'Hit your protein', 15, any && t.p >= tg.p * 0.95, `${Math.round(t.p)} / ${Math.round(tg.p)} g`);
       add('steps', 'Hit your step goal', 10, d.stepsOk, d.g && d.g.steps != null ? `${d.g.steps.toLocaleString('en-GB')} / ${d.stepGoal.toLocaleString('en-GB')} steps` : 'No step data');
       add('workout', 'Trained', 10, d.workout);
-      add('water', 'Hit your water goal', 5, d.water >= d.waterGoal);
+      add('pr', 'Set a personal record', 5, d.prs > 0, d.prs ? d.prs + ' PR' + (d.prs > 1 ? 's' : '') : '');
       add('weigh', 'Weighed in', 5, d.weighed);
       add('photo', 'Took your progress photo', 10, d.photo);
       const qs = questsFor(k).map(q => { const [ok, prog] = q.f(d); return { ...q, ok, prog }; });
@@ -242,11 +243,11 @@
       xp += (g.bonusXp || 0);
       const lv = levelOf(xp);
       // lifetime stats for titles
-      const st = { full: 0, protein: 0, water: 0, weighins: 0, workouts: 0, steps8k: 0, steps10k: 0, early: 0, weekends: 0, within: 0, perfect: 0, sGrades: 0, quests: 0, bestLog: 0, bestProt: 0, maxRating: 0 };
+      const st = { full: 0, protein: 0, liftDays: 0, prs: 0, weighins: 0, workouts: 0, steps8k: 0, steps10k: 0, early: 0, weekends: 0, within: 0, perfect: 0, sGrades: 0, quests: 0, bestLog: 0, bestProt: 0, maxRating: 0 };
       let run = 0, prun = 0, win = [];
       for (const x of Object.keys(days).sort()) {
         const d = days[x], ok = id => (d.items.find(i => i.id === id) || {}).ok;
-        if (d.d.full) st.full++; if (ok('protein')) st.protein++; if (ok('water')) st.water++; if (ok('weigh')) st.weighins++; if (ok('workout')) st.workouts++;
+        if (d.d.full) st.full++; if (ok('protein')) st.protein++; if (d.d.lifts) st.liftDays++; st.prs += d.d.prs || 0; if (ok('weigh')) st.weighins++; if (ok('workout')) st.workouts++;
         if (ok('steps')) st.steps8k++; if (d.d.stepsOk) st.steps10k++; if (ok('calories')) st.within++; if (ok('calories') && ok('protein')) st.perfect++;
         if (d.d.entries.some(e => new Date(e.at || 0).getHours() < 11 && keyOf(new Date(e.at || 0)) === x)) st.early++;
         if (d.d.full && [0, 6].includes(dOf(x).getDay())) st.weekends++;

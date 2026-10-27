@@ -7,7 +7,8 @@ TRACK EVERYTHING THAT MATTERS
 • Scan barcodes to log packaged food in seconds
 • Thousands of foods plus supermarket products, recipes, smoothies, soups and yoghurt bowls
 • Vitamins and minerals, with warnings for supplements that go past safe limits
-• Water, workouts and weigh-ins
+• Gym logging with 750+ exercises, progressive overload and PRs
+• Daily weigh-ins
 • Steps, walking distance and active calories from Apple Health
 
 GET REWARDED FOR SHOWING UP
@@ -26,6 +27,7 @@ SEE YOUR PROGRESS
 • Take a daily progress photo, saved only on your phone
 • Turn your photos into a transformation video with music
 • See where your weight is heading with projections from your real data
+• Export your data to ChatGPT, Claude or Gemini and talk your progress through
 • Training-day and rest-day macros, with suggested adjustments as you go
 
 PRIVATE BY DESIGN

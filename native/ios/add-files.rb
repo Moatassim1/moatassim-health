@@ -5,7 +5,7 @@ target = proj.targets.find { |t| t.name == 'App' }
 synced = proj.objects.any? { |o| o.isa == 'PBXFileSystemSynchronizedRootGroup' }
 group = proj.main_group.find_subpath('App', false) || proj.main_group
 unless synced
-  %w[GGNativePlugin.swift GGViewController.swift].each do |f|
+  %w[GGNativePlugin.swift].each do |f|
     next if group.files.any? { |x| x.path == f }
     ref = group.new_reference(f)
     target.add_file_references([ref])

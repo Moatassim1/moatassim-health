@@ -21,7 +21,7 @@ jobs:
           npm run www
           npx cap add ios --packagemanager SPM || npx cap add ios
           npx cap sync ios
-          bash native/setup-ios.sh > /dev/null
+          bash native/setup-ios.sh | grep "::notice" || true
           echo "::notice::capacitor $(npx cap --version) · $(npm ls @capacitor/ios --depth=0 | grep ios)"
       - name: Build for simulator
         run: |

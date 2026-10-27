@@ -20,10 +20,18 @@ pb "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string com.gggains.app"
 pb "Delete :NSHealthShareUsageDescription"; pb "Add :NSHealthShareUsageDescription string GG Gains reads your steps, walking distance and active calories from Apple Health to show them in your diary and count them towards your step goal."
 pb "Delete :NSHealthUpdateUsageDescription"; pb "Add :NSHealthUpdateUsageDescription string GG Gains does not write to Apple Health."
 # Native features (Sign in with Apple, Apple Health)
-cp native/ios/GGNativePlugin.swift native/ios/GGViewController.swift native/ios/App.entitlements "$APP/"
+cp native/ios/GGNativePlugin.swift native/ios/App.entitlements "$APP/"
 gem list -i xcodeproj >/dev/null 2>&1 || sudo gem install xcodeproj --no-document
 ruby native/ios/add-files.rb 2>&1 | tail -5 | sed 's/^/::notice::ruby: /'
-sed -i '' 's/customClass="CAPBridgeViewController" customModule="Capacitor"/customClass="GGViewController" customModule="App" customModuleProvider="target"/' "$APP/Base.lproj/Main.storyboard"
+# Register GG Gains' own plugin the same way Capacitor registers installed plugins (packageClassList).
+python3 - "$APP/capacitor.config.json" <<'PY'
+import json, sys
+p = sys.argv[1]; c = json.load(open(p))
+l = c.get('packageClassList') or []
+if 'GGNativePlugin' not in l: l.append('GGNativePlugin')
+c['packageClassList'] = l; json.dump(c, open(p, 'w'), indent=2)
+print('::notice::packageClassList: ' + ', '.join(l))
+PY
 echo "::notice::Storyboard: $(grep -o 'customClass="[A-Za-z]*"' "$APP/Base.lproj/Main.storyboard" | head -3 | tr '\n' ' ')"
 # Icon and splash
 ICON=$(ls "$APP"/Assets.xcassets/AppIcon.appiconset/*.png | head -1)

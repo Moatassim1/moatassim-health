@@ -71,7 +71,7 @@ def age_rating():
              'medicalOrTreatmentInformation', 'profanityOrCrudeHumor', 'sexualContentGraphicAndNudity', 'sexualContentOrNudity', 'violenceCartoonOrFantasy',
              'violenceRealistic', 'violenceRealisticProlongedGraphicOrSadistic', 'gunsOrOtherWeapons']}
     attrs.update({'gambling': False, 'unrestrictedWebAccess': False, 'lootBox': False, 'messagingAndChat': False, 'userGeneratedContent': True,
-                  'advertising': False, 'healthOrWellnessTopics': True, 'parentalControls': False, 'ageAssurance': False})
+                  'advertising': False, 'healthOrWellnessTopics': True, 'parentalControls': False, 'ageAssurance': False, 'socialMedia': True})
     for _ in range(8):
         try:
             call('PATCH', f'/v1/ageRatingDeclarations/{ar["id"]}', {'data': {'type': 'ageRatingDeclarations', 'id': ar['id'], 'attributes': attrs}}); return

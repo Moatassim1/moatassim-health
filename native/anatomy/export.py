@@ -38,9 +38,9 @@ BODY_MUSCLES = ['Frontalis muscle', 'Occipitalis muscle', 'Temporalis muscle', '
   'Subscapularis muscle', 'Iliacus muscle', 'Psoas major', 'Obturator externus']
 BONE_COLS = {'Right hand', 'Left hand', 'Right foot', 'Left foot', 'Head', 'Mandible', 'Bones of hand', 'Bones of foot'}
 SKIP_BONE = re.compile(r'teeth|tooth|incisor|canine|molar|ossicle|incus|malleus|stapes|hyoid|cartilage|ethmoid|sphenoid|vomer|concha|lacrimal|palatine|crista', re.I)
-TARGET = {'body': 42000}
+TARGET = {'body': 15000, 'forearms': 3200, 'abdominals': 3000, 'quadriceps': 3000, 'calves': 3000}
 DEEP_SKIP = re.compile(r'bursa|sheath|fascia|septum|retinacul|aponeurosis|tract|ligament|linea|arch|tendon|palat|pharyn|glossus|tongue|laryn|aryten|thyro|crico|rectus muscle$|oblique muscle$|inferior oblique|superior oblique|levator palpebrae|tarsus|auricular|ossicle|stapedius|tensor tympani|diaphragm|anal|perine|levator ani|coccygeus|pubo|iliococcyg|sphincter|uvula|digastric|mylohyoid|geniohyoid|stylohyoid|pterygoid|trochlea|intercostal|transversus thoracis|levatores', re.I)
-DEFAULT_TARGET = 5200
+DEFAULT_TARGET = 2200
 SIDE = re.compile(r'^(.*)\.([lr])$')
 
 def base_side(name):
@@ -98,7 +98,7 @@ for o in bpy.context.view_layer.objects: o.select_set(False)
 for o in made: o.select_set(True)
 bpy.context.view_layer.objects.active = made[0]
 bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'body3d.glb'), export_format='GLB', use_selection=True, export_apply=True,
-                          export_normals=True, export_texcoords=False, export_materials='NONE', export_colors=False, export_yup=True)
+                          export_normals=False, export_texcoords=False, export_materials='NONE', export_colors=False, export_yup=True)
 report['size'] = os.path.getsize(os.path.join(OUT, 'body3d.glb'))
 json.dump(report, open(os.path.join(OUT, 'report.json'), 'w'), indent=1)
 print('done', report['size'])

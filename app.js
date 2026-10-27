@@ -506,7 +506,25 @@
   const favEx = () => P().profile.favEx || (P().profile.favEx = []);
   function toggleFav(id) { const f = favEx(), i = f.indexOf(id); if (i >= 0) f.splice(i, 1); else f.unshift(id); save(); return i < 0; }
   const muscleFill = (p, s) => Object.assign({}, ...(s || []).map(m => ({ [m]: MUS_PINK })), ...(p || []).map(m => ({ [m]: MUS_RED })));
-  const thumb = (x, cls) => x && x.act ? `<span class="ex-act-ic ${cls || ''}">${x.ic}</span>` : window.GGBody ? GGBody.svg({ view: GGBody.viewFor(x ? x.p : []), fill: muscleFill(x && x.p, x && x.s), cls: 'bm-thumb ' + (cls || '') }) : '';
+  // The figure: built from sex, height, weight and strength (best lifts relative to body weight).
+  let bodyCache = null;
+  function bodyOpts() {
+    const pr = P().profile, kg = currentWeight() || pr.weightKg, fem = pr.sex === 'female';
+    const key = [pr.sex, pr.heightCm, kg, (window.GG_EXERCISES ? 1 : 0)].join('|');
+    if (bodyCache && bodyCache.key === key && Date.now() - bodyCache.t < 1500) return bodyCache.v;
+    const UP = new Set(['chest', 'shoulders', 'lats', 'middle back', 'triceps']), LO = new Set(['quadriceps', 'hamstrings', 'glutes']);
+    let up = 0, lo = 0;
+    for (const m of Object.values(P().dayMeta || {})) for (const l of (m && m.lifts) || []) {
+      const b = bestSet(l.sets); if (!b.s || !(b.s.kg > 0) || !(kg > 0)) continue;
+      const r = b.v / kg, mp = musclesOf(l).p;
+      if (mp.some(x => UP.has(x)) && !/fly|raise|kickback|pushdown|extension/i.test(l.name)) up = Math.max(up, r);
+      if (mp.some(x => LO.has(x)) && !/leg press|hack|calf|extension|curl|machine|smith/i.test(l.name)) lo = Math.max(lo, r);
+    }
+    const lvl = (r, a, b) => Math.max(0, Math.min(1, (r - a) / (b - a)));
+    const v = { sex: fem ? 'female' : 'male', heightCm: pr.heightCm, weightKg: kg, mu: fem ? lvl(up, 0.3, 0.9) : lvl(up, 0.5, 1.35), ml: fem ? lvl(lo, 0.5, 1.6) : lvl(lo, 0.8, 2.2), up, lo };
+    bodyCache = { key, v, t: Date.now() }; return v;
+  }
+  const thumb = (x, cls) => x && x.act ? `<span class="ex-act-ic ${cls || ''}">${x.ic}</span>` : window.GGBody ? GGBody.svg({ view: GGBody.viewFor(x ? x.p : []), body: bodyOpts(), fill: muscleFill(x && x.p, x && x.s), cls: 'bm-thumb ' + (cls || '') }) : '';
 
   // ---- Training card in the diary: sets are logged right here.
   function liftBlock(l, k) {
@@ -611,7 +629,11 @@
       const all = window.GG_EXERCISES, q = XP.q.trim().toLowerCase(), favs = favEx();
       const words = q.split(/\s+/).filter(Boolean);
       let list = XP.g === 'fav' ? favs.map(exById).filter(Boolean) : all.filter(x => (!XP.g || x.g === XP.g) && (!XP.m || x.m === XP.m));
-      if (words.length) list = list.filter(x => words.every(w => (x.n + ' ' + x.e + ' ' + x.p.join(' ')).toLowerCase().includes(w)));
+      const ALIAS = { lower: ['lower', 'decline'], upper: ['upper', 'incline'], pec: ['pec', 'chest'], pecs: ['chest'], abs: ['abdominal', 'crunch', 'plank'], quads: ['quadriceps'], hammies: ['hamstring'], delts: ['shoulder', 'delt'], lat: ['lat'], legs: ['leg', 'squat', 'quadriceps', 'hamstring'], bicep: ['bicep', 'curl'], tricep: ['tricep'] };
+      const hay = x => (x.n + ' ' + x.e + ' ' + x.p.join(' ') + ' ' + x.s.join(' ') + ' ' + x.g).toLowerCase();
+      const match = L => L.filter(x => { const h = hay(x); return words.every(w => (ALIAS[w] || [w]).some(a => h.includes(a))); });
+      XP.wide = false;
+      if (words.length) { const inG = match(list); if (!inG.length && (XP.g || XP.m) && XP.g !== 'fav') { list = match(all); XP.wide = list.length > 0; } else list = inG; }
       if (q) list.sort((a, b) => ((a.pop != null ? 0 : 1) - (b.pop != null ? 0 : 1)) || (b.n.toLowerCase().startsWith(q) - a.n.toLowerCase().startsWith(q)) || ((a.pop ?? 999) - (b.pop ?? 999)) || (a.n.length - b.n.length));
       const plain = !q && !XP.g && !XP.m;
       const favL = plain ? favs.map(exById).filter(Boolean) : [], recent = plain ? recentIds.filter(id => !favs.includes(id)).map(exById).filter(Boolean) : [];
@@ -623,6 +645,7 @@
         ${favL.length ? `<div class="ex-sec">★ Favourites</div>${favL.map(row).join('')}` : ''}
         ${recent.length ? `<div class="ex-sec">Recent</div>${recent.map(row).join('')}` : ''}
         ${favL.length || recent.length ? '<div class="ex-sec">All exercises</div>' : ''}
+        ${XP.wide ? `<p class="faint small" style="margin:0">Nothing in ${XP.g === 'Cardio' ? 'Cardio & sports' : esc(XP.g || 'this filter')}, so showing matches from all exercises.</p>` : ''}
         <div class="ex-list-wrap">${list.slice(0, XP.show).map(row).join('') || (XP.g === 'fav' ? '<p class="muted small">No favourites yet. Tap ☆ next to any exercise to keep it here.</p>' : '<p class="muted small">No exercises match. Try another word.</p>')}</div>
         ${list.length > XP.show ? `<button class="btn ghost wide" data-x="more">Show more (${list.length - XP.show})</button>` : ''}`;
       const qi = $('#exQ'); qi.addEventListener('input', () => { XP.q = qi.value; XP.show = 40; const pos = qi.selectionStart; draw(); const n = $('#exQ'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (_) {} });
@@ -654,7 +677,7 @@
       const fav = favEx().includes(exId);
       card.innerHTML = `<div class="modal-head"><h2>${esc(x.n)}</h2><button class="ex-star big${fav ? ' on' : ''}" data-x="fav" aria-label="${fav ? 'Remove from' : 'Add to'} favourites">${fav ? '★' : '☆'}</button><button class="btn ghost" data-x="close">Close</button></div>
       <div class="modal-body">
-        ${x.act ? `<div class="ex-act-hero">${x.ic}</div>` : `<div class="ex-demo">${GGBody.svg({ view: 'both', fill: muscleFill(x.p, x.s), cls: 'bm-big' })}</div>
+        ${x.act ? `<div class="ex-act-hero">${x.ic}</div>` : `<div class="ex-demo">${GGBody.svg({ view: 'both', body: bodyOpts(), fill: muscleFill(x.p, x.s), cls: 'bm-big' })}</div>
         <div class="bm-legend"><span><i style="background:${MUS_RED}"></i>Main muscle${x.p.length > 1 ? 's' : ''}: ${x.p.map(p => esc(GGBody.NAMES[p] || cap(p))).join(', ')}</span>${x.s.length ? `<span><i style="background:${MUS_PINK}"></i>Also works: ${x.s.map(p => esc(GGBody.NAMES[p] || cap(p))).join(', ')}</span>` : ''}</div>
         <div class="chips ex-musc">${x.m ? `<span class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</span>` : ''}${x.e ? `<span class="chip">${esc(cap(x.e))}</span>` : ''}${x.l ? `<span class="chip">${esc(cap(x.l))}</span>` : ''}</div>`}
         ${x.i && x.i.length ? `<details class="ex-how"><summary>How to do it</summary><ol>${x.i.map(t => `<li>${esc(t)}</li>`).join('')}</ol></details>` : ''}
@@ -1013,6 +1036,15 @@
   function closeModal() {
     if (pendingRender) { pendingRender = false; setTimeout(render, 0); } modal.hidden = true; card.innerHTML = ''; card.className = 'modal-card'; card.style.width = ''; card.onclick = null; M = null; }
   card.addEventListener('click', e => onModalClick(e));
+  // While a sheet is open the page behind it must not move (iOS scrolls it when the keyboard opens).
+  let lockY = null;
+  new MutationObserver(() => {
+    const open = !modal.hidden, b = document.body;
+    if (open && lockY == null) { lockY = window.scrollY; Object.assign(b.style, { position: 'fixed', top: -lockY + 'px', left: '0', right: '0', width: '100%' }); }
+    else if (!open && lockY != null) { const y = lockY; lockY = null; Object.assign(b.style, { position: '', top: '', left: '', right: '', width: '' }); window.scrollTo(0, y); }
+  }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+  // Typing in a sheet on iPhone: keep the sheet above the keyboard.
+  if (window.visualViewport) visualViewport.addEventListener('resize', () => { document.documentElement.style.setProperty('--vvh', visualViewport.height + 'px'); });
   modal.addEventListener('mousedown', e => { if (e.target === modal) closeModal(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
 
@@ -1826,7 +1858,7 @@
         <button class="pf-tile" data-action="pf-tab" data-t="training"><div class="pf-big">🏋️</div><div><small>Gym sessions · ${esc(rangeLabel(PF.mus).toLowerCase())}</small><b class="num">${ms ? ms.sessions : 0}</b><span class="faint">${ms ? `${fmt(ms.sets)} sets · ${ms.prs} PR${ms.prs === 1 ? '' : 's'}` : ''}</span></div></button>
       </div>
       ${ms ? `<div class="pf-card pf-mini" data-action="pf-tab" data-t="training" role="button">
-        <div class="pf-mini-map">${GGBody.svg({ view: 'both', fill: Object.fromEntries(Object.entries(ms.perWeek).map(([m, w]) => [m, musLevel(w).col])), cls: 'bm-mid' })}</div>
+        <div class="pf-mini-map">${GGBody.svg({ view: 'both', body: bodyOpts(), fill: Object.fromEntries(Object.entries(ms.perWeek).map(([m, w]) => [m, musLevel(w).col])), cls: 'bm-mid' })}</div>
         <div class="pf-mini-t"><h2>Muscle balance</h2>${trained ? `<p class="muted small">${esc(rangeLabel(PF.mus))}.${focus.length ? ` Train next: <b>${focus.slice(0, 3).map(m => esc(GGBody.NAMES[m])).join(', ')}</b>.` : ' Every big muscle is getting work. Nice.'}</p>` : '<p class="muted small">Log your lifts in the diary and this map lights up with the muscles you train, and the ones you skip.</p>'}<span class="pf-link">Open training ›</span></div>
       </div>` : ''}
       <div class="pf-sec-head"><h2>Metabolism</h2></div>
@@ -1908,7 +1940,7 @@
     for (const [k, m] of Object.entries(P().dayMeta || {})) for (const l of (m && m.lifts) || []) if (done(l.sets).length) (sessions[l.ex] = sessions[l.ex] || { name: l.name, l, list: [] }).list.push({ k, best: bestSet(l.sets).v, set: bestSet(l.sets).s });
     const rows = Object.entries(sessions).map(([id, s]) => { s.list.sort((a, b) => a.k < b.k ? -1 : 1); const first = s.list[0], lastS = s.list[s.list.length - 1], top = s.list.reduce((a, b) => b.best > a.best ? b : a); return { id, ...s, first, last: lastS, top, change: first.best ? (lastS.best - first.best) / first.best * 100 : 0 }; })
       .sort((a, b) => a.last.k < b.last.k ? 1 : -1).slice(0, 15);
-    const mapSide = v => `<div class="bm-side"><span>${v === 'front' ? 'Front' : 'Back'}</span>${GGBody.svg({ view: v, fill, cls: 'bm-perf', tap: true })}</div>`;
+    const mapSide = v => `<div class="bm-side"><span>${v === 'front' ? 'Front' : 'Back'}</span>${GGBody.svg({ view: v, fill, body: bodyOpts(), cls: 'bm-perf', tap: true })}</div>`;
     return `
       <div class="pf-sec-head"><h2>Muscle balance</h2>${rangeSel('mus', PF.mus)}</div>
       <div class="pf-stats4"><div><b class="num">${ms.sessions}</b><small>sessions</small></div><div><b class="num">${fmt(ms.sets)}</b><small>sets</small></div><div><b class="num">${ms.vol >= 10000 ? fmt(ms.vol / 1000, 1) + 't' : fmt(ms.vol) + ' kg'}</b><small>lifted</small></div><div><b class="num">${ms.prs}</b><small>PRs 🏆</small></div></div>
@@ -1916,6 +1948,7 @@
         <div class="bm-wrap" id="bmWrap">${mapSide('front')}${mapSide('back')}</div>
         <div class="bm-key">${MUS_LEVELS.map(l => `<span><i style="background:${l.col}"></i><b>${l.label}</b><small>${l.note}</small></span>`).join('')}</div>
         <p class="faint small" style="margin:6px 0 0;text-align:center">Tap a muscle. Main muscle of an exercise = 1 set, helper muscle = ½ set.</p>
+        ${(() => { const b = bodyOpts(); const pct = v => Math.round(v * 100); return `<div class="bm-me"><b>Your figure</b><span>Shaped from your ${b.heightCm ? fmt(b.heightCm) + ' cm' : 'height'}, ${b.weightKg ? fmt(b.weightKg, 1) + ' kg' : 'weight'} and strength. It gets more muscular as your lifts go up.</span><div class="bm-lv"><span>Upper body</span><div class="bar"><i style="width:${Math.max(3, pct(b.mu))}%"></i></div><b>${pct(b.mu)}%</b></div><div class="bm-lv"><span>Lower body</span><div class="bar"><i style="width:${Math.max(3, pct(b.ml))}%"></i></div><b>${pct(b.ml)}%</b></div><small class="faint">${b.up || b.lo ? `Based on your best ${b.up ? `upper lift ≈ ${fmt(b.up, 2)}× body weight` : ''}${b.up && b.lo ? ' and ' : ''}${b.lo ? `lower lift ≈ ${fmt(b.lo, 2)}× body weight` : ''} (estimated 1-rep max).` : 'Log weighted lifts like bench press and squat to grow it.'}</small></div>`; })()}
       </div>
       <div class="pf-card pf-mus" id="pfMus">
         <div class="pf-mus-head"><span class="pf-mus-dot" style="background:${lv.col}"></span><div><h3>${esc(GGBody.NAMES[sel])}</h3><span class="muted small">${lv.label} · ${fmt(ms.perWeek[sel], 1)} sets a week${ms.last[sel] ? ` · last trained ${esc(shortDate(ms.last[sel]))}` : ' · not trained in this period'}</span></div></div>

@@ -1180,7 +1180,7 @@ html, body { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-si
 .bm-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .bm-side { display: flex; flex-direction: column; align-items: center; }
 .bm-side > span { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); margin-bottom: 4px; }
-.bm-perf { width: 100%; max-width: 150px; height: auto; display: block; }
+.bm-perf { width: 100%; max-width: 135px; height: auto; display: block; }
 .bm-perf .bm-m:hover { opacity: .8; }
 .bm-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px 12px; margin-top: 14px; }
 .bm-key span { display: flex; align-items: center; flex-wrap: wrap; font-size: 13px; }
@@ -1287,3 +1287,13 @@ button.pf-tile:active { transform: scale(.97); }
 .str-val small { font-size: 12px; font-weight: 600; }
 .str-val .up { color: var(--ok); } .str-val .down { color: var(--low); }
 @media (max-width: 420px) { .pf-tile b { font-size: 18px; } .pf-big { width: 40px; height: 40px; font-size: 22px; } .ring { width: 46px; height: 46px; } }
+
+/* exercise picker keeps its size while you type; figure info */
+.modal-card.ex-pick { height: 90vh; height: 90dvh; }
+.modal { overscroll-behavior: contain; }
+.bm-me { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 6px; }
+.bm-me > span { font-size: 13px; color: var(--muted); }
+.bm-lv { display: grid; grid-template-columns: 86px 1fr 40px; align-items: center; gap: 8px; font-size: 13px; }
+.bm-lv .bar { height: 8px; }
+.bm-lv .bar i { background: linear-gradient(90deg, #F5B841, #E8473C); }
+.bm-lv b { text-align: right; }

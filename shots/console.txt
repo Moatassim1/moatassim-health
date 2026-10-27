@@ -1,0 +1,7 @@
+⚡️  Loading app at capacitor://localhost...
+⚡️  To Native ->  App addListener 108341612
+⚡️  To Native ->  StatusBar setStyle 108341613
+⚡️  TO JS {}
+⚡️  WebView loaded
+⚡️  To Native ->  GGNative healthAvailable 108341614
+⚡️  TO JS {"available":true}

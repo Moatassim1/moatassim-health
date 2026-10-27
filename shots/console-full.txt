@@ -1,0 +1,9 @@
+2026-10-27 15:16:47.826 App[11191:35889] DiskCookieStorage changing policy from 2 to 0, cookie file: file:///Users/runner/Library/Developer/CoreSimulator/Devices/DC4CD8B3-4457-4153-9087-A0D7A2F9BFD9/data/Containers/Data/Application/58ABC35E-E628-46A4-952E-66876540D6BA/Library/Cookies/com.gggains.app.binarycookies
+⚡️  Loading app at capacitor://localhost...
+SplashScreen.hideSplash: SplashScreen was automatically hidden after default timeout. You should call `SplashScreen.hide()` as soon as your web app is loaded (or increase the timeout). Read more at https://capacitorjs.com/docs/apis/splash-screen#hiding-the-splash-screen
+⚡️  To Native ->  App addListener 108341612
+⚡️  To Native ->  StatusBar setStyle 108341613
+⚡️  TO JS {}
+⚡️  WebView loaded
+⚡️  To Native ->  GGNative healthAvailable 108341614
+⚡️  TO JS {"available":true}

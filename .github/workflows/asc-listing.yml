@@ -1,0 +1,22 @@
+# Fills the App Store listing (text, categories, age rating, screenshots, price, build) via the App Store Connect API.
+name: App Store listing
+on:
+  workflow_dispatch:
+    inputs:
+      build:
+        description: 'Build number to attach (empty = newest)'
+        required: false
+        default: ''
+jobs:
+  listing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet pyjwt cryptography requests
+      - name: Update listing
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          BUILD: ${{ inputs.build }}
+        run: python3 native/asc_listing.py

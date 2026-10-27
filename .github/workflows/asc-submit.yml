@@ -1,0 +1,19 @@
+name: App Store submit
+on:
+  workflow_dispatch:
+    inputs:
+      build: { description: 'Build number', required: true }
+      submit: { description: 'Submit for review (yes/no)', required: true, default: 'no' }
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet pyjwt cryptography requests
+      - env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          BUILD: ${{ inputs.build }}
+          SUBMIT: ${{ inputs.submit }}
+        run: python3 native/asc_submit.py

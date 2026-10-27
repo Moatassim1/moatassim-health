@@ -86,7 +86,7 @@ step('age rating', age_rating)
 vers = call('GET', f'/v1/apps/{APP}/appStoreVersions?filter[platform]=IOS&limit=5')['data']
 ver = next((v for v in vers if v['attributes'].get('appStoreState') in ('PREPARE_FOR_SUBMISSION', 'DEVELOPER_REJECTED', 'REJECTED', 'METADATA_REJECTED')), None)
 if not ver:
-    raise SystemExit('No editable version found: ' + json.dumps([v['attributes'] for v in vers])[:500])
+    warn('No editable version: ' + json.dumps([(v['attributes']['versionString'], v['attributes']['appStoreState']) for v in vers])); sys.exit(0)
 VER = ver['id']
 note('Version ' + ver['attributes']['versionString'] + ' state ' + ver['attributes']['appStoreState'])
 

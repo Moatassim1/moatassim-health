@@ -63,6 +63,8 @@
     onResume(cb) { const A = plug('App'); if (A) A.addListener('resume', cb); }
   };
   window.MHNative = N;
+  // No pinch-zoom anywhere (Safari ignores user-scalable=no on its own).
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
   if (!isApp) return;
 
   document.documentElement.classList.add('is-app', 'is-' + N.platform);

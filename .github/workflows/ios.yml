@@ -9,6 +9,10 @@ on:
         description: 'Send the build to TestFlight'
         type: boolean
         default: true
+      app_version:
+        description: 'App version shown in the App Store (e.g. 1.1.0)'
+        type: string
+        default: '1.1.0'
       test_only:
         description: 'Test build only (no signing, no secrets needed)'
         type: boolean
@@ -110,7 +114,7 @@ jobs:
             -archivePath "$RUNNER_TEMP/App.xcarchive" archive \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             DEVELOPMENT_TEAM="$TEAM" PRODUCT_BUNDLE_IDENTIFIER=com.gggains.app \
-            TARGETED_DEVICE_FAMILY=1 MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            TARGETED_DEVICE_FAMILY=1 MARKETING_VERSION=${{ inputs.app_version || '1.1.0' }} CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             | tee "$RUNNER_TEMP/archive.log" | grep -E "error:|warning: .*sign|ARCHIVE|BUILD" || true
           if [ ! -d "$RUNNER_TEMP/App.xcarchive" ]; then
             grep -E "error:|error -|No profiles|No Account|requires a provisioning|Signing" "$RUNNER_TEMP/archive.log" | sort -u | head -15 | while IFS= read -r l; do echo "::error::${l:0:400}"; done

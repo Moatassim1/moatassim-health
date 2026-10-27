@@ -996,6 +996,9 @@
     else if (act === 'cal-open') openCalendar();
     else if (act === 'pf-tab') { PF.tab = a.dataset.t; render(); main.scrollTop = 0; window.scrollTo(0, 0); }
     else if (act === 'pf-mus') { PF.sel = a.dataset.m; renderTrends(); const el = $('#pfMus'); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+    else if (act === 'b3-mode') { set3d(a.dataset.v === '1'); PF.rot = null; renderTrends(); }
+    else if (act === 'b3-view') { if (fig3d) fig3d.view(a.dataset.v); }
+    else if (act === 'b3-spin') { if (fig3d) fig3d.spin(); }
     else if (act === 'pf-add') { UI.date = todayKey(); nav('today'); addLift(a.dataset.ex, todayKey()); toast('Added to today\'s training.'); }
     else if (act === 'ex-del') { const m = P().dayMeta[UI.date] || {}; m.ex = (m.ex || []).filter(x => x.id !== a.dataset.id); save(); render(); }
     else if (act === 'copy-meal' || act === 'copy-day') {
@@ -1833,6 +1836,22 @@
       <div class="pf-tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" class="${k === tab ? 'on' : ''}" data-action="pf-tab" data-t="${k}">${l}</button>`).join('')}</div>
       <div class="pf-body">${body}</div>
     </div>`;
+    if (tab === 'training' && use3d()) mount3d();
+  }
+  // 3D figure (Z-Anatomy model, three.js), loaded only when shown. Falls back to the flat figure if it can't run.
+  const use3d = () => { try { const v = localStorage.getItem('gg.fig3d'); if (v) return v === '1'; } catch (_) {} return P().profile.sex !== 'female'; };
+  const set3d = on => { try { localStorage.setItem('gg.fig3d', on ? '1' : '0'); } catch (_) {} };
+  let fig3d = null;
+  async function mount3d() {
+    const el = $('#bm3d'); if (!el) return;
+    try {
+      const mod = await import('./body3d.js?v=' + encodeURIComponent(VERSION || '1'));
+      if (!el.isConnected) return;
+      const v = await mod.mount(el, { fill: PF._fill || {}, body: bodyOpts(), onTap: k => { PF.sel = k; PF.rot = v.getRot(); renderTrends(); const p = $('#pfMus'); if (p) p.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } });
+      fig3d = v; if (PF.rot != null) v.setRot(PF.rot);
+    } catch (e) {
+      console.warn('3D figure unavailable', e); set3d(false); if (UI.view === 'trends') { renderTrends(); toast('3D isn\'t available on this device, so the flat figure is shown.'); }
+    }
   }
   function perfOverview(st, tg, C) {
     const nd = nutritionData(rangeDays(PF.nut)), avgK = nd.avg('kcal'), avgP = nd.avg('p');
@@ -1940,14 +1959,16 @@
     for (const [k, m] of Object.entries(P().dayMeta || {})) for (const l of (m && m.lifts) || []) if (done(l.sets).length) (sessions[l.ex] = sessions[l.ex] || { name: l.name, l, list: [] }).list.push({ k, best: bestSet(l.sets).v, set: bestSet(l.sets).s });
     const rows = Object.entries(sessions).map(([id, s]) => { s.list.sort((a, b) => a.k < b.k ? -1 : 1); const first = s.list[0], lastS = s.list[s.list.length - 1], top = s.list.reduce((a, b) => b.best > a.best ? b : a); return { id, ...s, first, last: lastS, top, change: first.best ? (lastS.best - first.best) / first.best * 100 : 0 }; })
       .sort((a, b) => a.last.k < b.last.k ? 1 : -1).slice(0, 15);
+    PF._fill = fill;
     const mapSide = v => `<div class="bm-side"><span>${v === 'front' ? 'Front' : 'Back'}</span>${GGBody.svg({ view: v, fill, body: bodyOpts(), cls: 'bm-perf', tap: true })}</div>`;
     return `
       <div class="pf-sec-head"><h2>Muscle balance</h2>${rangeSel('mus', PF.mus)}</div>
       <div class="pf-stats4"><div><b class="num">${ms.sessions}</b><small>sessions</small></div><div><b class="num">${fmt(ms.sets)}</b><small>sets</small></div><div><b class="num">${ms.vol >= 10000 ? fmt(ms.vol / 1000, 1) + 't' : fmt(ms.vol) + ' kg'}</b><small>lifted</small></div><div><b class="num">${ms.prs}</b><small>PRs 🏆</small></div></div>
       <div class="pf-card pf-body-card">
-        <div class="bm-wrap" id="bmWrap">${mapSide('front')}${mapSide('back')}</div>
+        <div class="bm-mode"><div class="seg">${[['1', '3D'], ['0', 'Flat']].map(([v, l]) => `<button class="${(use3d() ? '1' : '0') === v ? 'on' : ''}" data-action="b3-mode" data-v="${v}">${l}</button>`).join('')}</div>${use3d() ? '<div class="bm3d-ctl"><button class="btn ghost" data-action="b3-view" data-v="front">Front</button><button class="btn ghost" data-action="b3-view" data-v="back">Back</button><button class="btn ghost" data-action="b3-spin">↻</button></div>' : ''}</div>
+        ${use3d() ? '<div class="bm3d" id="bm3d"><div class="bm3d-load"><span class="spin"></span>Loading 3D figure…</div></div><p class="faint small bm3d-hint">Drag to turn the body · tap a muscle</p>' : `<div class="bm-wrap" id="bmWrap">${mapSide('front')}${mapSide('back')}</div>`}
         <div class="bm-key">${MUS_LEVELS.map(l => `<span><i style="background:${l.col}"></i><b>${l.label}</b><small>${l.note}</small></span>`).join('')}</div>
-        <p class="faint small" style="margin:6px 0 0;text-align:center">Tap a muscle. Main muscle of an exercise = 1 set, helper muscle = ½ set.</p>
+        <p class="faint small" style="margin:6px 0 0;text-align:center">Tap a muscle. Main muscle of an exercise = 1 set, helper muscle = ½ set.</p>${use3d() ? '<p class="faint small bm-credit">3D anatomy: <a href="https://www.z-anatomy.com" target="_blank" rel="noopener">Z-Anatomy</a> &amp; BodyParts3D, CC BY-SA 4.0</p>' : ''}
         ${(() => { const b = bodyOpts(); const pct = v => Math.round(v * 100); return `<div class="bm-me"><b>Your figure</b><span>Shaped from your ${b.heightCm ? fmt(b.heightCm) + ' cm' : 'height'}, ${b.weightKg ? fmt(b.weightKg, 1) + ' kg' : 'weight'} and strength. It gets more muscular as your lifts go up.</span><div class="bm-lv"><span>Upper body</span><div class="bar"><i style="width:${Math.max(3, pct(b.mu))}%"></i></div><b>${pct(b.mu)}%</b></div><div class="bm-lv"><span>Lower body</span><div class="bar"><i style="width:${Math.max(3, pct(b.ml))}%"></i></div><b>${pct(b.ml)}%</b></div><small class="faint">${b.up || b.lo ? `Based on your best ${b.up ? `upper lift ≈ ${fmt(b.up, 2)}× body weight` : ''}${b.up && b.lo ? ' and ' : ''}${b.lo ? `lower lift ≈ ${fmt(b.lo, 2)}× body weight` : ''} (estimated 1-rep max).` : 'Log weighted lifts like bench press and squat to grow it.'}</small></div>`; })()}
       </div>
       <div class="pf-card pf-mus" id="pfMus">

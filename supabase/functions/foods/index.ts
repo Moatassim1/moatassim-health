@@ -50,6 +50,6 @@ Deno.serve(async (req) => {
     if (Math.random() < 0.02) await admin.from('food_cache').delete().lt('fetched_at', new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString());
     return raw(text);
   } catch (e) {
-    return json({ ok: false, error: 'Server error: ' + (e && e.message) }, 500);
+    console.error(e); return json({ ok: false, error: 'Something went wrong on the server. Please try again.' }, 500);
   }
 });

@@ -298,6 +298,6 @@ Deno.serve(async (req) => {
     }
     return json({ ok: false, error: 'Unknown action' }, 400);
   } catch (e) {
-    return json({ ok: false, error: 'Server error: ' + (e && e.message) }, 500);
+    console.error(e); return json({ ok: false, error: 'Something went wrong on the server. Please try again.' }, 500);
   }
 });

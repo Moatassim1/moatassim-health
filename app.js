@@ -524,7 +524,28 @@
     const v = { sex: fem ? 'female' : 'male', heightCm: pr.heightCm, weightKg: kg, mu: fem ? lvl(up, 0.3, 0.9) : lvl(up, 0.5, 1.35), ml: fem ? lvl(lo, 0.5, 1.6) : lvl(lo, 0.8, 2.2), up, lo };
     bodyCache = { key, v, t: Date.now() }; return v;
   }
-  const thumb = (x, cls) => x && x.act ? `<span class="ex-act-ic ${cls || ''}">${x.ic}</span>` : window.GGBody ? GGBody.svg({ view: GGBody.viewFor(x ? x.p : []), body: bodyOpts(), fill: muscleFill(x && x.p, x && x.s), cls: 'bm-thumb ' + (cls || '') }) : '';
+  // Sections you can fold away in the diary (remembered on this device). Vitamins start folded on phones.
+  // First days: a short checklist so new people know what to do.
+  function startCard() {
+    try { if (localStorage.getItem('gg.start.done') === '1') return ''; } catch (_) {}
+    const p = P(), days = Object.keys(p.diary || {}).filter(k => (p.diary[k] || []).length).length;
+    const steps = [
+      ['Log your first meal', days > 0, 'add', `data-meal="${guessMeal()}"`],
+      ['Log today\'s weight', Object.keys(p.weights || {}).length > 0, 'focus-weight', ''],
+      ['Add a friend to race on the ladder', (F.list || []).some(x => x.status === 'accepted'), 'go-friends-add', ''],
+      ['Log a workout', Object.values(p.dayMeta || {}).some(m => m && ((m.lifts || []).length || (m.ex || []).length)), 'lift-pick', '']];
+    const left = steps.filter(x => !x[1]).length;
+    if (!left || days > 6) { try { localStorage.setItem('gg.start.done', '1'); } catch (_) {} return ''; }
+    return `<div class="panel start-card"><div class="sc-head"><h2>Get started</h2><span class="faint small">${steps.length - left} of ${steps.length} done</span><button class="btn ghost sm" data-action="start-hide" aria-label="Hide the get-started list">Hide</button></div>
+      <ul class="sc-list">${steps.map(([t, d, act, extra]) => `<li class="${d ? 'done' : ''}"><span class="sc-tick" aria-hidden="true">${d ? '✓' : ''}</span>${d ? `<span>${t}</span>` : `<button class="sc-go" data-action="${act}" ${extra}>${t} ›</button>`}</li>`).join('')}</ul></div>`;
+  }
+  const folded = id => { try { const v = localStorage.getItem('gg.fold.' + id); if (v != null) return v === '1'; } catch (_) {} return id === 'vit' && window.innerWidth < 700; };
+  const EX_IMG = 'https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/';
+  // Exercise picture: the real demo photo when the library has one, otherwise the muscle diagram.
+  const thumb = (x, cls) => x && x.act ? `<span class="ex-act-ic ${cls || ''}">${x.ic}</span>` : x && x.im && x.im[0] ? `<img class="ex-ph ${cls || ''}" loading="lazy" src="${EX_IMG}${esc(x.im[0])}" alt="" onerror="this.style.visibility='hidden'">` : window.GGBody ? GGBody.svg({ view: GGBody.viewFor(x ? x.p : []), body: bodyOpts(), fill: muscleFill(x && x.p, x && x.s), cls: 'bm-thumb ' + (cls || '') }) : '';
+  // "Barbell Bench Press - Medium Grip" → main "Barbell Bench Press", variant "Medium grip".
+  const exParts = n => { const i = String(n || '').indexOf(' - '); return i < 0 ? [String(n || ''), ''] : [n.slice(0, i), cap(n.slice(i + 3).toLowerCase())]; };
+  const exTitle = n => { const [a, b] = exParts(n); return b ? `${esc(a)} <span class="ex-var">${esc(b)}</span>` : esc(a); };
 
   // ---- Training card in the diary: sets are logged right here.
   function liftBlock(l, k) {
@@ -535,7 +556,7 @@
     return `<div class="lift" data-lid="${esc(l.id)}">
       <div class="lift-top">
         <button class="lift-thumb" data-action="lift-info" data-ex="${esc(l.ex)}" aria-label="About ${esc(l.name)}">${thumb(x)}</button>
-        <button class="lift-title" data-action="lift-info" data-ex="${esc(l.ex)}"><b>${esc(l.name)}</b><small>${esc(sub)}</small></button>
+        <button class="lift-title" data-action="lift-info" data-ex="${esc(l.ex)}"><b>${exTitle(l.name)}</b><small>${esc(sub)}</small></button>
         <span class="pr-badge"${pr ? '' : ' hidden'}>🏆 PR</span>
         <button class="lift-x" data-action="lift-del" data-id="${esc(l.id)}" aria-label="Remove exercise">✕</button>
       </div>
@@ -577,7 +598,7 @@
     if (box) { const b = box.querySelector('.pr-badge'); if (b) b.hidden = !pr; }
     m.prs = prsOn(k);
     const sum = $('#tcSum'); if (sum) sum.innerHTML = `${m.lifts.length} exercise${m.lifts.length === 1 ? '' : 's'}${m.prs ? ` · <b class="pr-txt">${m.prs} PR${m.prs > 1 ? 's' : ''}</b>` : ''}`;
-    if (pr && !wasPR) { const b = bestSet(l.sets); toast(`🏆 New PR on ${l.name}: ${fmtSet(b.s)}${b.s && b.s.kg > 0 ? ` (≈ ${fmt(b.v, 1)} kg 1RM)` : ''}`); try { navigator.vibrate && navigator.vibrate(60); } catch (_) {} }
+    if (pr && !wasPR) { const b = bestSet(l.sets); toast(`🏆 New PR on ${exParts(l.name)[0]}: ${fmtSet(b.s)}${b.s && b.s.kg > 0 ? ` (≈ ${fmt(b.v, 1)} kg 1RM)` : ''}`); try { navigator.vibrate && navigator.vibrate(60); } catch (_) {} }
     clearTimeout(liftSaveT); liftSaveT = setTimeout(save, 500);
   }
   function addLift(exId, k) {
@@ -637,7 +658,7 @@
       if (q) list.sort((a, b) => ((a.pop != null ? 0 : 1) - (b.pop != null ? 0 : 1)) || (b.n.toLowerCase().startsWith(q) - a.n.toLowerCase().startsWith(q)) || ((a.pop ?? 999) - (b.pop ?? 999)) || (a.n.length - b.n.length));
       const plain = !q && !XP.g && !XP.m;
       const favL = plain ? favs.map(exById).filter(Boolean) : [], recent = plain ? recentIds.filter(id => !favs.includes(id)).map(exById).filter(Boolean) : [];
-      const row = x => `<div class="ex-row${inToday.has(x.id) ? ' in' : ''}" data-x="ex" data-id="${esc(x.id)}" role="button" tabindex="0">${thumb(x)}<span class="ex-row-t"><b>${esc(x.n)}</b><small>${x.act ? `Minutes${x.met ? ' · about ' + fmt(x.met * (currentWeight() || 75) / 60 * 30) + ' kcal / 30 min' : ''}` : esc(cap(x.p[0] || x.g)) + (x.e ? ' · ' + esc(cap(x.e)) : '')}</small></span>${inToday.has(x.id) ? '<i class="ex-in">Added</i>' : x.m ? `<i class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</i>` : ''}<button class="ex-star${favs.includes(x.id) ? ' on' : ''}" data-x="fav" data-id="${esc(x.id)}" aria-label="${favs.includes(x.id) ? 'Remove from' : 'Add to'} favourites">${favs.includes(x.id) ? '★' : '☆'}</button></div>`;
+      const row = x => `<div class="ex-row${inToday.has(x.id) ? ' in' : ''}" data-x="ex" data-id="${esc(x.id)}" role="button" tabindex="0">${thumb(x)}<span class="ex-row-t"><b>${exTitle(x.n)}</b><small>${x.act ? `Minutes${x.met ? ' · about ' + fmt(x.met * (currentWeight() || 75) / 60 * 30) + ' kcal / 30 min' : ''}` : esc(cap(x.p[0] || x.g)) + (x.e ? ' · ' + esc(cap(x.e)) : '')}</small></span>${inToday.has(x.id) ? '<i class="ex-in">Added</i>' : x.m ? `<i class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</i>` : ''}<button class="ex-star${favs.includes(x.id) ? ' on' : ''}" data-x="fav" data-id="${esc(x.id)}" aria-label="${favs.includes(x.id) ? 'Remove from' : 'Add to'} favourites">${favs.includes(x.id) ? '★' : '☆'}</button></div>`;
       card.querySelector('.modal-body').innerHTML = `
         <div class="search-row"><span class="s-ic">🔍</span><input type="search" id="exQ" placeholder="Search, e.g. bench press, squat, sauna" value="${esc(XP.q)}" autocomplete="off"></div>
         <div class="chips ex-chips"><button class="chip ${XP.g === '' ? 'on' : ''}" data-x="g" data-v="">All</button><button class="chip ${XP.g === 'fav' ? 'on' : ''}" data-x="g" data-v="fav">★ Favourites</button>${EX_GROUPS.map(g => `<button class="chip ${XP.g === g ? 'on' : ''}" data-x="g" data-v="${g}">${EX_ICON[g]} ${g === 'Cardio' ? 'Cardio & sports' : g}</button>`).join('')}</div>
@@ -675,10 +696,10 @@
     card.className = 'modal-card ex-sheet';
     const render1 = () => {
       const fav = favEx().includes(exId);
-      card.innerHTML = `<div class="modal-head"><h2>${esc(x.n)}</h2><button class="ex-star big${fav ? ' on' : ''}" data-x="fav" aria-label="${fav ? 'Remove from' : 'Add to'} favourites">${fav ? '★' : '☆'}</button><button class="btn ghost" data-x="close">Close</button></div>
+      card.innerHTML = `<div class="modal-head"><h2>${exTitle(x.n)}</h2><button class="ex-star big${fav ? ' on' : ''}" data-x="fav" aria-label="${fav ? 'Remove from' : 'Add to'} favourites">${fav ? '★' : '☆'}</button><button class="btn ghost" data-x="close">Close</button></div>
       <div class="modal-body">
-        ${x.act ? `<div class="ex-act-hero">${x.ic}</div>` : `<div class="ex-demo">${GGBody.svg({ view: 'both', body: bodyOpts(), fill: muscleFill(x.p, x.s), cls: 'bm-big' })}</div>
-        <div class="bm-legend"><span><i style="background:${MUS_RED}"></i>Main muscle${x.p.length > 1 ? 's' : ''}: ${x.p.map(p => esc(GGBody.NAMES[p] || cap(p))).join(', ')}</span>${x.s.length ? `<span><i style="background:${MUS_PINK}"></i>Also works: ${x.s.map(p => esc(GGBody.NAMES[p] || cap(p))).join(', ')}</span>` : ''}</div>
+        ${x.act ? `<div class="ex-act-hero">${x.ic}</div>` : `${x.im && x.im.length ? `<div class="ex-video" role="img" aria-label="${esc(x.n)} demonstration">${x.im.map((im, i) => `<img src="${EX_IMG}${esc(im)}" alt="" class="${i ? 'f2' : 'f1'}">`).join('')}</div>` : ''}
+        <div class="ex-mus-row"><div class="ex-mus-map">${GGBody.svg({ view: 'both', body: bodyOpts(), fill: muscleFill(x.p, x.s), cls: 'bm-mid' })}</div><div class="bm-legend"><span><i style="background:${MUS_RED}"></i>Main muscle${x.p.length > 1 ? 's' : ''}: ${x.p.map(p => esc(GGBody.NAMES[p] || cap(p))).join(', ')}</span>${x.s.length ? `<span><i style="background:${MUS_PINK}"></i>Also works: ${x.s.map(p => esc(GGBody.NAMES[p] || cap(p))).join(', ')}</span>` : ''}</div></div>
         <div class="chips ex-musc">${x.m ? `<span class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</span>` : ''}${x.e ? `<span class="chip">${esc(cap(x.e))}</span>` : ''}${x.l ? `<span class="chip">${esc(cap(x.l))}</span>` : ''}</div>`}
         ${x.i && x.i.length ? `<details class="ex-how"><summary>How to do it</summary><ol>${x.i.map(t => `<li>${esc(t)}</li>`).join('')}</ol></details>` : ''}
         ${cardio ? `<div class="ex-cardio"><label class="field"><span>Minutes</span><input type="number" inputmode="numeric" id="cxMin" value="${cx ? cx.min : ''}" min="1" max="600" placeholder="e.g. 30"></label><label class="field"><span>Calories (optional)</span><input type="number" inputmode="numeric" id="cxKcal" value="${cx ? cx.kcal : ''}" min="0" max="5000" placeholder="auto"></label></div>`
@@ -731,7 +752,7 @@
       for (let d = 1; d <= days; d++) {
         const k = `${y}-${String(mth).padStart(2, '0')}-${String(d).padStart(2, '0')}`, lg = dayLogged(k), cm = !!(P().dayMeta[k] || {}).complete;
         if (lg) monthLogged++;
-        cells.push(`<button class="cal-d${lg ? ' lg' : ''}${cm ? ' cm' : ''}${k === today ? ' td' : ''}${k === UI.date ? ' sel' : ''}" data-x="d" data-k="${k}" ${k > maxK ? 'disabled' : ''}><span>${d}</span>${lg ? '<i>🔥</i>' : ''}</button>`);
+        cells.push(`<button aria-label="${esc(longDate(k))}${lg ? ', logged' : ''}" class="cal-d${lg ? ' lg' : ''}${cm ? ' cm' : ''}${k === today ? ' td' : ''}${k === UI.date ? ' sel' : ''}" data-x="d" data-k="${k}" ${k > maxK ? 'disabled' : ''}><span>${d}</span>${lg ? '<i>🔥</i>' : ''}</button>`);
       }
       const title = first.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
       card.innerHTML = `<div class="modal-head"><h2>Calendar</h2><button class="btn ghost" data-x="close">Close</button></div>
@@ -947,6 +968,7 @@
         </div>
       </div>
 
+      ${startCard()}
       <div class="grid-2" style="margin-top:18px">
         <div class="panel">
           ${entries.length ? mealsHtml : `<div class="empty-day"><h2>Nothing logged for ${isToday ? 'today' : 'this day'} yet</h2><p>Add what you ate in grams and what you drank in ml. Search the food list, pick from Sainsbury's, Aldi or Co-op products, or look up anything online.</p><button class="btn primary" data-action="add" data-meal="${isToday ? guessMeal() : 'Breakfast'}">Log food</button></div>
@@ -961,8 +983,8 @@
           ${weightCard(k)}
           ${photoCard(k)}
           ${trainingCard(k)}
-          <div class="panel vit-panel">
-            <h2>Vitamins & minerals</h2>
+          <div class="panel vit-panel${folded('vit') ? ' folded' : ''}" data-fold="vit">
+            <h2 class="fold-h" data-action="fold" data-id="vit" role="button" aria-expanded="${!folded('vit')}">Vitamins & minerals<span class="fold-ic" aria-hidden="true">⌄</span></h2>
             ${(() => { const w = dayLimitWarnings(entries); return w.length ? `<div class="limit-warn"><b>⚠ Above a safe upper limit</b>${w.map(x => `<p>${x}</p>`).join('')}<p class="faint small">Limits are EFSA adult safe upper levels. Check with a pharmacist or GP before taking high doses long-term.</p></div>` : ''; })()}
             ${entries.length ? microsHtml(t, 1, entries.length) : '<p class="muted">Your vitamins, minerals and fibre for the day show here once you log food.</p>'}
           </div>
@@ -992,13 +1014,14 @@
     else if (act === 'go-forecast') nav('forecast');
     else if (act === 'add') { openAdd({ meal: a.dataset.meal, date: UI.date }); if (a.dataset.fav) setTab('fav'); else if (a.dataset.meal === 'Supplements') setTab('sup'); }
     else if (act === 'quick-add') quickAdd(a.dataset.meal, UI.date);
+    else if (act === 'start-hide') { try { localStorage.setItem('gg.start.done', '1'); } catch (_) {} render(); }
+    else if (act === 'focus-weight') { const i = $('#wIn') || $('#wEdit'); if (i) { i.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => i.focus ? i.focus() : i.click(), 350); } }
+    else if (act === 'go-friends-add') openPeopleSearch();
+    else if (act === 'fold') { const box = a.closest('[data-fold]'); const f = !box.classList.contains('folded'); box.classList.toggle('folded', f); a.setAttribute('aria-expanded', String(!f)); try { localStorage.setItem('gg.fold.' + a.dataset.id, f ? '1' : '0'); } catch (_) {} }
     else if (['lift-pick', 'lift-info', 'lift-del', 'lset-ok', 'lset-add', 'lset-pop'].includes(act)) liftAction(act, a);
     else if (act === 'cal-open') openCalendar();
     else if (act === 'pf-tab') { PF.tab = a.dataset.t; render(); main.scrollTop = 0; window.scrollTo(0, 0); }
     else if (act === 'pf-mus') { PF.sel = a.dataset.m; renderTrends(); const el = $('#pfMus'); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
-    else if (act === 'b3-mode') { set3d(a.dataset.v === '1'); PF.rot = null; renderTrends(); }
-    else if (act === 'b3-view') { if (fig3d) fig3d.view(a.dataset.v); }
-    else if (act === 'b3-spin') { if (fig3d) fig3d.spin(); }
     else if (act === 'pf-add') { UI.date = todayKey(); nav('today'); addLift(a.dataset.ex, todayKey()); toast('Added to today\'s training.'); }
     else if (act === 'ex-del') { const m = P().dayMeta[UI.date] || {}; m.ex = (m.ex || []).filter(x => x.id !== a.dataset.id); save(); render(); }
     else if (act === 'copy-meal' || act === 'copy-day') {
@@ -1836,23 +1859,6 @@
       <div class="pf-tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" class="${k === tab ? 'on' : ''}" data-action="pf-tab" data-t="${k}">${l}</button>`).join('')}</div>
       <div class="pf-body">${body}</div>
     </div>`;
-    if (tab === 'training' && use3d()) mount3d();
-    else if (tab === 'training') { const w = () => import('./body3d.js?v=' + encodeURIComponent(VERSION || '1')).then(m => m.warm()).catch(() => {}); (window.requestIdleCallback || (f => setTimeout(f, 1200)))(w); }
-  }
-  // 3D figure (Z-Anatomy model, three.js), loaded only when shown. Falls back to the flat figure if it can't run.
-  const use3d = () => { try { const v = localStorage.getItem('gg.fig3d'); if (v) return v === '1'; } catch (_) {} return false; };
-  const set3d = on => { try { localStorage.setItem('gg.fig3d', on ? '1' : '0'); } catch (_) {} };
-  let fig3d = null;
-  async function mount3d() {
-    const el = $('#bm3d'); if (!el) return;
-    try {
-      const mod = await import('./body3d.js?v=' + encodeURIComponent(VERSION || '1'));
-      if (!el.isConnected) return;
-      const v = await mod.mount(el, { fill: PF._fill || {}, body: bodyOpts(), onTap: k => { PF.sel = k; PF.rot = v.getRot(); renderTrends(); const p = $('#pfMus'); if (p) p.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } });
-      fig3d = v; if (PF.rot != null) v.setRot(PF.rot);
-    } catch (e) {
-      console.warn('3D figure unavailable', e); set3d(false); if (UI.view === 'trends') { renderTrends(); toast('3D isn\'t available on this device, so the flat figure is shown.'); }
-    }
   }
   function perfOverview(st, tg, C) {
     const nd = nutritionData(rangeDays(PF.nut)), avgK = nd.avg('kcal'), avgP = nd.avg('p');
@@ -1966,20 +1972,19 @@
       <div class="pf-sec-head"><h2>Muscle balance</h2>${rangeSel('mus', PF.mus)}</div>
       <div class="pf-stats4"><div><b class="num">${ms.sessions}</b><small>sessions</small></div><div><b class="num">${fmt(ms.sets)}</b><small>sets</small></div><div><b class="num">${ms.vol >= 10000 ? fmt(ms.vol / 1000, 1) + 't' : fmt(ms.vol) + ' kg'}</b><small>lifted</small></div><div><b class="num">${ms.prs}</b><small>PRs 🏆</small></div></div>
       <div class="pf-card pf-body-card">
-        <div class="bm-mode"><div class="seg">${[['1', '3D'], ['0', 'Flat']].map(([v, l]) => `<button class="${(use3d() ? '1' : '0') === v ? 'on' : ''}" data-action="b3-mode" data-v="${v}">${l}</button>`).join('')}</div>${use3d() ? '<div class="bm3d-ctl"><button class="btn ghost" data-action="b3-view" data-v="front">Front</button><button class="btn ghost" data-action="b3-view" data-v="back">Back</button><button class="btn ghost" data-action="b3-spin">↻</button></div>' : ''}</div>
-        ${use3d() ? '<div class="bm3d" id="bm3d"><div class="bm3d-load"><span class="spin"></span>Loading 3D figure…</div></div><p class="faint small bm3d-hint">Drag to turn the body · tap a muscle</p>' : `<div class="bm-wrap" id="bmWrap">${mapSide('front')}${mapSide('back')}</div>`}
+        <div class="bm-wrap" id="bmWrap">${mapSide('front')}${mapSide('back')}</div>
         <div class="bm-key">${MUS_LEVELS.map(l => `<span><i style="background:${l.col}"></i><b>${l.label}</b><small>${l.note}</small></span>`).join('')}</div>
-        <p class="faint small" style="margin:6px 0 0;text-align:center">Tap a muscle. Main muscle of an exercise = 1 set, helper muscle = ½ set.</p>${use3d() ? '<p class="faint small bm-credit">3D anatomy: <a href="https://www.z-anatomy.com" target="_blank" rel="noopener">Z-Anatomy</a> &amp; BodyParts3D, CC BY-SA 4.0</p>' : ''}
+        <p class="faint small" style="margin:6px 0 0;text-align:center">Tap a muscle. Main muscle of an exercise = 1 set, helper muscle = ½ set.</p>
         ${(() => { const b = bodyOpts(); const pct = v => Math.round(v * 100); return `<div class="bm-me"><b>Your figure</b><span>Shaped from your ${b.heightCm ? fmt(b.heightCm) + ' cm' : 'height'}, ${b.weightKg ? fmt(b.weightKg, 1) + ' kg' : 'weight'} and strength. It gets more muscular as your lifts go up.</span><div class="bm-lv"><span>Upper body</span><div class="bar"><i style="width:${Math.max(3, pct(b.mu))}%"></i></div><b>${pct(b.mu)}%</b></div><div class="bm-lv"><span>Lower body</span><div class="bar"><i style="width:${Math.max(3, pct(b.ml))}%"></i></div><b>${pct(b.ml)}%</b></div><small class="faint">${b.up || b.lo ? `Based on your best ${b.up ? `upper lift ≈ ${fmt(b.up, 2)}× body weight` : ''}${b.up && b.lo ? ' and ' : ''}${b.lo ? `lower lift ≈ ${fmt(b.lo, 2)}× body weight` : ''} (estimated 1-rep max).` : 'Log weighted lifts like bench press and squat to grow it.'}</small></div>`; })()}
       </div>
       <div class="pf-card pf-mus" id="pfMus">
         <div class="pf-mus-head"><span class="pf-mus-dot" style="background:${lv.col}"></span><div><h3>${esc(GGBody.NAMES[sel])}</h3><span class="muted small">${lv.label} · ${fmt(ms.perWeek[sel], 1)} sets a week${ms.last[sel] ? ` · last trained ${esc(shortDate(ms.last[sel]))}` : ' · not trained in this period'}</span></div></div>
         ${lv.k === 'good' ? '<p class="small" style="margin:8px 0 0">Right in the sweet spot. Keep adding weight or reps over time.</p>' : lv.k === 'high' ? '<p class="small" style="margin:8px 0 0">A lot of volume. Make sure you\'re recovering; quality sets beat more sets.</p>' : `<p class="small" style="margin:8px 0 0">Aim for 10–20 sets a week. ${lib ? 'Try one of these:' : ''}</p>`}
-        ${recs.length && lv.k !== 'good' && lv.k !== 'high' ? `<div class="pf-recs">${recs.map(x => `<div class="pf-rec">${thumb(x)}<button class="pf-rec-t" data-action="lift-info" data-ex="${esc(x.id)}" data-k="${todayKey()}"><b>${esc(x.n)}</b><small>${x.m === 'c' ? 'Compound' : x.m === 'i' ? 'Isolation' : ''}${x.e ? ' · ' + esc(cap(x.e)) : ''}</small></button><button class="btn" data-action="pf-add" data-ex="${esc(x.id)}">＋ Today</button></div>`).join('')}</div>` : ''}
+        ${recs.length && lv.k !== 'good' && lv.k !== 'high' ? `<div class="pf-recs">${recs.map(x => `<div class="pf-rec">${thumb(x)}<button class="pf-rec-t" data-action="lift-info" data-ex="${esc(x.id)}" data-k="${todayKey()}"><b>${exTitle(x.n)}</b><small>${x.m === 'c' ? 'Compound' : x.m === 'i' ? 'Isolation' : ''}${x.e ? ' · ' + esc(cap(x.e)) : ''}</small></button><button class="btn" data-action="pf-add" data-ex="${esc(x.id)}">＋ Today</button></div>`).join('')}</div>` : ''}
       </div>
       ${ms.sessions && focus.length ? `<div class="pf-card"><h3>Train next</h3><p class="muted small" style="margin:-4px 0 10px">Undertrained in the ${esc(rangeLabel(PF.mus).toLowerCase())}, biggest muscles first.</p><div class="pf-focus">${focus.slice(0, 8).map(m => `<button class="chip${m === sel ? ' on' : ''}" data-action="pf-mus" data-m="${esc(m)}"><i style="background:${musLevel(ms.perWeek[m]).col}"></i>${esc(GGBody.NAMES[m])}</button>`).join('')}</div></div>` : ''}
       <div class="pf-card"><h3>Strength progress</h3>
-        ${rows.length ? `<p class="muted small" style="margin:-4px 0 6px">Estimated 1-rep max, first session → latest. Tap for history.</p><ul class="str-list">${rows.map(r => { const x = exById(r.id) || { p: r.l.mp, s: r.l.ms }; const bw = !(r.top.set && r.top.set.kg > 0); return `<li data-action="lift-info" data-ex="${esc(r.id)}" data-k="${todayKey()}"><span class="str-th">${thumb(x)}</span><span class="lift-main"><b>${esc(r.name)}</b><small>${r.list.length} session${r.list.length === 1 ? '' : 's'} · best ${fmtSet(r.top.set)}</small></span><span class="str-val"><b>${bw ? r.last.set.reps + ' reps' : fmt(r.last.best, 1) + ' kg'}</b>${r.list.length > 1 ? `<small class="${r.change >= 0 ? 'up' : 'down'}">${r.change >= 0 ? '▲' : '▼'} ${fmt(Math.abs(r.change), 0)}%</small>` : ''}</span></li>`; }).join('')}</ul>`
+        ${rows.length ? `<p class="muted small" style="margin:-4px 0 6px">Estimated 1-rep max, first session → latest. Tap for history.</p><ul class="str-list">${rows.map(r => { const x = exById(r.id) || { p: r.l.mp, s: r.l.ms }; const bw = !(r.top.set && r.top.set.kg > 0); return `<li data-action="lift-info" data-ex="${esc(r.id)}" data-k="${todayKey()}"><span class="str-th">${thumb(x)}</span><span class="lift-main"><b>${exTitle(r.name)}</b><small>${r.list.length} session${r.list.length === 1 ? '' : 's'} · best ${fmtSet(r.top.set)}</small></span><span class="str-val"><b>${bw ? r.last.set.reps + ' reps' : fmt(r.last.best, 1) + ' kg'}</b>${r.list.length > 1 ? `<small class="${r.change >= 0 ? 'up' : 'down'}">${r.change >= 0 ? '▲' : '▼'} ${fmt(Math.abs(r.change), 0)}%</small>` : ''}</span></li>`; }).join('')}</ul>`
           : '<p class="muted small" style="margin:0">Log your lifts in the diary (Training › Log exercise) and your progressive overload shows up here.</p>'}
       </div>`;
   }
@@ -2936,6 +2941,12 @@
             <label class="field"><span>USDA API key (optional)</span><input type="text" data-s="usdaKey" value="${esc(st.usdaKey)}" placeholder="Paste your free key"></label>
             <p class="small"><a href="https://fdc.nal.usda.gov/api-key-signup" target="_blank">Get a free USDA key</a></p>
           </div>
+          <div class="panel" id="privPanel">
+            <h2>Privacy & sharing</h2>
+            <p class="muted small" style="margin-top:0">Choose what your friends can see. Your ranking position is always shared with friends; remove a friend to stop sharing anything with them.</p>
+            <div id="privBox" class="small muted">Loading…</div>
+            <p class="small" style="margin:10px 0 0"><a href="privacy.html" target="_blank">Privacy Policy</a></p>
+          </div>
           <div class="panel">
             <h2>Export my data to AI</h2>
             <p class="muted small" style="margin-top:0">Get a summary of your food, weight, steps and lifts to paste into ChatGPT, Claude or Gemini, and talk your progress through with it.</p>
@@ -2955,6 +2966,7 @@
       <p class="faint small" style="margin-top:20px">GG Gains v${esc(VERSION)}. Nutrition values are averages from USDA FoodData Central and UK product labels; targets are general adult guidance, not medical advice.</p>
     </div>`;
 
+    loadPrivacyPanel();
     main.querySelectorAll('[data-p]').forEach(el => el.addEventListener('change', () => {
       const k = el.dataset.p; let v = el.value;
       if (k === 'goalWeightKg' && v === '') { P().profile.goalWeightKg = null; save(); softRender(renderSettings); return; }
@@ -3155,7 +3167,7 @@
   }
   function searchResults(rel) {
     if (SR.err) return `<p class="small err">${esc(SR.err)}</p>`;
-    if (!SR.q.trim() || SR.q.trim().length < 2) return '<p class="muted small">Type at least 2 letters of their username.</p>';
+    if (!SR.q.trim() || SR.q.trim().length < 3) return '<p class="muted small">Type at least 3 letters of their username.</p>';
     if (SR.busy && !SR.list) return '<p class="muted small">Searching…</p>';
     if (!SR.list || !SR.list.length) return `<p class="muted small">Nobody found for “${esc(SR.q)}”.</p>`;
     return SR.list.map(u => { const r = rel(u.id); return `<div class="frow">${avatarHtml({ name: u.name, color: u.color, avatar: u.avatar })}<span class="fname">${esc(u.name)} ${flagOf(u.country)}<small class="faint">@${esc(u.username)}</small></span>
@@ -3179,7 +3191,7 @@
     const si = $('#uSearch'); if (!si) return;
     si.addEventListener('input', () => {
       SR.q = si.value; clearTimeout(searchT);
-      if (SR.q.trim().length < 2) { SR.list = null; $('#uResults').innerHTML = searchResults(() => ''); return; }
+      if (SR.q.trim().length < 3) { SR.list = null; $('#uResults').innerHTML = searchResults(() => ''); return; }
       SR.busy = true; searchT = setTimeout(async () => {
         const q = SR.q.trim();
         try { const l = await social.searchUsers(q); if (q !== SR.q.trim()) return; SR.list = l; SR.err = ''; } catch (e) { SR.err = e.offline ? 'You\'re offline.' : 'Search failed: ' + e.message; }
@@ -3414,6 +3426,45 @@
     }
   }
   let cpBusy = false;
+  // ---------------------------------------------------------------- privacy & consent
+  const PRIV_ITEMS = [['diary', 'Food diary & workouts', 'What you eat and the exercises you log'], ['weight', 'Weight', 'Your weigh-ins and weight change'], ['health', 'Steps, sleep & heart rate', 'Data from your watch or Apple Health']];
+  const privToggles = (p, id) => PRIV_ITEMS.map(([k, l, d]) => `<label class="priv-row"><span><b>${l}</b><small>${d}</small></span><input type="checkbox" class="switch" data-priv="${k}" ${p['share_' + k] ? 'checked' : ''} ${id ? `id="${id}-${k}"` : ''}></label>`).join('');
+  async function loadPrivacyPanel() {
+    const box = $('#privBox'); if (!box || !social.privacy) return;
+    const p = await social.privacy();
+    if (!$('#privBox')) return;
+    if (!p || !('share_diary' in p)) { box.textContent = 'Sharing settings will appear here shortly.'; return; }
+    box.innerHTML = `<div class="priv-list">${privToggles(p)}</div>`;
+    box.querySelectorAll('[data-priv]').forEach(cb => cb.addEventListener('change', async () => {
+      try { await social.setPrivacy({ [cb.dataset.priv]: cb.checked }); toast(cb.checked ? 'Friends can now see this.' : 'Hidden from friends.'); }
+      catch (e) { cb.checked = !cb.checked; toast('Couldn\'t save: ' + (e.offline ? 'you\'re offline.' : 'try again.')); }
+    }));
+  }
+  // One-time consent: health data needs a clear yes (UK GDPR). Shown once to everyone who hasn't agreed yet.
+  async function checkConsent() {
+    try { if (localStorage.getItem('gg.consent.' + (window.MH_ME && window.MH_ME.id || '')) === '1') return; } catch (_) {}
+    if (!social.privacy || !modal.hidden) return;
+    const p = await social.privacy(); if (!p || !('consent_at' in p) || p.consent_at) return;
+    card.onclick = null; card.className = 'modal-card consent-card';
+    card.innerHTML = `<div class="modal-head"><h2>Your privacy</h2></div><div class="modal-body">
+      <p>GG Gains keeps your food diary, weight, workouts and, if you connect them, steps, sleep and heart rate, so it can show your progress and run the ranking with your friends. It's stored securely in your account and never sold or used for ads.</p>
+      <p class="muted small">Choose what your friends can see. You can change this any time in Settings › Privacy & sharing.</p>
+      <div class="priv-list">${privToggles(p, 'cs')}</div>
+      <label class="check consent-check"><input type="checkbox" id="csAgree"> I agree to GG Gains processing my health data as described in the <a href="privacy.html" target="_blank">Privacy Policy</a>.</label>
+      <button class="btn primary wide" id="csGo" disabled>Continue</button></div>`;
+    modal.hidden = false;
+    const ag = $('#csAgree'), go = $('#csGo');
+    ag.addEventListener('change', () => { go.disabled = !ag.checked; });
+    go.addEventListener('click', async () => {
+      const v = k => $('#cs-' + k).checked;
+      go.disabled = true; go.textContent = 'Saving…';
+      try { await social.setPrivacy({ diary: v('diary'), weight: v('weight'), health: v('health'), consent: true }); try { localStorage.setItem('gg.consent.' + (window.MH_ME && window.MH_ME.id || ''), '1'); } catch (_) {} closeModal(); toast('Saved. Thanks!'); }
+      catch (e) { go.disabled = false; go.textContent = 'Continue'; toast('Couldn\'t save: ' + (e.offline ? 'you\'re offline.' : 'try again.')); }
+    });
+  }
+  setTimeout(checkConsent, 2500);
+  window.addEventListener('gg-save-failed', () => toast('This phone is out of storage space, so the latest changes couldn\'t be saved on it. They\'re kept in your account once it syncs.'));
+
   new MutationObserver(ms => {
     if (cpBusy) return; cpBusy = true;
     try { for (const m of ms) for (const n of m.addedNodes) cpDecorate(n); } finally { cpBusy = false; }
@@ -3568,7 +3619,7 @@
   function photoCard(k) {
     if (!window.MHPhotos) return '';
     const has = PHOTO_DAYS.has(k);
-    return `<div class="panel photo-card"><div class="pc-head"><h2>📸 Progress photo</h2><button class="btn ghost sm" data-action="go-photos">All photos ›</button></div>
+    return `<div class="panel photo-card${folded('photo') ? ' folded' : ''}" data-fold="photo"><div class="pc-head"><h2 class="fold-h" data-action="fold" data-id="photo" role="button" aria-expanded="${!folded('photo')}">📸 Progress photo<span class="fold-ic" aria-hidden="true">⌄</span></h2><button class="btn ghost sm" data-action="go-photos">All photos ›</button></div>
       ${has ? `<div class="pc-row"><img data-photo="${k}" alt="Progress photo for ${esc(shortDate(k))}"><div><p class="muted small" style="margin-top:0">Saved on this phone only.</p>${photoButtons(k, false)}</div></div>`
         : `<p class="muted small" style="margin-top:0">Take one photo a day (+10 CP), in the same spot and pose. GG Gains turns them into a transformation video.</p>${photoButtons(k, true)}`}</div>`;
   }

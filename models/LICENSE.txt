@@ -1,6 +1,0 @@
-body3d.glb — the GG Gains 3D muscle figure.
-Derived from Z-Anatomy (https://www.z-anatomy.com), "Z-Anatomy - The libre 3D atlas of anatomy", CC BY-SA 4.0,
-which is based on BodyParts3D, The Database Center for Life Science, CC BY-SA 2.1 Japan.
-Changes: surface muscles grouped into 17 muscle groups, head/hands/feet/skeleton merged into one body mesh, meshes simplified.
-This file is shared under the same license: Creative Commons Attribution-ShareAlike 4.0 (https://creativecommons.org/licenses/by-sa/4.0/).
-Build script: native/anatomy/export.py

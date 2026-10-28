@@ -23,7 +23,10 @@
   function xLabels(labels, x, H, pad, every) {
     let s = '';
     labels.forEach((l, i) => {
-      if (i % every !== 0 && i !== labels.length - 1) return;
+      const last = labels.length - 1;
+      // Always label the last point, but drop the regular label just before it if they would overlap.
+      if (i % every !== 0 && i !== last) return;
+      if (i !== last && every > 1 && last - i < Math.ceil(every * 0.75)) return;
       s += `<text class="tick" x="${x(i)}" y="${H - pad.b + 16}" text-anchor="middle">${esc(l)}</text>`;
     });
     return s;

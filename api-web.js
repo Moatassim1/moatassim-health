@@ -2,15 +2,44 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.51';
+  const APP_VERSION = '2.0.52';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const LS = {
     get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (_) { return d; } },
-    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (_) { return false; } },
     del(k) { try { localStorage.removeItem(k); } catch (_) {} }
   };
+  // Big data (the diary and the sync record) also lives in IndexedDB, which has far more room than
+  // localStorage (about 5 MB on iPhone, roughly 1–2 years of logging). If localStorage is full, IndexedDB takes over.
+  const IDB = (() => {
+    let dbp = null;
+    const db = () => dbp || (dbp = new Promise((res, rej) => { try { const r = indexedDB.open('gg-store', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }));
+    const tx = (mode, fn) => db().then(d => new Promise((res, rej) => { const t = d.transaction('kv', mode); const q = fn(t.objectStore('kv')); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); }));
+    return { get: k => tx('readonly', st => st.get(k)).catch(() => undefined), set: (k, v) => tx('readwrite', st => st.put(v, k)).then(() => true).catch(() => false), del: k => tx('readwrite', st => st.delete(k)).catch(() => {}) };
+  })();
+  const pendingBig = {};
+  let bigTimer = null, saveWarned = false;
+  function saveBig(k, v) {
+    const ok = LS.set(k, v);
+    if (ok) LS.del(k + '.where'); else { LS.del(k); LS.set(k + '.where', 'idb'); }
+    pendingBig[k] = { v, ok }; clearTimeout(bigTimer);
+    bigTimer = setTimeout(async () => {
+      const all = Object.entries(pendingBig); for (const [kk] of all) delete pendingBig[kk];
+      for (const [kk, it] of all) {
+        const done = await IDB.set(kk, JSON.parse(JSON.stringify(it.v)));
+        // Neither store could save: tell the person once (their data is still on the server once it syncs).
+        if (!done && !it.ok && !saveWarned) { saveWarned = true; window.dispatchEvent(new CustomEvent('gg-save-failed')); }
+      }
+    }, ok ? 1500 : 50);
+  }
+  async function loadBig(k, d) {
+    const local = LS.get(k, null);
+    if (local && LS.get(k + '.where', null) !== 'idb') return local;
+    const v = await IDB.get(k);
+    return v != null ? v : (local != null ? local : d);
+  }
   const pad2 = n => String(n).padStart(2, '0');
   const keyOf = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   const todayKey = () => keyOf(new Date());
@@ -47,7 +76,7 @@
   }
 
   // ---------------------------------------------------------------- session + sync
-  let supa = null, engine = null, uid = null, S = null, rev = 0;
+  let supa = null, engine = null, uid = null, S = null, rev = 0, META = null;
   let reloadCbs = [], statusCbs = [], syncTimer = null;
   let status = { enabled: true, lastSync: null, error: null, busy: false };
   const kState = () => 'mh2.state.' + uid, kMeta = () => 'mh2.meta.' + uid;
@@ -55,7 +84,7 @@
   function makeSupa() { return new MHSync.Supa({ url: CFG.url, key: CFG.key }); }
   async function req(path, opts) { return supa._req(path, opts); }
 
-  function persist() { LS.set(kState(), S); }
+  function persist() { saveBig(kState(), S); }
   function emitReload() { rev++; const msg = { state: JSON.parse(JSON.stringify(S)), rev }; reloadCbs.forEach(cb => cb(msg)); }
   function emitStatus() { statusCbs.forEach(cb => cb({ ...status })); }
 
@@ -63,8 +92,8 @@
     engine = new MHSync.SyncEngine(supa, {
       getState: () => S,
       setState: (ns) => { S = normalise(ns); persist(); emitReload(); },
-      loadMeta: () => LS.get(kMeta(), { shadow: {}, cursor: null }),
-      saveMeta: (m) => { LS.set(kMeta(), { ...m, session: null }); LS.set('mh2.session', supa.session); }
+      loadMeta: () => META || { shadow: {}, cursor: null },
+      saveMeta: (m) => { META = { ...m, session: null }; saveBig(kMeta(), META); LS.set('mh2.session', supa.session); }
     });
   }
   async function runSync() {
@@ -426,11 +455,14 @@
     async deleteAccount() {
       await req('/rest/v1/rpc/mh_delete_me', { method: 'POST', body: '{}' });
       try { localStorage.clear(); } catch (_) {}
-      try { indexedDB.deleteDatabase('gg-photos'); } catch (_) {}
+      try { indexedDB.deleteDatabase('gg-photos'); indexedDB.deleteDatabase('gg-store'); } catch (_) {}
       try { if (window.caches) for (const k of await caches.keys()) await caches.delete(k); } catch (_) {}
       location.replace(location.pathname + '?deleted=1');
     },
-    async searchUsers(q) { return (await req('/rest/v1/rpc/mh_search_users', { method: 'POST', body: JSON.stringify({ q }) })) || []; },
+    // What friends can see, and consent to health-data processing. Null if the server doesn't have these settings yet.
+    async privacy() { try { const r = await req(`/rest/v1/profiles?id=eq.${uid}&select=share_diary,share_weight,share_health,consent_at`); return (r && r[0]) || null; } catch (_) { return null; } },
+    async setPrivacy(p) { return req('/rest/v1/rpc/mh_set_privacy', { method: 'POST', body: JSON.stringify({ diary: p.diary ?? null, weight: p.weight ?? null, health: p.health ?? null, consent: !!p.consent }) }); },
+    async searchUsers(q) { if (String(q || '').trim().length < 3) return []; return (await req('/rest/v1/rpc/mh_search_users', { method: 'POST', body: JSON.stringify({ q }) })) || []; },
     async notifications() { return (await req(`/rest/v1/notifications?select=*&order=created_at.desc&limit=50`)) || []; },
     async markRead() { return req(`/rest/v1/notifications?recipient=eq.${uid}&read=eq.false`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ read: true }) }); },
     pushSupported: () => !window.desktop && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window,
@@ -608,10 +640,11 @@
     supa = s; uid = s.session.user_id;
     window.MH_EMAIL = s.session.email || '';
     $('#auth').hidden = true; $('#auth').innerHTML = '';
-    S = normalise(LS.get(kState(), null), newName);
+    S = normalise(await loadBig(kState(), null), newName);
+    META = await loadBig(kMeta(), null);
     if (newName) S.profiles.me.name = newName;
     startEngine();
-    const first = !LS.get(kMeta(), null) || !LS.get(kMeta(), {}).cursor;
+    const first = !META || !META.cursor;
     if (first) {
       document.body.classList.add('loading');
       try { await runSync(); } catch (_) {}

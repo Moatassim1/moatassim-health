@@ -117,7 +117,7 @@ public class GGNativePlugin: CAPPlugin, CAPBridgedPlugin, ASAuthorizationControl
     // MARK: Apple Health
     private var readTypes: Set<HKObjectType> {
         var s = Set<HKObjectType>()
-        for id in [HKQuantityTypeIdentifier.stepCount, .distanceWalkingRunning, .activeEnergyBurned] {
+        for id in [HKQuantityTypeIdentifier.stepCount, .distanceWalkingRunning, .activeEnergyBurned, .bodyMass] {
             if let t = HKObjectType.quantityType(forIdentifier: id) { s.insert(t) }
         }
         return s
@@ -161,6 +161,20 @@ public class GGNativePlugin: CAPPlugin, CAPBridgedPlugin, ASAuthorizationControl
                 group.leave()
             }
             store.execute(q)
+        }
+        // Weigh-ins (from a smart scale or another app such as a weight tracker): the last one of each day, in kg.
+        if let wType = HKObjectType.quantityType(forIdentifier: .bodyMass) {
+            group.enter()
+            let wq = HKSampleQuery(sampleType: wType, predicate: HKQuery.predicateForSamples(withStart: start, end: end, options: []),
+                                   limit: HKObjectQueryNoLimit, sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) { _, samples, _ in
+                for case let smp as HKQuantitySample in samples ?? [] {
+                    let kg = smp.quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo))
+                    let day = fmt.string(from: smp.startDate)
+                    lock.lock(); out[day, default: [:]]["weightKg"] = kg; out[day, default: [:]]["weightAt"] = smp.startDate.timeIntervalSince1970; lock.unlock()
+                }
+                group.leave()
+            }
+            store.execute(wq)
         }
         group.notify(queue: .main) { call.resolve(["days": out]) }
     }

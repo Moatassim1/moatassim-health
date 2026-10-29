@@ -17,7 +17,7 @@ pb "Add :CFBundleURLTypes:0 dict"
 pb "Add :CFBundleURLTypes:0:CFBundleURLName string com.gggains.app"
 pb "Add :CFBundleURLTypes:0:CFBundleURLSchemes array"
 pb "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string com.gggains.app"
-pb "Delete :NSHealthShareUsageDescription"; pb "Add :NSHealthShareUsageDescription string GG Gains reads your steps, walking distance and active calories from Apple Health to show them in your diary and count them towards your step goal."
+pb "Delete :NSHealthShareUsageDescription"; pb "Add :NSHealthShareUsageDescription string GG Gains reads your steps, walking distance, active calories and weigh-ins from Apple Health to show them in your diary, count them towards your step goal and log your weight automatically."
 pb "Delete :NSHealthUpdateUsageDescription"; pb "Add :NSHealthUpdateUsageDescription string GG Gains does not write to Apple Health."
 # Native features (Sign in with Apple, Apple Health)
 cp native/ios/GGNativePlugin.swift native/ios/App.entitlements "$APP/"

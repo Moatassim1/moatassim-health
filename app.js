@@ -263,7 +263,7 @@
     const toks = q.split(/\s+/);
     const scored = [];
     for (const f of list) {
-      const hay = norm(f.name + ' ' + (f.cat || ''));
+      const hay = norm(f.name + ' ' + (f.cat || '') + ' ' + (f.kw || ''));
       if (!toks.every(t => hay.includes(t))) continue;
       const nm = norm(f.name), words = nm.split(/[\s,()/-]+/);
       let s = 0;
@@ -350,7 +350,7 @@
   function renderMe() {
     const pts = myPoints();
     const html = `<button class="me-card" data-act2="go-me">${avatarHtml({ name: P().name, color: P().color, avatar: P().avatar, tier: GAME ? gc().tier.id : null })}<span class="pname">${esc(P().name)}<small>${pts == null ? 'Set a goal to rank' : fmt(pts, 1) + '% to goal'}</small></span></button>
-      <button class="bell tb-ic" data-act2="forecast" aria-label="Weight projection" title="Weight projection"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 3 8-8M15 7h5v5"/></svg></button>
+      <button class="bell tb-ic tb-quests" data-act2="quests" aria-label="Quests" title="Quests"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6.2"/><circle cx="12" cy="16.6" r=".9" fill="currentColor" stroke="none"/></svg>${GAME && questsLeft() > 0 ? '<i class="qdot"></i>' : ''}</button>
       <button class="bell tb-ic" data-act2="search" aria-label="Find people" title="Find people"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg></button>
       <button class="bell" data-act2="notes" aria-label="Notifications">${BELL}${NOTES.unread ? `<i>${NOTES.unread > 9 ? '9+' : NOTES.unread}</i>` : ''}</button>`;
     $('#profiles').innerHTML = html;
@@ -362,6 +362,7 @@
     if (b.dataset.act2 === 'go-settings') nav('settings');
     if (b.dataset.act2 === 'go-me') { UI.rk = 'me'; F.view = null; nav('friends'); }
     if (b.dataset.act2 === 'forecast') nav('forecast');
+    if (b.dataset.act2 === 'quests') nav('quests');
     if (b.dataset.act2 === 'search') openPeopleSearch();
     if (b.dataset.act2 === 'notes') openNotes();
   }
@@ -556,7 +557,7 @@
     return `<div class="lift" data-lid="${esc(l.id)}">
       <div class="lift-top">
         <button class="lift-thumb" data-action="lift-info" data-ex="${esc(l.ex)}" aria-label="About ${esc(l.name)}">${thumb(x)}</button>
-        <button class="lift-title" data-action="lift-info" data-ex="${esc(l.ex)}"><b>${exTitle(l.name)}</b><small>${esc(sub)}</small></button>
+        <button class="lift-title" data-action="lift-info" data-ex="${esc(l.ex)}"><b>${exTitle(x.n || l.name)}</b><small>${esc(sub)}</small></button>
         <span class="pr-badge"${pr ? '' : ' hidden'}>🏆 PR</span>
         <button class="lift-x" data-action="lift-del" data-id="${esc(l.id)}" aria-label="Remove exercise">✕</button>
       </div>
@@ -651,7 +652,7 @@
       const words = q.split(/\s+/).filter(Boolean);
       let list = XP.g === 'fav' ? favs.map(exById).filter(Boolean) : all.filter(x => (!XP.g || x.g === XP.g) && (!XP.m || x.m === XP.m));
       const ALIAS = { lower: ['lower', 'decline'], upper: ['upper', 'incline'], pec: ['pec', 'chest'], pecs: ['chest'], abs: ['abdominal', 'crunch', 'plank'], quads: ['quadriceps'], hammies: ['hamstring'], delts: ['shoulder', 'delt'], lat: ['lat'], legs: ['leg', 'squat', 'quadriceps', 'hamstring'], bicep: ['bicep', 'curl'], tricep: ['tricep'] };
-      const hay = x => (x.n + ' ' + x.e + ' ' + x.p.join(' ') + ' ' + x.s.join(' ') + ' ' + x.g).toLowerCase();
+      const hay = x => x._h || (x._h = (x.n + ' ' + (x.o || '') + ' ' + (x.a || []).join(' ') + ' ' + x.e + ' ' + x.p.join(' ') + ' ' + x.s.join(' ') + ' ' + x.g).toLowerCase());
       const match = L => L.filter(x => { const h = hay(x); return words.every(w => (ALIAS[w] || [w]).some(a => h.includes(a))); });
       XP.wide = false;
       if (words.length) { const inG = match(list); if (!inG.length && (XP.g || XP.m) && XP.g !== 'fav') { list = match(all); XP.wide = list.length > 0; } else list = inG; }
@@ -1103,7 +1104,7 @@
     q.addEventListener('input', () => {
       M.q = q.value;
       if ((M.tab === 'recent' || M.tab === 'fav') && M.q) setTab('all'); else if (M.tab === 'sup') renderResults();
-      else if (M.tab === 'shop') { clearTimeout(M.shopTimer); const t = M.q.trim(); if (M.shop === 'ryanair') runShop(1); else if (!t || t.length >= 3) M.shopTimer = setTimeout(() => runShop(1), 1200); }
+      else if (M.tab === 'shop') { clearTimeout(M.shopTimer); const t = M.q.trim(); if (M.shop === 'ryanair' || M.shop === 'restaurants') runShop(1); else if (!t || t.length >= 3) M.shopTimer = setTimeout(() => runShop(1), 1200); }
       else if (M.tab !== 'online') renderResults();
     });
     $('#mshops').addEventListener('click', e => {
@@ -1125,7 +1126,7 @@
     else if (!matchMedia('(max-width: 760px)').matches) setTimeout(() => q.focus(), 30);
   }
 
-  const SHOP_LIST = [['sainsburys', "Sainsbury's"], ['aldi', 'Aldi'], ['coop', 'Co-op'], ['ryanair', 'Ryanair ✈']];
+  const SHOP_LIST = [['restaurants', 'Fast food 🍔'], ['sainsburys', "Sainsbury's"], ['aldi', 'Aldi'], ['coop', 'Co-op'], ['ryanair', 'Ryanair ✈']];
   const shopName = id => (SHOP_LIST.find(x => x[0] === id) || [, id])[1];
   function setTab(tab) {
     M.tab = tab;
@@ -1139,12 +1140,13 @@
   }
 
   async function runShop(page) {
+    if (!M) return;
     const q = M.q.trim(), shop = M.shop, key = shop + '|' + q;
     M.tab = 'shop';
     card.querySelectorAll('#mshops button').forEach(b => b.classList.toggle('on', b.dataset.shop === shop));
     $('#mq').placeholder = `Search ${shopName(shop)} products, e.g. chicken, yogurt, cola`;
-    if (shop === 'ryanair') { // built in: works on the plane with no internet
-      const all = BUILTIN.filter(f => f.cat === 'Ryanair');
+    if (shop === 'ryanair' || shop === 'restaurants') { // built in: works with no internet (on the plane too)
+      const all = BUILTIN.filter(f => f.cat === (shop === 'ryanair' ? 'Ryanair' : 'Fast food'));
       M.shopRes = q ? searchFoods(q, all) : all; M.shopErr = []; M.shopBusy = false; M.shopMore = false; M.shopKey = key;
       renderResults(); return;
     }
@@ -1210,9 +1212,9 @@
     const u = unitOf(f);
     const meta = f.source === 'Built-in' ? (f.cat || '') : f.source === 'Mine' ? 'My food' : f.source;
     return `<div class="result ${sel ? 'sel' : ''}" tabindex="0" data-m="pick" data-id="${esc(f.id)}">
-      <span class="rn">${esc(f.name)}</span><span class="rk">${fmt(f.cat === 'Supplements' && f.each ? n.kcal * f.each.g / 100 : n.kcal)} kcal</span>
+      <span class="rn">${esc(f.name)}</span><span class="rk">${fmt((f.cat === 'Supplements' || f.cat === 'Fast food') && f.each ? n.kcal * f.each.g / 100 : n.kcal)} kcal</span>
       ${f.cat === 'Supplements' ? '' : `<span class="rm">${esc(meta)}${f.size ? ' · pack ' + esc(f.size) : ''}${f.portionLabel && f.portion ? ' · ' + esc(f.portionLabel) + ' ≈ ' + fmtAmt(f.portion, u) : ''}</span>`}
-      ${f.cat === 'Supplements' && f.each ? `<span class="rm-sup">${supSummary(f)}${Object.entries(UL).some(([k, L]) => (f.n[k] || 0) * f.each.g / 100 > L.lim) || /flush|manganese/i.test(f.name) ? ' <span class="hi-dose">⚠ high dose</span>' : ''}</span>` : `<span class="rm2">per 100 ${u} · ${fmt(n.p, 1)}P ${fmt(n.c, 1)}C ${fmt(n.f, 1)}F</span>`}</div>`;
+      ${f.cat === 'Supplements' && f.each ? `<span class="rm-sup">${supSummary(f)}${Object.entries(UL).some(([k, L]) => (f.n[k] || 0) * f.each.g / 100 > L.lim) || /flush|manganese/i.test(f.name) ? ' <span class="hi-dose">⚠ high dose</span>' : ''}</span>` : f.cat === 'Fast food' && f.each ? `<span class="rm2">per ${esc(f.each.one)} · ${fmt(n.p * f.each.g / 100)}P ${fmt(n.c * f.each.g / 100)}C ${fmt(n.f * f.each.g / 100)}F${f.typical ? ' · typical' : ''}</span>` : `<span class="rm2">per 100 ${u} · ${fmt(n.p, 1)}P ${fmt(n.c, 1)}C ${fmt(n.f, 1)}F</span>`}</div>`;
   }
 
   let lastList = [];
@@ -1256,7 +1258,7 @@
           (lastList.length ? `<div class="group-label">${M.q.trim() ? `${nm} products matching “${esc(M.q.trim())}”` : `Popular ${nm} products · type to search`}</div>` + lastList.map(resultRow).join('')
             + (M.shopMore ? `<div class="hint"><button class="btn" data-m="shop-more" ${M.shopBusy ? 'disabled' : ''}>${M.shopBusy ? 'Loading…' : 'Show more'}</button></div>` : '')
             : (M.shopErr.length ? '' : `<div class="hint">No ${nm} products found${M.q.trim() ? ` for “${esc(M.q.trim())}”` : ''}. Try another word, or use <b>Search online</b>.</div>`));
-        html += M.shop === 'ryanair' ? `<div class="hint faint small">Ryanair's onboard menu works offline, so you can log it on the plane. Ryanair doesn't publish nutrition, so these are typical values for each item.</div>` : `<div class="hint faint small">Products come from Open Food Facts, where shoppers add products from these shops. It isn't the shops' own list, so some products are missing.</div>`;
+        html += M.shop === 'restaurants' ? `<div class="hint faint small">Menus from ${(window.GG_FASTFOOD_CHAINS || []).length} chains and takeaways across Europe. Values follow each chain's published nutrition; items marked "typical" use typical values for that dish. Recipes vary a little by country.</div>` : M.shop === 'ryanair' ? `<div class="hint faint small">Ryanair's onboard menu works offline, so you can log it on the plane. Ryanair doesn't publish nutrition, so these are typical values for each item.</div>` : `<div class="hint faint small">Products come from Open Food Facts, where shoppers add products from these shops. It isn't the shops' own list, so some products are missing.</div>`;
       }
     } else {
       if (M.onlineBusy) html = `<div class="hint">Searching Open Food Facts and the USDA database…</div>`;
@@ -1306,7 +1308,7 @@
       return `<span>${lab[0]}</span><span>${v == null ? '–' : fmtSmart(v) + ' ' + lab[1]}</span>`;
     }).join('');
     box.innerHTML = `<button class="btn ghost mobile-only back-btn" data-m="back">‹ Back to search</button><h2>${esc(f.name)}</h2>
-      <div class="muted small">${esc(f.source === 'Built-in' ? 'Food list' : f.source === 'Mine' ? 'My food' : f.source)} · ${f.cat === 'Supplements' && f.each ? `per ${esc(f.each.one)}: ${fmt(n.kcal * f.each.g / 100)} kcal` : `${fmt(n.kcal)} kcal per 100 ${u}`}${f.size ? ' · pack ' + esc(f.size) : ''}</div>
+      <div class="muted small">${esc(f.source === 'Built-in' ? 'Food list' : f.source === 'Mine' ? 'My food' : f.source)} · ${(f.cat === 'Supplements' || f.cat === 'Fast food') && f.each ? `per ${esc(f.each.one)}: ${fmt(n.kcal * f.each.g / 100)} kcal${f.typical ? ' (typical values)' : ''}` : `${fmt(n.kcal)} kcal per 100 ${u}`}${f.size ? ' · pack ' + esc(f.size) : ''}</div>
       <div class="amount-q">How much did you have?</div>
       ${counting ? `<div class="grams-in"><input type="number" id="mg" min="0" step="0.5" value="${M.count}" aria-label="How many ${esc(f.each.many)}"><span>${esc(Number(M.count) > 0 && Number(M.count) <= 1 ? f.each.one : f.each.many)}</span></div>
       ${f.cat === 'Supplements' ? '' : `<div class="muted small" style="margin:-4px 0 10px">${fmtAmt(g, u)} · 1 ${esc(f.each.one)} ≈ ${fmtAmt(f.each.g, u)} · <a href="#" data-m="mode" data-mode="grams">enter ${u === 'ml' ? 'ml' : 'grams'} instead</a></div>`}
@@ -1984,7 +1986,7 @@
       </div>
       ${ms.sessions && focus.length ? `<div class="pf-card"><h3>Train next</h3><p class="muted small" style="margin:-4px 0 10px">Undertrained in the ${esc(rangeLabel(PF.mus).toLowerCase())}, biggest muscles first.</p><div class="pf-focus">${focus.slice(0, 8).map(m => `<button class="chip${m === sel ? ' on' : ''}" data-action="pf-mus" data-m="${esc(m)}"><i style="background:${musLevel(ms.perWeek[m]).col}"></i>${esc(GGBody.NAMES[m])}</button>`).join('')}</div></div>` : ''}
       <div class="pf-card"><h3>Strength progress</h3>
-        ${rows.length ? `<p class="muted small" style="margin:-4px 0 6px">Estimated 1-rep max, first session → latest. Tap for history.</p><ul class="str-list">${rows.map(r => { const x = exById(r.id) || { p: r.l.mp, s: r.l.ms }; const bw = !(r.top.set && r.top.set.kg > 0); return `<li data-action="lift-info" data-ex="${esc(r.id)}" data-k="${todayKey()}"><span class="str-th">${thumb(x)}</span><span class="lift-main"><b>${exTitle(r.name)}</b><small>${r.list.length} session${r.list.length === 1 ? '' : 's'} · best ${fmtSet(r.top.set)}</small></span><span class="str-val"><b>${bw ? r.last.set.reps + ' reps' : fmt(r.last.best, 1) + ' kg'}</b>${r.list.length > 1 ? `<small class="${r.change >= 0 ? 'up' : 'down'}">${r.change >= 0 ? '▲' : '▼'} ${fmt(Math.abs(r.change), 0)}%</small>` : ''}</span></li>`; }).join('')}</ul>`
+        ${rows.length ? `<p class="muted small" style="margin:-4px 0 6px">Estimated 1-rep max, first session → latest. Tap for history.</p><ul class="str-list">${rows.map(r => { const x = exById(r.id) || { p: r.l.mp, s: r.l.ms }; const bw = !(r.top.set && r.top.set.kg > 0); return `<li data-action="lift-info" data-ex="${esc(r.id)}" data-k="${todayKey()}"><span class="str-th">${thumb(x)}</span><span class="lift-main"><b>${exTitle((exById(r.id) || {}).n || r.name)}</b><small>${r.list.length} session${r.list.length === 1 ? '' : 's'} · best ${fmtSet(r.top.set)}</small></span><span class="str-val"><b>${bw ? r.last.set.reps + ' reps' : fmt(r.last.best, 1) + ' kg'}</b>${r.list.length > 1 ? `<small class="${r.change >= 0 ? 'up' : 'down'}">${r.change >= 0 ? '▲' : '▼'} ${fmt(Math.abs(r.change), 0)}%</small>` : ''}</span></li>`; }).join('')}</ul>`
           : '<p class="muted small" style="margin:0">Log your lifts in the diary (Training › Log exercise) and your progressive overload shows up here.</p>'}
       </div>`;
   }
@@ -2427,15 +2429,30 @@
   }
   function healthPanel() {
     if (!healthCan()) return '';
-    return `<div class="panel health-panel"><div class="hp-row"><span class="hp-ic">❤️</span><div><b>Apple Health</b><span class="muted small">${HL.on ? `Connected · steps, walking distance and active calories${HL.last ? ' · synced ' + new Date(HL.last).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}` : 'Use the steps your iPhone or Apple Watch already counts. No extra device needed.'}</span></div></div>
+    return `<div class="panel health-panel"><div class="hp-row"><span class="hp-ic">❤️</span><div><b>Apple Health</b><span class="muted small">${HL.on ? `Connected · steps, walking distance, active calories and weigh-ins${HL.last ? ' · synced ' + new Date(HL.last).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}` : 'Use the steps your iPhone or Apple Watch already counts. No extra device needed.'}</span></div></div>
       <div class="hp-btns">${HL.on ? `<button class="btn" data-action="health-sync" ${HL.busy ? 'disabled' : ''}>${HL.busy ? 'Syncing…' : 'Sync now'}</button><button class="btn ghost" data-action="health-off">Disconnect</button>` : `<button class="btn primary" data-action="health-connect" ${HL.busy ? 'disabled' : ''}>Connect Apple Health</button>`}</div></div>`;
   }
   async function healthSync(days, quiet) {
     if (!healthCan() || !HL.on || HL.busy) return;
     HL.busy = true;
     try {
+      // Ask once for the new "Weight" permission (people who connected before weigh-ins were supported).
+      try { if (localStorage.getItem('gg.health.w') !== '1') { await window.MHNative.health.authorize(); localStorage.setItem('gg.health.w', '1'); } } catch (_) {}
       const data = await window.MHNative.health.days(days || 7);
       let changed = 0;
+      // Weigh-ins from Apple Health (e.g. a smart scale app): logged on the day they were taken.
+      // A weight you typed in yourself is never replaced; one that came from Apple Health is kept up to date.
+      let wAdded = 0;
+      const hw = (() => { try { return JSON.parse(localStorage.getItem('gg.hw') || '{}'); } catch (_) { return {}; } })();
+      for (const [k, v] of Object.entries(data || {})) {
+        if (!v || !(v.weightKg >= 25 && v.weightKg <= 300) || k > todayKey()) continue;
+        const kg = Math.round(v.weightKg * 10) / 10, cur = P().weights[k];
+        if (cur == null || (hw[k] != null && cur === hw[k] && cur !== kg)) { P().weights[k] = kg; hw[k] = kg; wAdded++; changed++; }
+      }
+      if (wAdded) {
+        try { localStorage.setItem('gg.hw', JSON.stringify(hw)); } catch (_) {}
+        const l = latestWeight(); if (l) P().profile.weightKg = l.kg;
+      }
       for (const [k, v] of Object.entries(data || {})) {
         if (!v || v.steps == null) continue;
         const d = P().garmin.days[k];
@@ -2447,7 +2464,8 @@
       }
       HL.last = Date.now();
       if (changed) save();
-      if (!quiet) toast(changed ? 'Steps updated from Apple Health.' : 'Apple Health is up to date.');
+      if (wAdded && quiet) toast(`⚖️ ${wAdded === 1 ? 'Weigh-in' : wAdded + ' weigh-ins'} added from Apple Health.`);
+      if (!quiet) toast(changed ? (wAdded ? `Steps and ${wAdded} weigh-in${wAdded === 1 ? '' : 's'} updated from Apple Health.` : 'Steps updated from Apple Health.') : 'Apple Health is up to date.');
     } catch (e) { if (!quiet) toast('Apple Health: ' + (e.message || 'could not read steps')); }
     HL.busy = false; render();
   }
@@ -3503,7 +3521,7 @@
   function questsLeft() { try { const c = gc(), d = c.days[c.today]; return d ? d.quests.filter(q => !q.ok).length : 0; } catch (_) { return 0; } }
   function renderTabbarExtras() {
     const tb = document.getElementById('tabbar'); if (!tb) return;
-    const qb = tb.querySelector('[data-view="quests"]'); if (qb) qb.classList.toggle('dot', questsLeft() > 0);
+    document.querySelectorAll('.tb-quests').forEach(b => { const n = questsLeft(); let d = b.querySelector('.qdot'); if (n > 0 && !d) { d = document.createElement('i'); d.className = 'qdot'; b.appendChild(d); } else if (!n && d) d.remove(); });
     const mb = tb.querySelector('[data-view="more"] .tb-av');
     if (mb) { const av = P().avatar; mb.innerHTML = av ? `<img src="${esc(av)}" alt="">` : esc((P().name || '?').charAt(0).toUpperCase()); mb.style.background = av ? 'none' : (P().color || '#888'); }
   }

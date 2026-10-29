@@ -14,7 +14,7 @@
     put('kcal', kcal); put('p', p); put('c', c); put('f', f); put('sat', sat); put('sug', sug); put('fib', fib); if (salt != null) nn.na = Math.round(salt * 400 * per);
     n++;
     return { id: 'ff' + n, name: `${item} (${chain})`, cat: 'Fast food', brand: chain, kw: kw || '', portion: g, portionLabel: '1 ' + one, n: nn,
-      each: { g, one, many: one.endsWith('s') ? one : one + 's' }, ...(ml ? { unit: 'ml' } : {}), ...(typical ? { typical: true } : {}) };
+      each: { g, one, many: /s$/.test(one) ? one : /(x|ch|sh)$/.test(one) ? one + 'es' : one + 's' }, ...(ml ? { unit: 'ml' } : {}), ...(typical ? { typical: true } : {}) };
   };
   const L = [];
   const add = (chain, kw, rows) => rows.forEach(r => L.push(F(chain, r[0], r[1], r[2], r[3], (kw + ' ' + (r[4] || '')).replace(/\btypical\b/g, '').trim(), r[5], /\btypical\b/.test(kw + ' ' + (r[4] || '')))));

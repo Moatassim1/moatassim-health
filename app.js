@@ -1082,7 +1082,7 @@
       sel: entry ? { id: entry.foodId, name: entry.name, n: entry.n, unit: unitOf(entry), portion: entry.portion, portionLabel: entry.portionLabel, source: entry.source, each: entry.each || null } : (food || null),
       mode: entry ? (entry.count != null && entry.each ? 'count' : 'grams') : (food && food.each ? 'count' : 'grams'),
       count: entry ? (entry.count ?? 1) : 1,
-      shop: S.settings.lastShop || 'sainsburys', shopRes: null, shopBusy: false, shopErr: [], shopPage: 1, shopMore: false, shopKey: '',
+      shop: S.settings.lastShop || 'restaurants', shopRes: null, shopBusy: false, shopErr: [], shopPage: 1, shopMore: false, shopKey: '',
       grams: entry ? entry.grams : food && food.each ? food.each.g : (food && food.portion) || 100, entry: entry || null
     };
     card.className = 'modal-card';
@@ -1091,7 +1091,7 @@
         <div class="picker-left">
           <div class="picker-search">
             <div class="search-row"><input type="text" id="mq" placeholder="Search foods, e.g. chicken breast, banana" autocomplete="off" spellcheck="false"><button class="btn scan-inline" data-m="scan" aria-label="Scan a barcode"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 9v6M10 9v6M13 9v6M17 9v6"/></svg><span>Scan</span></button></div>
-            <div class="seg" id="mtabs"><button data-tab="all" class="on">Food list</button><button data-tab="recent">Recent</button><button data-tab="fav">★ Favourites</button><button data-tab="sup">💊 Supplements</button><button data-tab="shop">Shops</button><button data-tab="online">Search online</button></div>
+            <div class="seg" id="mtabs"><button data-tab="all" class="on">Food list</button><button data-tab="recent">Recent</button><button data-tab="fav">★ Favourites</button><button data-tab="sup">💊 Supplements</button><button data-tab="shop">🍔 Fast food & shops</button><button data-tab="online">Search online</button></div>
             <div class="maker-row"><button class="juice-btn" data-m="juice"><span class="jb-ico">🥤</span><span><b>Juice or smoothie</b><small>Liquid, fruit and extras you blended</small></span></button><button class="juice-btn" data-m="soup"><span class="jb-ico">🍲</span><span><b>Soup</b><small>What went in the pot, then how much you had</small></span></button><button class="juice-btn" data-m="bowl"><span class="jb-ico">🥣</span><span><b>Yoghurt bowl</b><small>Your yoghurt plus fruit, nuts, protein and toppings</small></span></button></div>
             <div class="shop-pick" id="mshops" hidden>${SHOP_LIST.map(([id, nm]) => `<button class="chip" data-shop="${id}">${esc(nm)}</button>`).join('')}</div>
           </div>
@@ -1109,7 +1109,7 @@
     });
     $('#mshops').addEventListener('click', e => {
       const b = e.target.closest('button[data-shop]'); if (!b) return;
-      M.shop = b.dataset.shop; S.settings.lastShop = M.shop; save(); runShop(1);
+      M.shop = b.dataset.shop; M.chain = null; S.settings.lastShop = M.shop; save(); runShop(1);
     });
     q.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
@@ -1126,13 +1126,55 @@
     else if (!matchMedia('(max-width: 760px)').matches) setTimeout(() => q.focus(), 30);
   }
 
+  // Fast food: pick a restaurant, then scroll its whole menu.
+  const FF_REGIONS = [['all', 'Everywhere'], ['uk', 'UK & Ireland'], ['eu', 'Europe'], ['us', 'USA'], ['ca', 'Canada'], ['take', 'Takeaways & street food']];
+  function ffChains() {
+    const m = new Map();
+    for (const f of BUILTIN) if (f.cat === 'Fast food' && f.brand) m.set(f.brand, (m.get(f.brand) || 0) + 1);
+    return m;
+  }
+  function chainPicker() {
+    const m = ffChains(), R = window.GG_FF_REGION || {}, used = new Set();
+    const recent = [...new Set(P().recent.map(r => BUILTIN.find(f => f.id === r.id)).filter(f => f && f.cat === 'Fast food').map(f => f.brand))].slice(0, 6);
+    const btn = c => `<button class="chain-btn" data-m="ff-chain" data-chain="${esc(c)}"><span>${esc(c)}</span><small>${m.get(c)}</small></button>`;
+    let h = `<div class="hint small" style="padding-bottom:2px">${m.size} restaurants and takeaways · pick one to scroll its menu, or type to search them all.</div>`;
+    if (recent.length) h += `<div class="group-label">Your recent</div><div class="chain-grid">${recent.map(btn).join('')}</div>`;
+    for (const [rid, label] of FF_REGIONS) {
+      const list = [...m.keys()].filter(c => (R[c] || 'eu') === rid).sort((a, b) => rid === 'all' ? m.get(b) - m.get(a) : a.localeCompare(b));
+      list.forEach(c => used.add(c));
+      if (list.length) h += `<div class="group-label">${label}</div><div class="chain-grid">${list.map(btn).join('')}</div>`;
+    }
+    return h;
+  }
+  // Group a chain's menu into sections (burgers, chicken, sides, drinks...) so it scrolls like a real menu.
+  const MENU_SECTIONS = [
+    ['Breakfast', /breakfast|mcmuffin|hash brown|hotcake|porridge|bagel|croissan|biscuit\b|egg bites|wake-up|bacon roll|bacon & egg|omelette/i],
+    ['Chicken', /nugget|wing|tender|strip|finger|popcorn|piece\b|leg\b|thigh|breast|bucket|selects|banquet|drumstick|half\b/i],
+    ['Burgers & sandwiches', /burger|whopper|mac\b|big mac|pounder|cheeseburger|mcchicken|mcdouble|mcplant|mccrispy|filet-o|sandwich|sub\b|footlong|baguette|panini|toastie|roll\b|slider|wrap|burrito|taco|melt|bake\b|croque|bocadillo|montadito|hot dog|dog\b|quesadilla|crunchwrap|chalupa|gordita|smørrebrød|kebab|doner|gyros|pita|lahmacun|tunnbröd|unwich/i],
+    ['Pizza & pasta', /pizza|pasta|spaghetti|lasagne|carbonara|penne|fettuccine|calzone|slice\b/i],
+    ['Bowls, salads & mains', /bowl|salad|plate|curry|rice|noodle|soup|chili|steak|ribs|platter|meal|box\b|daal|ruby|meatballs|fajita|grill|carvery/i],
+    ['Sides & dips', /dippers|sticks|slices|fruit bag|fries|chips|wedge|ring|tots|side|coleslaw|corn|beans|gravy|mash|dip\b|sauce|mayo|bread|knots|curds|onion|potato|nachos|twists|cookie dough/i],
+    ['Desserts & bakery', /cookie|muffin|doughnut|donut|cake|pie\b|sundae|mcflurry|ice cream|cone|blizzard|brownie|pastry|pain au|éclair|bun\b|waffle|pancake|cinnamon|churro|dessert|frosty|scoop|timbits|munchkins|yum yum|shortbread|tart|nata/i],
+    ['Drinks', /coffee|latte|cappuccino|flat white|americano|mocha|macchiato|frappe|frapp|tea\b|chai|matcha|shake|smoothie|juice|cola|coke|fanta|pepsi|lemonade|drink|refresher|cold brew|espresso|cortado|frostino|coolatta|capp\b|limeade|baja blast|slurpee|galão|root beer/i],
+  ];
+  function menuSections(list) {
+    const groups = new Map(MENU_SECTIONS.map(([t]) => [t, []])); groups.set('More', []);
+    for (const f of list) {
+      const nm = f.name.replace(/\s*\([^)]*\)\s*$/, '') + ' ' + (f.each ? f.each.one : '') + (f.unit === 'ml' ? ' drink' : '');
+      const hit = f.unit === 'ml' ? 'Drinks' : (MENU_SECTIONS.find(([, re]) => re.test(nm)) || ['More'])[0];
+      groups.get(hit).push(f);
+    }
+    return [...groups].filter(([, a]) => a.length).map(([t, a]) => `<div class="menu-sec">${esc(t)}</div>` + a.map(resultRow).join('')).join('');
+  }
+
   const SHOP_LIST = [['restaurants', 'Fast food 🍔'], ['sainsburys', "Sainsbury's"], ['aldi', 'Aldi'], ['coop', 'Co-op'], ['ryanair', 'Ryanair ✈']];
   const shopName = id => (SHOP_LIST.find(x => x[0] === id) || [, id])[1];
+  const shopPH = () => M.shop === 'restaurants' ? (M.chain ? `Search the ${M.chain} menu` : 'Search all restaurants, e.g. big mac') : `Search ${shopName(M.shop)} products, e.g. chicken, yogurt, cola`;
   function setTab(tab) {
     M.tab = tab;
     card.querySelectorAll('#mtabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
     $('#mshops').hidden = tab !== 'shop';
-    $('#mq').placeholder = tab === 'shop' ? `Search ${shopName(M.shop)} products, e.g. chicken, yogurt, cola` : 'Search foods, e.g. chicken breast, banana, Greek yogurt';
+    $('#mq').placeholder = tab === 'shop' ? shopPH() : 'Search foods, e.g. chicken breast, banana, Greek yogurt';
     if (tab === 'online' && M.q.trim() && !M.online) runOnline();
     else if (tab === 'shop' && M.shopKey !== M.shop + '|' + M.q.trim()) runShop(1);
     else renderResults();
@@ -1144,9 +1186,10 @@
     const q = M.q.trim(), shop = M.shop, key = shop + '|' + q;
     M.tab = 'shop';
     card.querySelectorAll('#mshops button').forEach(b => b.classList.toggle('on', b.dataset.shop === shop));
-    $('#mq').placeholder = `Search ${shopName(shop)} products, e.g. chicken, yogurt, cola`;
+    $('#mq').placeholder = shopPH();
     if (shop === 'ryanair' || shop === 'restaurants') { // built in: works with no internet (on the plane too)
-      const all = BUILTIN.filter(f => f.cat === (shop === 'ryanair' ? 'Ryanair' : 'Fast food'));
+      let all = BUILTIN.filter(f => f.cat === (shop === 'ryanair' ? 'Ryanair' : 'Fast food'));
+      if (shop === 'restaurants' && M.chain) all = all.filter(f => f.brand === M.chain);
       M.shopRes = q ? searchFoods(q, all) : all; M.shopErr = []; M.shopBusy = false; M.shopMore = false; M.shopKey = key;
       renderResults(); return;
     }
@@ -1249,16 +1292,20 @@
         const kc = f.items.reduce((a, e) => a + (e.n.kcal || 0) * e.grams / 100, 0);
         return `<div class="result fav-row" data-m="fav-log" data-id="${esc(f.id)}"><span class="rn">★ ${esc(f.name)}</span><span class="rk">${fmt(kc)} kcal</span><span class="rm">${esc(f.items.map(e => e.name).join(', ').slice(0, 90))}</span><button class="btn ghost fav-x" data-m="fav-del" data-id="${esc(f.id)}" aria-label="Remove favourite">✕</button></div>`;
       }).join('') : `<div class="hint">No favourite meals yet. In your diary, tap <b>★ Save as favourite</b> under a meal to save it here for one-tap logging.</div>`);
+    } else if (M.tab === 'shop' && M.shop === 'restaurants' && !M.chain && !M.q.trim()) {
+      lastList = [];
+      html = chainPicker();
     } else if (M.tab === 'shop') {
-      const nm = esc(shopName(M.shop));
+      const nm = esc(M.shop === 'restaurants' && M.chain ? M.chain : shopName(M.shop));
       lastList = M.shopRes || [];
       if (M.shopBusy && !M.shopRes) html = `<div class="hint">Loading ${nm} products…</div>`;
       else {
         html = (M.shopErr.length ? `<div class="hint err">${M.shopErr.map(esc).join('<br>')}</div>` : '') +
-          (lastList.length ? `<div class="group-label">${M.q.trim() ? `${nm} products matching “${esc(M.q.trim())}”` : `Popular ${nm} products · type to search`}</div>` + lastList.map(resultRow).join('')
+          (M.shop === 'restaurants' && M.chain ? `<div class="chain-head"><button class="btn ghost" data-m="ff-back">‹ All restaurants</button><b>${nm}</b><span class="faint small">${BUILTIN.filter(f => f.brand === M.chain).length} items</span></div>` : '') +
+          (lastList.length ? `<div class="group-label">${M.q.trim() ? `${M.shop === 'restaurants' && !M.chain ? 'Fast food' : nm} matching “${esc(M.q.trim())}”` : M.shop === 'restaurants' ? `Full ${nm} menu · type to search it` : `Popular ${nm} products · type to search`}</div>` + (M.shop === 'restaurants' && !M.q.trim() ? menuSections(lastList) : lastList.map(resultRow).join(''))
             + (M.shopMore ? `<div class="hint"><button class="btn" data-m="shop-more" ${M.shopBusy ? 'disabled' : ''}>${M.shopBusy ? 'Loading…' : 'Show more'}</button></div>` : '')
             : (M.shopErr.length ? '' : `<div class="hint">No ${nm} products found${M.q.trim() ? ` for “${esc(M.q.trim())}”` : ''}. Try another word, or use <b>Search online</b>.</div>`));
-        html += M.shop === 'restaurants' ? `<div class="hint faint small">Menus from ${(window.GG_FASTFOOD_CHAINS || []).length} chains and takeaways across Europe. Values follow each chain's published nutrition; items marked "typical" use typical values for that dish. Recipes vary a little by country.</div>` : M.shop === 'ryanair' ? `<div class="hint faint small">Ryanair's onboard menu works offline, so you can log it on the plane. Ryanair doesn't publish nutrition, so these are typical values for each item.</div>` : `<div class="hint faint small">Products come from Open Food Facts, where shoppers add products from these shops. It isn't the shops' own list, so some products are missing.</div>`;
+        html += M.shop === 'restaurants' ? `<div class="hint faint small">Values follow each chain's published nutrition where available, otherwise typical values for that item (marked "typical" for takeaways). Recipes and portions vary a little by country.</div>` : M.shop === 'ryanair' ? `<div class="hint faint small">Ryanair's onboard menu works offline, so you can log it on the plane. Ryanair doesn't publish nutrition, so these are typical values for each item.</div>` : `<div class="hint faint small">Products come from Open Food Facts, where shoppers add products from these shops. It isn't the shops' own list, so some products are missing.</div>`;
       }
     } else {
       if (M.onlineBusy) html = `<div class="hint">Searching Open Food Facts and the USDA database…</div>`;
@@ -1767,6 +1814,8 @@
     else if (m === 'commit') commit();
     else if (m === 'online' || m === 'go-online') runOnline();
     else if (m === 'shop-more') runShop(M.shopPage + 1);
+    else if (m === 'ff-chain') { M.chain = a.dataset.chain; M.q = ''; $('#mq').value = ''; runShop(1); const r = $('#mres'); if (r) r.scrollTop = 0; }
+    else if (m === 'ff-back') { M.chain = null; M.q = ''; $('#mq').value = ''; runShop(1); const r = $('#mres'); if (r) r.scrollTop = 0; }
     else if (m === 'remove') {
       const list = P().diary[M.date] || [];
       const idx = list.findIndex(x => x.id === M.entry.id);

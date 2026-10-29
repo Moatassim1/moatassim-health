@@ -1,7 +1,7 @@
 // Offline support + push notifications.
 // Network first (so updates arrive straight away), cache as a fallback.
-const CACHE = 'mh-v2.0.53';
-const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'api-web.js', 'scanner.js', 'config.js', 'foods.js', 'fastfood.js', 'syncmodel.js', 'charts.js', 'game.js', 'photos.js', 'countries.js', 'vendor/html5-qrcode.min.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'native.js', 'icons/cp.png', 'bodymap.js'];
+const CACHE = 'mh-v2.0.54';
+const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'api-web.js', 'scanner.js', 'config.js', 'foods.js', 'fastfood.js', 'fastfood2.js', 'worldfoods.js', 'syncmodel.js', 'charts.js', 'game.js', 'photos.js', 'countries.js', 'vendor/html5-qrcode.min.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'native.js', 'icons/cp.png', 'bodymap.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {}).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {

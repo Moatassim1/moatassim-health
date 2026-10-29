@@ -1350,3 +1350,11 @@ button.pf-tile:active { transform: scale(.97); }
 .tb-quests { position: relative; }
 .tb-quests .qdot { position: absolute; top: 9px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: #FF3B30; box-shadow: 0 0 0 2px var(--surface); }
 .bell i.qdot, .tb-quests i.qdot { position: absolute; top: 10px; right: 10px; width: 10px; height: 10px; min-width: 0; padding: 0; font-size: 0; line-height: 0; border-radius: 50%; background: #FF3B30; box-shadow: 0 0 0 2px var(--surface); }
+/* fast food restaurant picker */
+.chain-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;padding:4px 10px 10px}
+.chain-btn{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:44px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:inherit;font:inherit;font-weight:600;text-align:left;cursor:pointer}
+.chain-btn small{color:var(--faint);font-weight:500;font-size:12px}
+.chain-btn:active{transform:scale(.98)}
+.chain-head{display:flex;align-items:center;gap:10px;padding:8px 10px;position:sticky;top:0;background:var(--surface);z-index:2;border-bottom:1px solid var(--line)}
+.chain-head b{font-size:16px}
+.menu-sec{padding:12px 12px 4px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}

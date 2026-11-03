@@ -11,6 +11,10 @@ on:
         description: 'Only run steps whose name contains these words (comma separated)'
         required: false
         default: ''
+      cancel:
+        description: 'Take a version waiting for review out of review first (yes/no)'
+        required: false
+        default: 'no'
 jobs:
   listing:
     runs-on: ubuntu-latest
@@ -24,4 +28,5 @@ jobs:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           BUILD: ${{ inputs.build }}
           ONLY: ${{ inputs.only }}
+          CANCEL: ${{ inputs.cancel }}
         run: python3 native/asc_listing.py

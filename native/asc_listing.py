@@ -83,6 +83,14 @@ def age_rating():
     raise RuntimeError('age rating did not save')
 step('age rating', age_rating)
 
+if os.environ.get('CANCEL') == 'yes':  # take a waiting submission out of review so the listing can be edited
+    for sub in call('GET', f'/v1/reviewSubmissions?filter[app]={APP}&filter[platform]=IOS&limit=20')['data']:
+        if sub['attributes'].get('state') == 'WAITING_FOR_REVIEW':
+            call('PATCH', f'/v1/reviewSubmissions/{sub["id"]}', {'data': {'type': 'reviewSubmissions', 'id': sub['id'], 'attributes': {'canceled': True}}}); note('cancelled waiting submission')
+            for _ in range(20):
+                time.sleep(6)
+                if call('GET', f'/v1/reviewSubmissions/{sub["id"]}')['data']['attributes'].get('state') != 'CANCELING': break
+    time.sleep(5)
 vers = call('GET', f'/v1/apps/{APP}/appStoreVersions?filter[platform]=IOS&limit=5')['data']
 ver = next((v for v in vers if v['attributes'].get('appStoreState') in ('PREPARE_FOR_SUBMISSION', 'DEVELOPER_REJECTED', 'REJECTED', 'METADATA_REJECTED')), None)
 if not ver:

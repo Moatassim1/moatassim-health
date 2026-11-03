@@ -33,7 +33,14 @@ try:
     ver = vers[0]; note('version state now: ' + ver['attributes']['appStoreState'])
     num = os.environ['BUILD']
     blds = call('GET', f'/v1/builds?filter[app]={APP}&filter[version]={num}')['data']
+    for _ in range(40):  # wait for Apple to finish processing a fresh upload
+        if blds and blds[0]['attributes'].get('processingState') == 'VALID': break
+        time.sleep(30); blds = call('GET', f'/v1/builds?filter[app]={APP}&filter[version]={num}')['data']
     if not blds or blds[0]['attributes'].get('processingState') != 'VALID': note(f'build {num} not ready: ' + json.dumps([b['attributes'].get('processingState') for b in blds])); done(1)
+    # The version on the store page must carry the same version number as the build (e.g. 1.1.0).
+    bver = call('GET', f'/v1/builds/{blds[0]["id"]}/preReleaseVersion')['data']['attributes']['version']
+    if ver['attributes'].get('versionString') != bver:
+        call('PATCH', f'/v1/appStoreVersions/{ver["id"]}', {'data': {'type': 'appStoreVersions', 'id': ver['id'], 'attributes': {'versionString': bver}}}); note(f'version number {ver["attributes"].get("versionString")} -> {bver}')
     call('PATCH', f'/v1/appStoreVersions/{ver["id"]}/relationships/build', {'data': {'type': 'builds', 'id': blds[0]['id']}}); note('attached build ' + num)
     if os.environ.get('SUBMIT') == 'yes':
         sub = next((s for s in call('GET', f'/v1/reviewSubmissions?filter[app]={APP}&filter[platform]=IOS&filter[state]=READY_FOR_REVIEW')['data']), None)

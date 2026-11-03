@@ -2,7 +2,7 @@
 // Provides window.api (what the app screens use) and window.social (friends).
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.54';
+  const APP_VERSION = '2.0.55';
   const CFG = window.MH_CONFIG || {};
   const $ = (s, el = document) => el.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -320,11 +320,20 @@
     return out;
   }
   const SUPP_RE = /supplement|vitamin|capsule|softgel|tablet|omega|fish.?oil|cod.?liver|multivit|mineral|magnesium|zinc|collagen|creatine|probiotic|krill/i;
+  // Barcode lookup. Returns a food; { supplement }; { incomplete } when the product exists but its
+  // nutrition isn't filled in; or null when the product isn't in the database. Network problems throw.
+  // UPC-A (12 digits, US/Canada) and EAN-13 are the same number with or without a leading 0, so both are tried.
+  const codeVariants = c => [...new Set([c, c.length === 12 ? '0' + c : null, c.length === 13 && c[0] === '0' ? c.slice(1) : null, c.length === 14 && c[0] === '0' ? c.slice(1) : null].filter(Boolean))];
   async function lookupBarcode(code) {
     code = String(code).replace(/\D/g, '');
     if (!code) return null;
-    const j = await getJson(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${OFF_FIELDS}`);
-    if (!(j && j.status === 1 && j.product)) return null;
+    let j = null;
+    for (const c of codeVariants(code)) {
+      j = await getJson(`https://world.openfoodfacts.org/api/v2/product/${c}.json?fields=${OFF_FIELDS},image_front_small_url`);
+      if (j && j.status === 1 && j.product) break;
+      j = null;
+    }
+    if (!j) return null;
     const p = j.product;
     const name = ((p.product_name_en || p.product_name || '') + ' ' + (p.brands || '').split(',')[0]).trim();
     const nm = p.product_name_en || p.product_name || '';
@@ -336,6 +345,15 @@
     const supplement = !realFood && (pill || (p.categories_tags || []).some(t => /supplement|vitamin/.test(t)) || SUPP_RE.test(nm));
     // Supplements are logged per capsule from the built-in list, not as a food with macros.
     if (supplement) return { supplement: true, name, food: null };
+    if (!food) {
+      // The product is real but has no calories on record: say so instead of pretending it wasn't found.
+      const part = offToFood({ ...p, code, nutriments: { ...(p.nutriments || {}), 'energy-kcal_100g': 0 } });
+      const known = part ? Object.fromEntries(Object.entries(part.n).filter(([k, v]) => v != null && k !== 'kcal')) : {};
+      const br = (p.brands || '').split(',')[0].trim();
+      return { incomplete: true, barcode: code, name: nm ? (br ? `${nm.trim()} (${br})` : nm.trim()) : 'Product ' + code, brand: (p.brands || '').split(',')[0].trim(), unit: part ? part.unit : 'g', size: part ? part.size : null, portion: part ? part.portion : null, portionLabel: part ? part.portionLabel : null, n: { ...known, kcal: null } };
+    }
+    const missing = ['p', 'c', 'f'].filter(k => food.n[k] == null);
+    if (missing.length) food.missing = missing; // calories known, some macros not
     return food;
   }
 
@@ -463,6 +481,10 @@
     async privacy() { try { const r = await req(`/rest/v1/profiles?id=eq.${uid}&select=share_diary,share_weight,share_health,consent_at`); return (r && r[0]) || null; } catch (_) { return null; } },
     async setPrivacy(p) { return req('/rest/v1/rpc/mh_set_privacy', { method: 'POST', body: JSON.stringify({ diary: p.diary ?? null, weight: p.weight ?? null, health: p.health ?? null, consent: !!p.consent }) }); },
     async searchUsers(q) { if (String(q || '').trim().length < 3) return []; return (await req('/rest/v1/rpc/mh_search_users', { method: 'POST', body: JSON.stringify({ q }) })) || []; },
+    // Share a workout plan with a friend (exercise list only; see supabase/workout-invites.sql).
+    async sendWorkout(friend, day, plan) { return req('/rest/v1/rpc/mh_send_workout', { method: 'POST', body: JSON.stringify({ friend, on_day: day, plan }) }); },
+    async respondWorkout(invite, accept) { return req('/rest/v1/rpc/mh_respond_workout', { method: 'POST', body: JSON.stringify({ invite, accept: !!accept }) }); },
+    async workouts() { return (await req('/rest/v1/rpc/mh_my_workouts', { method: 'POST', body: '{}' })) || []; },
     async notifications() { return (await req(`/rest/v1/notifications?select=*&order=created_at.desc&limit=50`)) || []; },
     async markRead() { return req(`/rest/v1/notifications?recipient=eq.${uid}&read=eq.false`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ read: true }) }); },
     pushSupported: () => !window.desktop && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window,
@@ -652,8 +674,8 @@
     }
     try {
       const prof = await social.myProfile();
-      if (prof) { if (!newName && prof.name && (S.profiles.me.name === 'Me' || !S.profiles.me.setupDone)) S.profiles.me.name = prof.name; window.MH_ME = prof; }
-    } catch (_) {}
+      if (prof) { if (!newName && prof.name && (S.profiles.me.name === 'Me' || !S.profiles.me.setupDone)) S.profiles.me.name = prof.name; window.MH_ME = prof; LS.set('gg.me.' + uid, prof); }
+    } catch (_) { const c = LS.get('gg.me.' + uid, null); if (c && c.id === uid) window.MH_ME = c; } // offline: last known profile (username, flag)
     await importLegacyDesktop();
     { // A start weight that was never actually weighed (e.g. the 75 kg default) is dropped; the first real weigh-in takes its place.
       const p = S.profiles.me, gs = p.profile.goalStart;

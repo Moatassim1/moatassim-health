@@ -97,9 +97,13 @@
       const headers = { apikey: this.key, 'Content-Type': 'application/json', ...(opts.headers || {}) };
       if (auth) headers.Authorization = 'Bearer ' + (await this.token());
       let res;
-      try { res = await this.fetch(this.url + path, { ...opts, headers }); }
-      catch (e) { const err = new Error('offline'); err.offline = true; throw err; }
-      const text = await res.text();
+      // Every request gives up after 20 s (a hanging request used to leave loading states stuck forever).
+      const ctrl = typeof AbortController !== 'undefined' && !opts.signal ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), opts.timeout || 20000) : null;
+      let text;
+      try { res = await this.fetch(this.url + path, { ...opts, headers, ...(ctrl ? { signal: ctrl.signal } : {}) }); text = await res.text(); }
+      catch (e) { const t = ctrl && ctrl.signal.aborted; const err = new Error(t ? 'The server took too long to answer.' : 'offline'); err.offline = true; err.timeout = !!t; throw err; }
+      finally { if (timer) clearTimeout(timer); }
       let body = null; try { body = text ? JSON.parse(text) : null; } catch (_) { body = text; }
       if (!res.ok) {
         const msg = (body && (body.error_description || body.msg || body.message || body.error)) || ('HTTP ' + res.status);

@@ -256,24 +256,70 @@
   // ---------------------------------------------------------------- foods index
   const BUILTIN = (window.BUILTIN_FOODS || []).map(f => ({ ...f, source: 'Built-in' }));
   const allFoods = () => [...S.customFoods, ...BUILTIN];
+  // Food search: forgiving about accents, plurals, UK/US words (chips/fries, courgette/zucchini…) and small typos.
+  const FOLD = x => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/['’`]/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9%.]+/g, ' ').trim();
+  const SYN = { fries: ['chips'], chips: ['fries', 'crisps'], crisps: ['chips'], eggplant: ['aubergine'], aubergine: ['eggplant'], zucchini: ['courgette'], courgette: ['zucchini'], cilantro: ['coriander'], coriander: ['cilantro'],
+    shrimp: ['prawn'], prawn: ['shrimp'], prawns: ['shrimp'], ground: ['mince'], mince: ['ground', 'minced'], cookie: ['biscuit'], cookies: ['biscuit'], biscuit: ['cookie'], yogurt: ['yoghurt'], yoghurt: ['yogurt'], oatmeal: ['porridge', 'oats'], porridge: ['oatmeal'],
+    arugula: ['rocket'], scallion: ['spring onion'], candy: ['sweets'], sweets: ['candy'], soda: ['cola', 'fizzy', 'lemonade'], beet: ['beetroot'], garbanzo: ['chickpea'], chickpeas: ['chickpea'], cornstarch: ['cornflour'], donut: ['doughnut'], doughnut: ['donut'], bbq: ['barbecue'], barbecue: ['bbq'],
+    mac: ['macaroni'], oj: ['orange juice'], choc: ['chocolate'], choco: ['chocolate'], veg: ['vegetable'], veggie: ['vegetable', 'vegetarian'], coke: ['cola'], capsicum: ['pepper'], jello: ['jelly'], jam: ['jelly'], hotdog: ['hot dog'], icecream: ['ice cream'],
+    peanutbutter: ['peanut butter'], brekkie: ['breakfast'], sarnie: ['sandwich'], butty: ['sandwich', 'roll'], spuds: ['potato'], spud: ['potato'], tatties: ['potato'], kebab: ['doner', 'kebab'], gyro: ['gyros'], pita: ['pitta'], pitta: ['pita'], filet: ['fillet'], fillet: ['filet'],
+    whey: ['whey', 'protein powder'], protien: ['protein'], prot: ['protein'], cappucino: ['cappuccino'], expresso: ['espresso'], tomatoe: ['tomato'], tomatoes: ['tomato'], potatoe: ['potato'], potatoes: ['potato'], humus: ['hummus'], houmous: ['hummus'], tahina: ['tahini'], bolognaise: ['bolognese'] };
+  const root = t => { if (t.length <= 4) return t; const r = t.replace(/(ies|es|s|y)$/, ''); return r.length >= 4 ? r : t; };
+  function editDist(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j), pp = null;
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i]; let best = i;
+      for (let j = 1; j <= b.length; j++) {
+        let v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (pp && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, pp[j - 2] + 1); // swapped letters
+        cur.push(v); if (v < best) best = v;
+      }
+      if (best > max) return max + 1;
+      pp = prev; prev = cur;
+    }
+    return prev[b.length];
+  }
+  const foodHay = f => {
+    const key = f.name + '|' + (f.kw || '');
+    if (f._hk !== key) { f._hk = key; f._hz = FOLD(f.name + ' ' + (f.cat || '') + ' ' + (f.brand || '') + ' ' + (f.kw || '')); f._nz = FOLD(f.name); f._wz = [...new Set(f._hz.split(' ').filter(w => w.length > 2))]; }
+    return f;
+  };
   function searchFoods(q, list = allFoods()) {
-    const norm = x => x.toLowerCase().replace(/['’`]/g, '');
-    q = norm(q.trim());
+    q = FOLD(q);
     if (!q) return [];
-    const toks = q.split(/\s+/);
+    const toks = q.split(' ').filter(Boolean);
+    const alts = toks.map(t => [...new Set([t, root(t), ...(SYN[t] || []).map(FOLD)])]);
+    const recent = new Set(P().recent.map(r => r.id));
+    const scoreOf = (f, nm, fuzzy) => {
+      const words = nm.split(' ');
+      let s = fuzzy ? -25 : 0;
+      const isBrand = f.branded || f.cat === 'Fast food' || f.cat === 'Ryanair' || /^off:/.test(f.id);
+      if (nm.startsWith(q) || (root(q) !== q && nm.startsWith(root(q)) && words[0].startsWith(root(toks[0])))) s += isBrand ? 25 : 50;
+      if (isBrand) { const b = FOLD(f.brand || ''); if (b && (q.includes(b) || b.split(' ').some(w => w.length > 2 && toks.includes(w)) || FOLD(f.kw || '').split(' ').slice(0, 3).some(w => w.length > 2 && toks.includes(w)))) s += 35; else s -= 25; } else if (f.source === 'Built-in' && f.cat !== 'Supplements') s += 10;
+      if (words.some(w => w.startsWith(toks[0]))) s += 20;
+      s += 30 * toks.filter(t => words.some(w => w === t || (t.length > 3 && root(w) === root(t)))).length / toks.length; // whole-word match: "b1" beats "b12"
+      if (recent.has(f.id)) s += 15;
+      if (/^b\d/.test(f.id)) s += 8; // the everyday core list (chicken breast before chicken kiev)
+      if (f.source !== 'Built-in') s += 5;
+      if (f.cat === 'Supplements' && !/vitamin|supplement|capsule|tablet|omega|zinc|magnesium|iron|b12|creatine|collagen/.test(q)) s -= 12;
+      return s - nm.length / 20;
+    };
     const scored = [];
     for (const f of list) {
-      const hay = norm(f.name + ' ' + (f.cat || '') + ' ' + (f.kw || ''));
-      if (!toks.every(t => hay.includes(t))) continue;
-      const nm = norm(f.name), words = nm.split(/[\s,()/-]+/);
-      let s = 0;
-      if (nm.startsWith(q)) s += 50;
-      if (words.some(w => w.startsWith(toks[0]))) s += 20;
-      s += 30 * toks.filter(t => words.includes(t)).length / toks.length; // whole-word match: "b1" beats "b12"
-      if (P().recent.some(r => r.id === f.id)) s += 15;
-      if (f.source !== 'Built-in') s += 5;
-      s -= nm.length / 20;
-      scored.push([s, f]);
+      const x = foodHay(f), hay = x._hz;
+      if (!alts.every(a => a.some(t => hay.includes(t)))) continue;
+      scored.push([scoreOf(f, x._nz, false), f]);
+    }
+    // Few or no exact matches: allow one or two wrong letters per word ("chiken", "banan", "yougurt").
+    if (scored.length < 6 && toks.some(t => t.length >= 4)) {
+      const have = new Set(scored.map(x => x[1].id));
+      for (const f of list) {
+        if (have.has(f.id)) continue;
+        const x = foodHay(f);
+        const ok = alts.every((a, i) => a.some(t => x._hz.includes(t)) || (toks[i].length >= 4 && x._wz.some(w => editDist(toks[i], w.slice(0, toks[i].length + 2), toks[i].length >= 7 ? 2 : 1) <= (toks[i].length >= 7 ? 2 : 1) || editDist(toks[i], w, toks[i].length >= 7 ? 2 : 1) <= (toks[i].length >= 7 ? 2 : 1))));
+        if (ok) scored.push([scoreOf(f, x._nz, true), f]);
+      }
     }
     return scored.sort((a, b) => b[0] - a[0]).map(x => x[1]).slice(0, 80);
   }
@@ -549,8 +595,26 @@
   const exTitle = n => { const [a, b] = exParts(n); return b ? `${esc(a)} <span class="ex-var">${esc(b)}</span>` : esc(a); };
 
   // ---- Training card in the diary: sets are logged right here.
+  // A finished exercise can be locked: it folds into one compact row and can't be edited until unlocked.
+  // Locking only sets a flag; the sets themselves are never changed.
+  function liftSummary(l) {
+    const d = done(l.sets), b = bestSet(d), vol = d.reduce((a, s) => a + (s.kg || 0) * (s.reps || 0), 0);
+    if (!d.length) return 'No sets recorded';
+    return `${d.length} set${d.length === 1 ? '' : 's'} · best ${fmtSet(b.s)}${vol > 0 ? ` · ${fmt(vol)} kg volume` : ''}`;
+  }
+  function liftLockedBlock(l, k, x, pr) {
+    const d = done(l.sets);
+    return `<div class="lift locked" data-lid="${esc(l.id)}">
+      <button class="lift-thumb sm" data-action="lift-info" data-ex="${esc(l.ex)}" aria-label="About ${esc(l.name)}">${thumb(x)}</button>
+      <div class="lift-lk-main"><b>${exTitle(x.n || l.name)}</b><small><span class="lk-ok">✓ Done</span> · ${esc(liftSummary(l))}</small>
+        ${d.length ? `<span class="lk-sets">${d.map(s => `<i>${s.kg > 0 ? `${fmtKg(s.kg)}×${s.reps}` : `${s.reps} reps`}</i>`).join('')}</span>` : ''}</div>
+      <span class="pr-badge"${pr ? '' : ' hidden'}>🏆 PR</span>
+      <button class="lift-lock on" data-action="lift-unlock" data-id="${esc(l.id)}" aria-label="Unlock ${esc(l.name)} to edit it" title="Unlock to edit">🔒</button>
+    </div>`;
+  }
   function liftBlock(l, k) {
     const x = exById(l.ex) || { n: l.name, p: l.mp || [], s: l.ms || [] };
+    if (l.locked) { const pr = isPR(l, k); PRS.set(l.id, pr); return liftLockedBlock(l, k, x, pr); }
     const hist = liftHistory(l.ex, k), last = hist[hist.length - 1], tgt = nextTarget(last), pr = isPR(l, k); PRS.set(l.id, pr);
     const ph = tgt || (last ? { kg: last.top.kg, reps: last.top.reps } : null);
     const sub = last ? `Last ${fmtSet(last.top)}${tgt ? ` · 🎯 ${fmtSet(tgt)}` : ''}` : 'First time: your progress starts today';
@@ -559,8 +623,10 @@
         <button class="lift-thumb" data-action="lift-info" data-ex="${esc(l.ex)}" aria-label="About ${esc(l.name)}">${thumb(x)}</button>
         <button class="lift-title" data-action="lift-info" data-ex="${esc(l.ex)}"><b>${exTitle(x.n || l.name)}</b><small>${esc(sub)}</small></button>
         <span class="pr-badge"${pr ? '' : ' hidden'}>🏆 PR</span>
+        <button class="lift-lock" data-action="lift-lock" data-id="${esc(l.id)}" aria-label="Finished: lock ${esc(l.name)}" title="Finished? Lock it">🔓</button>
         <button class="lift-x" data-action="lift-del" data-id="${esc(l.id)}" aria-label="Remove exercise">✕</button>
       </div>
+      ${l.from ? `<div class="lift-from">👥 From ${esc(l.from.name)}'s workout · your sets are your own</div>` : ''}
       <div class="lset-head"><span>Set</span><span>kg</span><span>Reps</span><span></span></div>
       ${l.sets.map((s, i) => `<div class="lset${s.reps > 0 ? ' done' : ''}" data-i="${i}"><span class="lset-n">${i + 1}</span><input class="lset-kg" type="number" inputmode="decimal" step="0.5" min="0" max="999" value="${s.kg > 0 || s.reps > 0 ? (s.kg || 0) : ''}" placeholder="${ph ? fmtKg(ph.kg) : 'kg'}" aria-label="Set ${i + 1} kg"><input class="lset-reps" type="number" inputmode="numeric" min="1" max="100" value="${s.reps > 0 ? s.reps : ''}" placeholder="${ph ? ph.reps : 'reps'}" aria-label="Set ${i + 1} reps"><button class="lset-ok" data-action="lset-ok" data-id="${esc(l.id)}" data-i="${i}" aria-label="Set ${i + 1} done">✓</button></div>`).join('')}
       <div class="lift-btns"><button class="btn ghost" data-action="lset-add" data-id="${esc(l.id)}">＋ Add set</button>${l.sets.length > 1 ? `<button class="btn ghost" data-action="lset-pop" data-id="${esc(l.id)}">− Remove set</button>` : ''}</div>
@@ -572,13 +638,17 @@
     const exK = ex.reduce((a, x) => a + (x.kcal || 0), 0);
     if (lifts.some(l => !l.mp) && !window.GG_EXERCISES) loadExercises().then(() => { if (UI.view === 'today') softRender(render); }).catch(() => {});
     return `<div class="panel train-card" id="trainCard">
+      ${wkIncomingFor(k).map(wkInviteCard).join('')}
       <div class="tc-head"><h2>Training</h2><span class="faint small" id="tcSum">${lifts.length ? `${lifts.length} exercise${lifts.length === 1 ? '' : 's'}${m.prs ? ` · <b class="pr-txt">${m.prs} PR${m.prs > 1 ? 's' : ''}</b>` : ''}` : ''}</span></div>
       ${gd && gd.steps != null ? (() => { const w = walkKcal(gd); return `<div class="steps-row"><span>👟 <b class="num">${fmt(gd.steps)}</b> steps <span class="faint">· ${fmt(w.km, 1)} km</span></span><span class="walk-kcal" title="Calories burned walking, on top of what your body burns at rest."><b class="num">${fmt(w.kcal)}</b> kcal</span></div>${gd.stepGoal ? `<div class="water-bar steps-bar"><i style="width:${Math.min(100, gd.steps / gd.stepGoal * 100)}%"></i></div><div class="faint small" style="margin-top:4px">Goal ${fmt(gd.stepGoal)} steps</div>` : ''}`; })() : healthOffer()}
+      ${lifts.length ? `<div class="tc-sec"><span>🏋️ Gym</span>${lifts.length ? `<span class="tc-sec-r">${lifts.filter(l => l.locked).length ? `${lifts.filter(l => l.locked).length}/${lifts.length} done` : ''}</span>` : ''}</div>${wkInvSent(k)}` : ''}
       ${lifts.map(l => liftBlock(l, k)).join('')}
+      ${lifts.length ? `<button class="btn ghost wide wk-share-btn" data-action="wk-share">👥 Share this workout with a friend</button>` : ''}
+      ${ex.length || (gd && (gd.activities || []).length) ? '<div class="tc-sec"><span>🏊 Activities & sports</span></div>' : ''}
       ${ex.length ? `<ul class="ex-list act-list">${ex.map(x => { const a = exById(x.exId); return `<li><span>${a && a.ic ? a.ic + ' ' : ''}<b>${esc(x.name)}</b> <span class="faint">${fmt(x.min)} min</span></span><span class="num">${fmt(x.kcal)} kcal</span><button class="btn ghost j-x" data-action="ex-del" data-id="${esc(x.id)}" aria-label="Remove">✕</button></li>`; }).join('')}</ul><p class="small muted" style="margin:4px 0 0">${fmt(exK)} kcal from activities${gd && gd.kcalTotal != null ? ' · already part of your watch total, so it isn\'t added again' : ''}.</p>` : ''}
-      ${gd && (gd.activities || []).length ? `<div class="faint small" style="margin:10px 0 2px">From your watch</div><ul class="ex-list g-acts">${gd.activities.map(x => `<li><span>${actIcon(x.type)} <b>${esc(x.name)}</b> <span class="faint">${[x.start, x.min != null ? fmt(x.min) + ' min' : '', x.km ? fmt(x.km, x.km < 2 ? 2 : 1) + ' km' : ''].filter(Boolean).join(' · ')}</span></span><span class="num">${x.kcal != null ? fmt(x.kcal) + ' kcal' : ''}</span></li>`).join('')}</ul>` : ''}
+      ${gd && (gd.activities || []).length ? `<div class="faint small" style="margin:${ex.length ? 10 : 2}px 0 2px">From your watch</div><ul class="ex-list g-acts">${gd.activities.map(x => `<li><span>${actIcon(x.type)} <b>${esc(x.name)}</b> <span class="faint">${[x.start, x.min != null ? fmt(x.min) + ' min' : '', x.km ? fmt(x.km, x.km < 2 ? 2 : 1) + ' km' : ''].filter(Boolean).join(' · ')}</span></span><span class="num">${x.kcal != null ? fmt(x.kcal) + ' kcal' : ''}</span></li>`).join('')}</ul>` : ''}
       ${!lifts.length && !ex.length && !(gd && (gd.activities || []).length) ? '<p class="muted small" style="margin:8px 0 0">Log your lifts to track progressive overload (weight, reps and sets over time, with a 🏆 for every personal record), or log a swim, sauna, run or match.</p>' : ''}
-      <button class="btn primary wide lift-add" data-action="lift-pick">＋ Log exercise</button>
+      <div class="tc-add"><button class="btn primary lift-add" data-action="lift-pick" data-tab="gym">🏋️ ＋ Gym exercise</button><button class="btn lift-add act-add" data-action="lift-pick" data-tab="act">🏊 ＋ Activity</button></div>
     </div>`;
   }
   const findLift = id => { const m = P().dayMeta[UI.date] || {}; return (m.lifts || []).find(l => l.id === id); };
@@ -587,6 +657,7 @@
   function onSetInput(inp) {
     const box = inp.closest('.lift'), row = inp.closest('.lset'); if (!box || !row) return;
     const l = findLift(box.dataset.lid); if (!l) return;
+    if (l.locked) { softRender(render); return; }
     const i = Number(row.dataset.i), s = l.sets[i] || (l.sets[i] = { kg: 0, reps: 0 });
     const kg = row.querySelector('.lset-kg').value, reps = row.querySelector('.lset-reps').value;
     s.kg = Math.max(0, Math.round(Number(kg) * 10) / 10 || 0); s.reps = Math.max(0, Math.round(Number(reps)) || 0);
@@ -616,15 +687,27 @@
   }
   function liftAction(act, a) {
     const k = UI.date, m = P().dayMeta[k] || {};
-    if (act === 'lift-pick') return openExercisePicker(k);
+    if (act === 'lift-pick') return openExercisePicker(k, a.dataset.tab);
     if (act === 'lift-info') return openExercise(a.dataset.ex, a.dataset.k || k);
+    if (act === 'wk-share') return openWorkoutShare(k);
+    if (act === 'wk-inv') return wkRespond(a.dataset.id, a.dataset.v === 'yes', a);
     const l = findLift(a.dataset.id);
     if (act === 'lift-del') {
-      if (!l) return; const idx = m.lifts.indexOf(l); m.lifts.splice(idx, 1); m.prs = prsOn(k); save(); render();
+      if (!l) return; if (l.locked) return toast('Unlock it first (🔒) to remove it.'); const idx = m.lifts.indexOf(l); m.lifts.splice(idx, 1); m.prs = prsOn(k); save(); render();
       return toast(`Removed ${l.name}.`, 'Undo', () => { m.lifts.splice(idx, 0, l); m.prs = prsOn(k); save(); render(); });
     }
     if (!l) return;
     const box = a.closest('.lift');
+    if (act === 'lift-lock' || act === 'lift-unlock') {
+      if (act === 'lift-lock' && !done(l.sets).length) return toast('Tick ✓ at least one set before locking it.');
+      clearTimeout(liftSaveT); // finish any pending save of what was just typed
+      l.locked = act === 'lift-lock'; l.lockedAt = l.locked ? Date.now() : undefined; if (!l.locked) delete l.lockedAt;
+      save(); softRender(render);
+      setTimeout(() => { const el = document.querySelector(`.lift[data-lid="${l.id}"]`); if (el) { el.classList.add(l.locked ? 'just-locked' : 'flash'); if (!l.locked) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } }, 30);
+      if (l.locked) toast(`🔒 ${exParts(l.name)[0]} locked. Tap 🔒 to edit it again.`);
+      return;
+    }
+    if (l.locked) return toast('This exercise is locked. Tap 🔒 to unlock it first.');
     if (act === 'lset-ok') {
       const row = a.closest('.lset'), i = Number(a.dataset.i), s = l.sets[i];
       const kgI = row.querySelector('.lset-kg'), rI = row.querySelector('.lset-reps');
@@ -636,40 +719,170 @@
     if (act === 'lset-pop') { l.sets.pop(); m.prs = prsOn(k); save(); softRender(render); }
   }
 
-  // ---- exercise picker
-  const XP = { q: '', g: '', m: '', show: 40 };
-  async function openExercisePicker(k) {
+  // ---- Training together: share today's exercise list with a friend (they get their own copy).
+  const WK = { list: [], loaded: false, loading: false };
+  async function loadWorkouts() {
+    if (WK.loading || !social.workouts) return; WK.loading = true;
+    try { WK.list = await social.workouts(); WK.loaded = true; WK.err = ''; } catch (e) { WK.err = e.offline ? 'offline' : e.message; }
+    finally { WK.loading = false; }
+    if (UI.view === 'today' && modal.hidden) softRender(render);
+  }
+  const wkPlanOf = k => liftsOn(k).map(l => ({ ex: l.ex, name: l.name, g: l.g || '', mp: l.mp || [], ms: l.ms || [], sets: Math.max(1, Math.min(10, (l.sets || []).length || 3)) }));
+  const wkDayLabel = d => d === todayKey() ? 'today' : d === addDays(todayKey(), 1) ? 'tomorrow' : shortDate(d);
+  const WK_STATUS = { pending: 'waiting', accepted: 'joined ✓', declined: 'declined', expired: 'expired', cancelled: 'cancelled' };
+  // Invites I sent for this day, newest per friend.
+  function wkInvSent(k) {
+    const seen = new Set(), mine = WK.list.filter(w => !w.incoming && w.day === k && !seen.has(w.recipient) && seen.add(w.recipient));
+    if (!mine.length) return '';
+    return `<div class="wk-sent">👥 Shared with ${mine.map(w => `<b>${esc(w.other_name)}</b> <span class="wk-st wk-${w.status}">${WK_STATUS[w.status] || w.status}</span>`).join(', ')}</div>`;
+  }
+  // Invites waiting for my answer, shown on the diary day they're for (and on today).
+  function wkIncomingFor(k) {
+    return WK.list.filter(w => w.incoming && w.status === 'pending' && (w.day === k || k === todayKey()));
+  }
+  function wkInviteCard(w) {
+    const plan = Array.isArray(w.plan) ? w.plan : [];
+    return `<div class="wk-inv" data-wid="${esc(w.id)}"><div class="wk-inv-h"><span class="avatar sm" style="background:${esc(w.other_color || '#888')}">${esc((w.other_name || '?').charAt(0))}</span><div><b>${esc(w.other_name)} wants to train with you</b><small>${plan.length} exercise${plan.length === 1 ? '' : 's'} for ${esc(wkDayLabel(w.day))} · you log your own sets</small></div></div>
+      <div class="wk-inv-list">${plan.slice(0, 8).map(x => `<span>${esc(exParts(x.name)[0])} <i>${x.sets}×</i></span>`).join('')}${plan.length > 8 ? `<span>+${plan.length - 8} more</span>` : ''}</div>
+      <div class="wk-inv-btns"><button class="btn ghost" data-action="wk-inv" data-v="no" data-id="${esc(w.id)}">Decline</button><button class="btn primary" data-action="wk-inv" data-v="yes" data-id="${esc(w.id)}">Accept & add</button></div></div>`;
+  }
+  // Copy a friend's exercise list into my diary: new, empty sets; nothing of mine is replaced.
+  function wkAddPlan(plan, day, fromName, inviteId) {
+    const pr = P().profile, got = pr.wkGot || (pr.wkGot = []);
+    if (inviteId && got.includes(inviteId)) return { added: 0, skipped: 0, already: true };
+    const m = P().dayMeta[day] || (P().dayMeta[day] = {}), lifts = m.lifts || (m.lifts = []);
+    let added = 0, skipped = 0;
+    for (const x of plan || []) {
+      if (!x || !x.ex) continue;
+      if (lifts.some(l => l.ex === x.ex)) { skipped++; continue; }
+      const lib = exById(x.ex);
+      lifts.push({ id: uid(), ex: x.ex, name: lib ? lib.n : x.name, g: lib ? lib.g : x.g, mp: lib ? lib.p : (x.mp || []), ms: lib ? lib.s : (x.ms || []), sets: Array.from({ length: Math.max(1, Math.min(10, x.sets || 3)) }, () => ({ kg: 0, reps: 0 })), at: Date.now(), from: { name: fromName || 'A friend', invite: inviteId || null } });
+      added++;
+    }
+    if (inviteId) { got.unshift(inviteId); pr.wkGot = got.slice(0, 200); }
+    save();
+    return { added, skipped };
+  }
+  async function wkRespond(id, yes, btn) {
+    const w = WK.list.find(x => x.id === id);
+    if (btn) { btn.disabled = true; btn.textContent = yes ? 'Adding…' : 'Declining…'; }
+    let r;
+    try { r = await social.respondWorkout(id, yes); }
+    catch (e) { if (btn) { btn.disabled = false; btn.textContent = yes ? 'Accept & add' : 'Decline'; } return toast(e.offline ? 'You\'re offline. Connect to answer the invite.' : 'Could not answer: ' + e.message); }
+    const name = w ? w.other_name : 'your friend';
+    if (r && r.ok && yes || r && r.error === 'already_accepted') {
+      const day = r.day && r.day >= todayKey() ? r.day : todayKey();
+      if (!window.GG_EXERCISES) { try { await loadExercises(); } catch (_) {} }
+      const res = wkAddPlan(r.plan, day, name, id);
+      if (w) w.status = 'accepted';
+      if (!modal.hidden) closeModal();
+      UI.date = day; if (UI.view !== 'today') nav('today'); else render();
+      toast(res.already ? 'Already in your diary.' : `💪 Added ${res.added} exercise${res.added === 1 ? '' : 's'} from ${name}${res.skipped ? ` (${res.skipped} you already had)` : ''}. Your sets are your own.`);
+    } else if (r && r.ok) { if (w) w.status = 'declined'; render(); toast('Invite declined.'); }
+    else {
+      const why = { expired: 'This invite has expired. Ask them to share it again.', already_declined: 'You already declined this invite.', already_cancelled: 'They cancelled this invite.', not_found: 'This invite no longer exists.', not_friends: 'You\'re not friends any more, so the invite can\'t be accepted.' }[r && r.error] || 'Could not answer the invite.';
+      if (w && r && r.status) w.status = r.status; render(); toast(why);
+    }
+    loadWorkouts();
+    if (!modal.hidden && card.classList.contains('notes-card')) openNotes();
+  }
+  function openWorkoutShare(k) {
+    const plan = wkPlanOf(k);
+    if (!plan.length) return toast('Add some gym exercises first, then share them.');
+    const friends = (F.list || []).filter(f => f.status === 'accepted');
+    const sentTo = id => { const w = WK.list.find(x => !x.incoming && x.day === k && x.recipient === id); return w ? w.status : null; };
+    const pick = new Set();
+    card.onclick = null; card.className = 'modal-card narrow sheet-card wk-share';
+    const draw = (busy) => {
+      card.innerHTML = `<div class="modal-head"><h2>Train together</h2><button class="btn ghost" data-w="close">Close</button></div>
+      <div class="modal-body">
+        <p class="muted small" style="margin-top:0">Send ${plan.length} exercise${plan.length === 1 ? '' : 's'} for ${esc(wkDayLabel(k))} to a friend. If they accept, the exercises are added to their diary with empty sets: each of you logs your own weights and reps.</p>
+        <div class="wk-plan">${plan.map(x => `<span>${esc(exParts(x.name)[0])} <i>${x.sets}×</i></span>`).join('')}</div>
+        ${friends.length ? `<div class="ex-sec">Choose friends</div><div class="wk-friends">${friends.map(f => { const st = sentTo(f.id); return `<label class="wk-f"><input type="checkbox" data-w="pick" value="${esc(f.id)}" ${pick.has(f.id) ? 'checked' : ''}><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)}${f.profile.username ? `<small class="faint">@${esc(f.profile.username)}</small>` : ''}</span>${st ? `<span class="wk-st wk-${st}">${st === 'pending' ? 'sent · waiting' : WK_STATUS[st]}</span>` : ''}</label>`; }).join('')}</div>`
+          : F.list ? '<p class="muted">You have no friends on GG Gains yet. Add a friend in Ranked first.</p>' : `<p class="muted">${F.offline ? 'You\'re offline, so your friends can\'t load right now.' : 'Loading your friends…'}</p>`}
+        <div class="ex-btns"><button class="btn primary" data-w="send" ${busy || !pick.size ? 'disabled' : ''}>${busy ? 'Sending…' : pick.size > 1 ? `Send to ${pick.size} friends` : 'Send invite'}</button></div>
+      </div>`;
+    };
+    draw(); modal.hidden = false;
+    if (!F.list) loadFriends(true).then(() => { if (card.classList.contains('wk-share')) draw(); });
+    card.onchange = e => { const c = e.target.closest('[data-w=pick]'); if (!c) return; if (c.checked) pick.add(c.value); else pick.delete(c.value); const b = card.querySelector('[data-w=send]'); if (b) { b.disabled = !pick.size; b.textContent = pick.size > 1 ? `Send to ${pick.size} friends` : 'Send invite'; } };
+    card.onclick = async e => {
+      const b = e.target.closest('[data-w]'); if (!b) return;
+      if (b.dataset.w === 'close') { card.onchange = null; return closeModal(); }
+      if (b.dataset.w !== 'send' || !pick.size) return;
+      draw(true);
+      const ok = [], bad = [];
+      for (const id of pick) {
+        const f = friends.find(x => x.id === id);
+        try { const r = await social.sendWorkout(id, k, plan); (r && r.ok ? ok : bad).push([f, r]); }
+        catch (er) { bad.push([f, { error: er.offline ? 'offline' : er.message }]); }
+      }
+      card.onchange = null; closeModal(); await loadWorkouts(); render();
+      if (ok.length) toast(`👥 Sent to ${ok.map(([f, r]) => f.profile.name + (r.updated ? ' (updated)' : '')).join(', ')}. They'll get a notification.`);
+      if (bad.length) setTimeout(() => toast(bad[0][1].error === 'offline' ? 'You\'re offline. Try again when you\'re connected.' : `Couldn't send to ${bad.map(([f]) => f.profile.name).join(', ')}: ${({ not_friends: 'not friends any more', too_many: 'too many invites today', bad_day: 'pick a day within the next week' })[bad[0][1].error] || bad[0][1].error || 'unknown error'}.`), ok.length ? 2600 : 0);
+    };
+  }
+
+  // ---- exercise picker: two tabs, Gym (sets and reps) and Activities & sports (minutes).
+  const XP = { q: '', g: '', m: '', show: 40, tab: 'gym' };
+  const GYM_GROUPS = EX_GROUPS.filter(g => g !== 'Cardio');
+  async function openExercisePicker(k, tab) {
     card.onclick = null;
     card.className = 'modal-card ex-pick';
     card.innerHTML = `<div class="modal-head"><h2>Log exercise</h2><button class="btn ghost" data-x="close">Close</button></div><div class="modal-body"><p class="muted">Loading exercises…</p></div>`;
     modal.hidden = false;
     try { await loadExercises(); } catch (e) { card.querySelector('.modal-body').innerHTML = `<p class="err">${esc(e.message)}</p>`; card.onclick = ev => { if (ev.target.closest('[data-x=close]')) closeModal(); }; return; }
-    XP.show = 40; XP.q = '';
-    const recentIds = [...new Set(Object.keys(P().dayMeta || {}).sort().reverse().flatMap(d => [...liftsOn(d).map(l => l.ex), ...((P().dayMeta[d] || {}).ex || []).map(e => e.exId).filter(Boolean)]))].slice(0, 6);
+    XP.show = 40; XP.q = ''; XP.tab = tab === 'act' ? 'act' : tab === 'gym' ? 'gym' : (XP.tab || 'gym'); if (XP.tab === 'act') { XP.g = ''; XP.m = ''; } else if (XP.g === 'Cardio') XP.g = '';
+    const recentIds = [...new Set(Object.keys(P().dayMeta || {}).sort().reverse().flatMap(d => [...liftsOn(d).map(l => l.ex), ...((P().dayMeta[d] || {}).ex || []).map(e => e.exId).filter(Boolean)]))];
     const inToday = new Set([...liftsOn(k).map(l => l.ex), ...((P().dayMeta[k] || {}).ex || []).map(e => e.exId)]);
+    const ALIAS = { lower: ['lower', 'decline'], upper: ['upper', 'incline'], pec: ['pec', 'chest'], pecs: ['chest'], abs: ['abdominal', 'crunch', 'plank'], quads: ['quadriceps'], hammies: ['hamstring'], delts: ['shoulder', 'delt'], lat: ['lat'], legs: ['leg', 'squat', 'quadriceps', 'hamstring'], bicep: ['bicep', 'curl'], tricep: ['tricep'], swimming: ['swim'], jog: ['run'], jogging: ['run'], bike: ['cycl', 'bike'], spinning: ['cycl', 'bike'], soccer: ['football'], tennis: ['tennis', 'padel'], steam: ['sauna'] };
+    const hay = x => x._h || (x._h = (x.n + ' ' + (x.o || '') + ' ' + (x.a || []).join(' ') + ' ' + x.e + ' ' + x.p.join(' ') + ' ' + x.s.join(' ') + ' ' + x.g).toLowerCase());
+    const inTab = (x, t) => t === 'act' ? isCardio(x) : !isCardio(x);
+    const kcal30 = x => fmt((x.met || 7) * (currentWeight() || 75) / 60 * 30);
     const draw = () => {
-      const all = window.GG_EXERCISES, q = XP.q.trim().toLowerCase(), favs = favEx();
+      const all = window.GG_EXERCISES, q = XP.q.trim().toLowerCase(), favs = favEx(), T = XP.tab;
       const words = q.split(/\s+/).filter(Boolean);
-      let list = XP.g === 'fav' ? favs.map(exById).filter(Boolean) : all.filter(x => (!XP.g || x.g === XP.g) && (!XP.m || x.m === XP.m));
-      const ALIAS = { lower: ['lower', 'decline'], upper: ['upper', 'incline'], pec: ['pec', 'chest'], pecs: ['chest'], abs: ['abdominal', 'crunch', 'plank'], quads: ['quadriceps'], hammies: ['hamstring'], delts: ['shoulder', 'delt'], lat: ['lat'], legs: ['leg', 'squat', 'quadriceps', 'hamstring'], bicep: ['bicep', 'curl'], tricep: ['tricep'] };
-      const hay = x => x._h || (x._h = (x.n + ' ' + (x.o || '') + ' ' + (x.a || []).join(' ') + ' ' + x.e + ' ' + x.p.join(' ') + ' ' + x.s.join(' ') + ' ' + x.g).toLowerCase());
       const match = L => L.filter(x => { const h = hay(x); return words.every(w => (ALIAS[w] || [w]).some(a => h.includes(a))); });
+      const tabAll = all.filter(x => inTab(x, T));
+      let list = XP.g === 'fav' ? favs.map(exById).filter(x => x && inTab(x, T)) : tabAll.filter(x => (!XP.g || x.g === XP.g) && (!XP.m || x.m === XP.m));
+      let other = [];
       XP.wide = false;
-      if (words.length) { const inG = match(list); if (!inG.length && (XP.g || XP.m) && XP.g !== 'fav') { list = match(all); XP.wide = list.length > 0; } else list = inG; }
+      if (words.length) {
+        const inG = match(list);
+        if (!inG.length && (XP.g || XP.m) && XP.g !== 'fav') { list = match(tabAll); XP.wide = list.length > 0; } else list = inG;
+        if (list.length < 4) other = match(all.filter(x => !inTab(x, T))).slice(0, 5);
+      }
       if (q) list.sort((a, b) => ((a.pop != null ? 0 : 1) - (b.pop != null ? 0 : 1)) || (b.n.toLowerCase().startsWith(q) - a.n.toLowerCase().startsWith(q)) || ((a.pop ?? 999) - (b.pop ?? 999)) || (a.n.length - b.n.length));
       const plain = !q && !XP.g && !XP.m;
-      const favL = plain ? favs.map(exById).filter(Boolean) : [], recent = plain ? recentIds.filter(id => !favs.includes(id)).map(exById).filter(Boolean) : [];
-      const row = x => `<div class="ex-row${inToday.has(x.id) ? ' in' : ''}" data-x="ex" data-id="${esc(x.id)}" role="button" tabindex="0">${thumb(x)}<span class="ex-row-t"><b>${exTitle(x.n)}</b><small>${x.act ? `Minutes${x.met ? ' · about ' + fmt(x.met * (currentWeight() || 75) / 60 * 30) + ' kcal / 30 min' : ''}` : esc(cap(x.p[0] || x.g)) + (x.e ? ' · ' + esc(cap(x.e)) : '')}</small></span>${inToday.has(x.id) ? '<i class="ex-in">Added</i>' : x.m ? `<i class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</i>` : ''}<button class="ex-star${favs.includes(x.id) ? ' on' : ''}" data-x="fav" data-id="${esc(x.id)}" aria-label="${favs.includes(x.id) ? 'Remove from' : 'Add to'} favourites">${favs.includes(x.id) ? '★' : '☆'}</button></div>`;
-      card.querySelector('.modal-body').innerHTML = `
-        <div class="search-row"><span class="s-ic">🔍</span><input type="search" id="exQ" placeholder="Search, e.g. bench press, squat, sauna" value="${esc(XP.q)}" autocomplete="off"></div>
-        <div class="chips ex-chips"><button class="chip ${XP.g === '' ? 'on' : ''}" data-x="g" data-v="">All</button><button class="chip ${XP.g === 'fav' ? 'on' : ''}" data-x="g" data-v="fav">★ Favourites</button>${EX_GROUPS.map(g => `<button class="chip ${XP.g === g ? 'on' : ''}" data-x="g" data-v="${g}">${EX_ICON[g]} ${g === 'Cardio' ? 'Cardio & sports' : g}</button>`).join('')}</div>
-        ${XP.g !== 'Cardio' && XP.g !== 'fav' ? `<div class="seg ex-mech">${[['', 'Any'], ['c', 'Compound'], ['i', 'Isolation']].map(([v, l]) => `<button class="${XP.m === v ? 'on' : ''}" data-x="m" data-v="${v}">${l}</button>`).join('')}</div>` : ''}
+      const favL = plain ? favs.map(exById).filter(x => x && inTab(x, T)) : [];
+      const recent = plain ? recentIds.filter(id => !favs.includes(id)).map(exById).filter(x => x && inTab(x, T)).slice(0, 6) : [];
+      const star = x => `<button class="ex-star${favs.includes(x.id) ? ' on' : ''}" data-x="fav" data-id="${esc(x.id)}" aria-label="${favs.includes(x.id) ? 'Remove from' : 'Add to'} favourites">${favs.includes(x.id) ? '★' : '☆'}</button>`;
+      const row = x => `<div class="ex-row${inToday.has(x.id) ? ' in' : ''}" data-x="ex" data-id="${esc(x.id)}" role="button" tabindex="0">${thumb(x)}<span class="ex-row-t"><b>${exTitle(x.n)}</b><small>${isCardio(x) ? `Logged in minutes${x.met || x.act ? ' · about ' + kcal30(x) + ' kcal / 30 min' : ''}` : esc(cap(x.p[0] || x.g)) + (x.e ? ' · ' + esc(cap(x.e)) : '')}</small></span>${inToday.has(x.id) ? '<i class="ex-in">Added</i>' : x.m && !isCardio(x) ? `<i class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</i>` : ''}${star(x)}</div>`;
+      const tile = x => `<div class="act-tile${inToday.has(x.id) ? ' in' : ''}" data-x="ex" data-id="${esc(x.id)}" role="button" tabindex="0"><span class="at-ic">${x.ic}</span><b>${esc(x.n)}</b><small>${inToday.has(x.id) ? '✓ Logged today' : `~${kcal30(x)} kcal / 30 min`}</small>${star(x)}</div>`;
+      const tabs = `<div class="seg ex-tabs" role="tablist"><button role="tab" class="${T === 'gym' ? 'on' : ''}" data-x="tab" data-v="gym" aria-selected="${T === 'gym'}">🏋️ Gym <small>sets & reps</small></button><button role="tab" class="${T === 'act' ? 'on' : ''}" data-x="tab" data-v="act" aria-selected="${T === 'act'}">🏊 Activities & sports <small>minutes</small></button></div>`;
+      const search = `<div class="search-row"><span class="s-ic">🔍</span><input type="search" id="exQ" placeholder="${T === 'gym' ? 'Search, e.g. bench press, squat, curl' : 'Search, e.g. swimming, sauna, football'}" value="${esc(XP.q)}" autocomplete="off"></div>`;
+      const otherHtml = other.length ? `<div class="ex-sec">In ${T === 'gym' ? 'Activities & sports' : 'Gym'}</div>${other.map(row).join('')}` : '';
+      let body;
+      if (T === 'gym') {
+        body = `<div class="chips ex-chips"><button class="chip ${XP.g === '' ? 'on' : ''}" data-x="g" data-v="">All</button><button class="chip ${XP.g === 'fav' ? 'on' : ''}" data-x="g" data-v="fav">★ Favourites</button>${GYM_GROUPS.map(g => `<button class="chip ${XP.g === g ? 'on' : ''}" data-x="g" data-v="${g}">${EX_ICON[g]} ${g}</button>`).join('')}</div>
+        ${XP.g !== 'fav' ? `<div class="seg ex-mech">${[['', 'Any'], ['c', 'Compound'], ['i', 'Isolation']].map(([v, l]) => `<button class="${XP.m === v ? 'on' : ''}" data-x="m" data-v="${v}">${l}</button>`).join('')}</div>` : ''}
         ${favL.length ? `<div class="ex-sec">★ Favourites</div>${favL.map(row).join('')}` : ''}
         ${recent.length ? `<div class="ex-sec">Recent</div>${recent.map(row).join('')}` : ''}
-        ${favL.length || recent.length ? '<div class="ex-sec">All exercises</div>' : ''}
-        ${XP.wide ? `<p class="faint small" style="margin:0">Nothing in ${XP.g === 'Cardio' ? 'Cardio & sports' : esc(XP.g || 'this filter')}, so showing matches from all exercises.</p>` : ''}
-        <div class="ex-list-wrap">${list.slice(0, XP.show).map(row).join('') || (XP.g === 'fav' ? '<p class="muted small">No favourites yet. Tap ☆ next to any exercise to keep it here.</p>' : '<p class="muted small">No exercises match. Try another word.</p>')}</div>
-        ${list.length > XP.show ? `<button class="btn ghost wide" data-x="more">Show more (${list.length - XP.show})</button>` : ''}`;
+        ${favL.length || recent.length ? '<div class="ex-sec">All gym exercises</div>' : ''}
+        ${XP.wide ? `<p class="faint small" style="margin:0">Nothing in ${esc(XP.g || 'this filter')}, so showing matches from all gym exercises.</p>` : ''}
+        <div class="ex-list-wrap">${list.slice(0, XP.show).map(row).join('') || (XP.g === 'fav' ? '<p class="muted small">No favourites yet. Tap ☆ next to any exercise to keep it here.</p>' : other.length ? '' : '<p class="muted small">No gym exercises match. Try another word.</p>')}</div>
+        ${list.length > XP.show ? `<button class="btn ghost wide" data-x="more">Show more (${list.length - XP.show})</button>` : ''}${otherHtml}`;
+      } else {
+        const sports = list.filter(x => x.act), machines = list.filter(x => !x.act);
+        body = `${favL.length ? `<div class="ex-sec">★ Favourites</div><div class="act-grid">${favL.map(x => x.act ? tile(x) : '').join('')}</div>${favL.filter(x => !x.act).map(row).join('')}` : ''}
+        ${recent.length && !q ? `<div class="ex-sec">Recent</div><div class="act-grid">${recent.filter(x => x.act).map(tile).join('')}</div>${recent.filter(x => !x.act).map(row).join('')}` : ''}
+        ${sports.length || !q ? `<div class="ex-sec">${q ? 'Matching activities' : 'Activities & sports'}</div><div class="act-grid">${sports.map(tile).join('')}</div>` : !machines.length && !other.length ? '<p class="muted small">No activities match. Try another word, or log “Other activity”.</p>' : ''}
+        ${machines.length ? `<div class="ex-sec">Cardio machines & drills</div>${machines.slice(0, XP.show).map(row).join('')}${machines.length > XP.show ? `<button class="btn ghost wide" data-x="more">Show more (${machines.length - XP.show})</button>` : ''}` : ''}${otherHtml}`;
+      }
+      const bodyEl = card.querySelector('.modal-body');
+      const st = bodyEl.scrollTop;
+      bodyEl.innerHTML = `<div class="ex-pick-top">${tabs}${search}</div><div class="ex-pick-list">${body}</div>`;
+      bodyEl.scrollTop = XP.keepScroll ? st : 0; XP.keepScroll = false;
       const qi = $('#exQ'); qi.addEventListener('input', () => { XP.q = qi.value; XP.show = 40; const pos = qi.selectionStart; draw(); const n = $('#exQ'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (_) {} });
     };
     draw();
@@ -677,10 +890,11 @@
       const b = e.target.closest('[data-x]'); if (!b) return;
       const x = b.dataset.x;
       if (x === 'close') return closeModal();
-      if (x === 'fav') { e.stopPropagation(); const on = toggleFav(b.dataset.id); toast(on ? 'Added to favourites ★' : 'Removed from favourites'); return draw(); }
+      if (x === 'fav') { e.stopPropagation(); const on = toggleFav(b.dataset.id); toast(on ? 'Added to favourites ★' : 'Removed from favourites'); XP.keepScroll = true; return draw(); }
+      if (x === 'tab') { if (XP.tab === b.dataset.v) return; XP.tab = b.dataset.v; XP.g = ''; XP.m = ''; XP.show = 40; draw(); return; }
       if (x === 'g') { XP.g = b.dataset.v; XP.m = ''; XP.show = 40; draw(); }
       if (x === 'm') { XP.m = b.dataset.v; XP.show = 40; draw(); }
-      if (x === 'more') { XP.show += 60; draw(); }
+      if (x === 'more') { XP.show += 60; XP.keepScroll = true; draw(); }
       if (x === 'ex') { const ex = exById(b.dataset.id); if (isCardio(ex)) openExercise(ex.id, k); else addLift(ex.id, k); }
     };
   }
@@ -1019,7 +1233,7 @@
     else if (act === 'focus-weight') { const i = $('#wIn') || $('#wEdit'); if (i) { i.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => i.focus ? i.focus() : i.click(), 350); } }
     else if (act === 'go-friends-add') openPeopleSearch();
     else if (act === 'fold') { const box = a.closest('[data-fold]'); const f = !box.classList.contains('folded'); box.classList.toggle('folded', f); a.setAttribute('aria-expanded', String(!f)); try { localStorage.setItem('gg.fold.' + a.dataset.id, f ? '1' : '0'); } catch (_) {} }
-    else if (['lift-pick', 'lift-info', 'lift-del', 'lset-ok', 'lset-add', 'lset-pop'].includes(act)) liftAction(act, a);
+    else if (['lift-pick', 'lift-info', 'lift-del', 'lset-ok', 'lset-add', 'lset-pop', 'lift-lock', 'lift-unlock', 'wk-share', 'wk-inv'].includes(act)) liftAction(act, a);
     else if (act === 'cal-open') openCalendar();
     else if (act === 'pf-tab') { PF.tab = a.dataset.t; render(); main.scrollTop = 0; window.scrollTo(0, 0); }
     else if (act === 'pf-mus') { PF.sel = a.dataset.m; renderTrends(); const el = $('#pfMus'); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
@@ -1253,10 +1467,13 @@
     const n = f.n;
     const sel = M.sel && M.sel.id === f.id;
     const u = unitOf(f);
-    const meta = f.source === 'Built-in' ? (f.cat || '') : f.source === 'Mine' ? 'My food' : f.source;
+    const meta = f.source === 'Built-in' ? (f.cat || '') : f.source === 'Mine' ? (f.barcode ? 'My product · barcode saved' : 'My food') : f.source;
+    // Generic foods (typical values for that kind of food) vs branded products (one maker's label).
+    const branded = f.branded || f.cat === 'Fast food' || f.cat === 'Ryanair' || /^off:/.test(f.id) || (f.source === 'USDA' && /\(/.test(f.name)) || (f.source && !['Built-in', 'Mine', 'USDA'].includes(f.source));
+    const tag = f.cat === 'Supplements' ? '' : f.source === 'Mine' ? '<i class="ftag mine">Mine</i>' : branded ? '<i class="ftag brand">Brand</i>' : '<i class="ftag gen">Generic</i>';
     return `<div class="result ${sel ? 'sel' : ''}" tabindex="0" data-m="pick" data-id="${esc(f.id)}">
       <span class="rn">${esc(f.name)}</span><span class="rk">${fmt((f.cat === 'Supplements' || f.cat === 'Fast food') && f.each ? n.kcal * f.each.g / 100 : n.kcal)} kcal</span>
-      ${f.cat === 'Supplements' ? '' : `<span class="rm">${esc(meta)}${f.size ? ' · pack ' + esc(f.size) : ''}${f.portionLabel && f.portion ? ' · ' + esc(f.portionLabel) + ' ≈ ' + fmtAmt(f.portion, u) : ''}</span>`}
+      ${f.cat === 'Supplements' ? '' : `<span class="rm">${tag}${esc(meta)}${f.size ? ' · pack ' + esc(f.size) : ''}${f.portionLabel && f.portion ? ' · ' + esc(f.portionLabel) + ' ≈ ' + fmtAmt(f.portion, u) : ''}</span>`}
       ${f.cat === 'Supplements' && f.each ? `<span class="rm-sup">${supSummary(f)}${Object.entries(UL).some(([k, L]) => (f.n[k] || 0) * f.each.g / 100 > L.lim) || /flush|manganese/i.test(f.name) ? ' <span class="hi-dose">⚠ high dose</span>' : ''}</span>` : f.cat === 'Fast food' && f.each ? `<span class="rm2">per ${esc(f.each.one)} · ${fmt(n.p * f.each.g / 100)}P ${fmt(n.c * f.each.g / 100)}C ${fmt(n.f * f.each.g / 100)}F${f.typical ? ' · typical' : ''}</span>` : `<span class="rm2">per 100 ${u} · ${fmt(n.p, 1)}P ${fmt(n.c, 1)}C ${fmt(n.f, 1)}F</span>`}</div>`;
   }
 
@@ -1274,7 +1491,9 @@
         html = `<div class="hint">Type to search ${BUILTIN.length + S.customFoods.length} foods. Food is per 100 g and drinks per 100 ml; you enter how much you had.<br><br>Want a supermarket product? Use <b>Shops</b> for Sainsbury's, Aldi and Co-op, or <b>Search online</b> for anything else.</div>`;
       } else {
         lastList = searchFoods(M.q);
-        html = lastList.length ? lastList.map(resultRow).join('') : `<div class="hint">No match in the food list. <button class="btn" data-m="go-online">Search online for “${esc(M.q)}”</button></div>`;
+        const exact = lastList.filter(f => foodHay(f)._hz.includes(FOLD(M.q).split(' ')[0]));
+        html = lastList.length ? (exact.length < lastList.length && !exact.length ? `<div class="group-label">No exact match · closest spellings</div>` : '') + lastList.map(resultRow).join('') + (lastList.length < 8 && M.q.trim().length >= 3 ? `<div class="hint">Not the one? <button class="btn" data-m="go-online">Search branded products online for “${esc(M.q.trim())}”</button><br><span class="faint small">Open Food Facts (millions of supermarket products worldwide) and the USDA database.</span></div>` : '')
+          : `<div class="hint">No match in the food list. <button class="btn" data-m="go-online">Search online for “${esc(M.q)}”</button><br><span class="faint small">Searches Open Food Facts (supermarket products) and the USDA database. Can't find it anywhere? Create it from the label in Food list › Create a food, or scan its barcode.</span></div>`;
       }
     } else if (M.tab === 'sup') {
       const all = BUILTIN.filter(f => f.cat === 'Supplements');
@@ -1434,23 +1653,30 @@
     toast(editing ? 'Entry updated.' : (counting ? `Added ${countLabel(count, f.each)}${f.name.toLowerCase().includes(f.each.one) ? '' : ' (' + f.name + ')'} to ${meal.toLowerCase()}.` : `Added ${fmtAmt(g, unitOf(f))} of ${f.name} to ${meal.toLowerCase()}.`));
   }
 
-  async function scanIntoModal() {
-    if (!window.MHScanner) return;
-    const code = await window.MHScanner.scan();
+  // Scanning: four clear outcomes. (1) the camera couldn't read a barcode: handled inside the scanner;
+  // (2) read, and the product is known; (3) read, but the product isn't in any database: add it once;
+  // (4) read and found, but its nutrition is missing: finish it from the label. Nothing is made up.
+  const sameCode = (a, b) => { a = String(a || '').replace(/^0+/, ''); b = String(b || '').replace(/^0+/, ''); return !!a && a === b; };
+  async function scanIntoModal(given) {
+    if (!given && !window.MHScanner) return;
+    const code = given || await window.MHScanner.scan();
     if (!code) return;
     const ctx = M ? { date: M.date, meal: M.meal } : { date: UI.view === 'today' ? UI.date : todayKey(), meal: guessMeal() };
-    let food = S.customFoods.find(x => x.id === 'off:' + code || x.id === 'bc:' + code || x.barcode === code);
-    const linked = (P().profile.barcodeLinks || {})[code]; // barcodes the person linked to a food or supplement before
-    if (!food && linked) food = allFoods().find(x => x.id === linked) || null;
+    // Products added or logged before are found offline, straight away.
+    let food = S.customFoods.find(x => sameCode(x.barcode, code) || x.id === 'off:' + code || x.id === 'bc:' + code);
+    const links = P().profile.barcodeLinks || {}, lk = Object.keys(links).find(c => sameCode(c, code));
+    if (!food && lk) food = allFoods().find(x => x.id === links[lk]) || null;
+    let netErr = null;
     if (!food) {
-      toast('Looking up ' + code + '…');
-      try { food = await social.lookupBarcode(code); } catch (e) { toast('Could not reach Open Food Facts. Check your internet, or add the product yourself.'); }
+      toast('Scanned ' + code + '. Looking it up…');
+      try { food = await social.lookupBarcode(code); } catch (e) { netErr = e; food = null; }
       if (food && food.supplement) {
         if (!M) openAdd(ctx);
-        M.supHint = food.name; M.meal = 'Supplements'; setTab('sup');
-        toast(`${food.name || 'This'} is a supplement. Pick the closest one: it's logged per capsule or tablet.`);
+        M.supHint = food.name; M.meal = 'Supplements'; M.linkCode = code; setTab('sup');
+        toast(`${food.name || 'This'} is a supplement. Pick the closest one: it's logged per capsule or tablet, and the barcode remembers your choice.`);
         return;
       }
+      if (food && food.incomplete) return incompleteChooser(code, food, ctx);
     }
     if (food) {
       if (!M) openAdd(ctx);
@@ -1458,33 +1684,60 @@
       renderRight();
       const pk = card.querySelector('.picker'); if (pk) pk.classList.add('show-right');
       const gi = $('#mg'); if (gi) { gi.focus(); gi.select(); }
-      toast('Found: ' + food.name + '. Enter how much you had.');
+      toast(food.missing ? `Found: ${food.name}. Its label doesn't list ${food.missing.map(k => ({ p: 'protein', c: 'carbs', f: 'fat' })[k]).join(' or ')}, so those count as unknown.` : 'Found: ' + food.name + '. Enter how much you had.');
       return;
     }
-    notFoundChooser(code, ctx);
+    notFoundChooser(code, ctx, netErr);
   }
-  // Barcode not in Open Food Facts: link it once to a supplement or food, or enter it from the label.
-  function notFoundChooser(code, ctx) {
+  // Read fine, but the product isn't in the database (or we couldn't check): add it once, and every
+  // later scan goes straight to it.
+  function notFoundChooser(code, ctx, netErr) {
     M = null; J = null;
+    const offline = netErr && (netErr.offline || netErr.name === 'AbortError' || /fetch|network|internet|connect/i.test(netErr.message || ''));
     card.className = 'modal-card narrow';
-    card.innerHTML = `<div class="modal-head"><h2>Not found</h2><button class="btn ghost" data-nf="close">Close</button></div>
+    card.innerHTML = `<div class="modal-head"><h2>${netErr ? 'Couldn\'t check this barcode' : 'Product not found'}</h2><button class="btn ghost" data-nf="close">Close</button></div>
       <div class="modal-body">
-        <p style="margin-top:0">Barcode <b class="num">${esc(code)}</b> isn't in the online product database yet (common for Aldi and Lidl own brands). Tell the app what it is once, and next time it scans straight away.</p>
+        <div class="scan-state ${netErr ? 'warn' : ''}"><b>✓ Barcode read: <span class="num">${esc(code)}</span></b><span>${netErr ? (offline ? 'You seem to be offline, so it couldn\'t be looked up. Try again when you\'re connected, or add it yourself now.' : 'The product database didn\'t answer. Try again in a moment, or add it yourself now.') : 'It isn\'t in the online product database yet (common for supermarket own brands). Add it once and the next scan finds it straight away.'}</span></div>
         <div class="nf-opts">
+          ${netErr ? '<button class="juice-btn" data-nf="retry"><span class="jb-ico">🔄</span><span><b>Try again</b><small>Look the barcode up once more</small></span></button>' : ''}
+          <button class="juice-btn" data-nf="label"><span class="jb-ico">🏷️</span><span><b>Add it from the label</b><small>Name and nutrition per 100 g, saved with this barcode</small></span></button>
+          <button class="juice-btn" data-nf="list"><span class="jb-ico">🔎</span><span><b>Pick it from the food list</b><small>Link this barcode to a food already in the app</small></span></button>
           <button class="juice-btn" data-nf="sup"><span class="jb-ico">💊</span><span><b>It's a supplement</b><small>Pick the closest capsule, tablet or scoop</small></span></button>
-          <button class="juice-btn" data-nf="list"><span class="jb-ico">🔎</span><span><b>Pick it from the food list</b><small>Search the foods already in the app</small></span></button>
-          <button class="juice-btn" data-nf="label"><span class="jb-ico">🏷️</span><span><b>Enter it from the label</b><small>Type the nutrition per 100 g</small></span></button>
         </div>
       </div>`;
     card.onclick = e => {
       const b = e.target.closest('[data-nf]'); if (!b) return;
       const a = b.dataset.nf;
       if (a === 'close') { closeModal(); return; }
-      if (a === 'label') { closeModal(); foodForm(null, { barcode: code, then: (f) => openAdd({ ...ctx, food: f }) }); return; }
+      if (a === 'retry') { closeModal(); openAdd(ctx); scanIntoModal(code); return; }
+      if (a === 'label') { closeModal(); foodForm(null, { barcode: code, then: (f) => { toast(`Saved ${f.name}. Scanning this barcode now finds it straight away.`); openAdd({ ...ctx, food: f }); } }); return; }
       openAdd(a === 'sup' ? { ...ctx, meal: 'Supplements' } : ctx);
       M.linkCode = code;
       setTab(a === 'sup' ? 'sup' : 'all');
       toast(a === 'sup' ? 'Pick the closest supplement. This barcode will go straight to it next time.' : 'Search and pick the food. This barcode will go straight to it next time.');
+    };
+    modal.hidden = false;
+  }
+  // Found, but the database has no calories for it: finish it from the packet (what is known is filled in).
+  function incompleteChooser(code, p, ctx) {
+    M = null; J = null;
+    const known = ['p', 'c', 'f', 'sug', 'sat', 'fib', 'na'].filter(k => p.n[k] != null);
+    card.className = 'modal-card narrow';
+    card.innerHTML = `<div class="modal-head"><h2>Nutrition missing</h2><button class="btn ghost" data-nf="close">Close</button></div>
+      <div class="modal-body">
+        <div class="scan-state warn"><b>✓ Found: ${esc(p.name)}</b><span>Barcode <span class="num">${esc(code)}</span>${p.size ? ' · ' + esc(p.size) : ''}. The product database has it, but without ${known.length ? 'calories' : 'any nutrition information'}${known.length ? ` (it does list ${known.length} other value${known.length === 1 ? '' : 's'})` : ''}. Rather than guess, copy the numbers from the packet once.</span></div>
+        <div class="nf-opts">
+          <button class="juice-btn" data-nf="label"><span class="jb-ico">🏷️</span><span><b>Complete it from the label</b><small>Name${known.length ? ' and known values' : ''} filled in for you, saved with this barcode</small></span></button>
+          <button class="juice-btn" data-nf="list"><span class="jb-ico">🔎</span><span><b>Use a similar food instead</b><small>Link this barcode to a food in the app</small></span></button>
+        </div>
+      </div>`;
+    card.onclick = e => {
+      const b = e.target.closest('[data-nf]'); if (!b) return;
+      const a = b.dataset.nf;
+      if (a === 'close') return closeModal();
+      if (a === 'label') { closeModal(); foodForm(null, { barcode: code, prefill: { name: p.name, n: p.n, unit: p.unit, portion: p.portion, portionLabel: p.portionLabel }, then: f => { toast(`Saved ${f.name}. Scanning this barcode now finds it straight away.`); openAdd({ ...ctx, food: f }); } }); return; }
+      openAdd(ctx); M.linkCode = code; M.q = p.name.replace(/\s*\(.*\)\s*$/, ''); const q = $('#mq'); if (q) q.value = M.q; setTab('all');
+      toast('Pick the closest food. This barcode will go straight to it next time.');
     };
     modal.hidden = false;
   }
@@ -2046,16 +2299,30 @@
   const F = { list: null, loading: false, err: '', view: null, data: null, day: todayKey(), code: '', busy: false, msg: '' };
   const pointsText = v => v == null ? '–' : `${v > 0 ? '' : ''}${fmt(v, 1)}%`;
   const goalText = g => g === 'lose' ? 'Losing weight' : g === 'gain' ? 'Gaining weight' : 'Maintaining';
+  // Friends and the ladder. The last good list is kept on the phone, so Ranked still opens offline.
+  // A failed load never triggers another load by itself (it used to re-render Ranked, which loaded again,
+  // which failed again: hundreds of re-renders a second while offline, freezing the app). It waits for
+  // Retry, the connection coming back, or 20 seconds.
+  const FKEY = () => 'gg.friends.' + (window.MH_EMAIL || 'me');
+  try { if (!F.list) { const c = JSON.parse(localStorage.getItem(FKEY()) || 'null'); if (c && Array.isArray(c.list)) { F.list = c.list; F.cachedAt = c.at; F.stale = true; } } } catch (_) {}
   async function loadFriends(force) {
-    if (F.loading || (F.list && !force)) return;
+    if (F.loading) return;
+    if (!force && F.list && !F.stale) return;
+    if (!force && F.failAt && Date.now() - F.failAt < 20000) return;
     F.loading = true;
-    try { F.list = await social.friends(); F.err = ''; }
-    catch (e) { F.err = e.offline ? 'You\'re offline. Friends will load when you\'re back online.' : 'Could not load friends: ' + e.message; }
-    F.loading = false;
-    if (UI.view === 'friends' && modal.hidden) softRender(render);
+    const hadErr = F.err;
+    try {
+      F.list = await social.friends(); F.err = ''; F.offline = false; F.failAt = 0; F.stale = false; F.cachedAt = Date.now();
+      try { localStorage.setItem(FKEY(), JSON.stringify({ at: F.cachedAt, list: F.list })); } catch (_) {}
+    } catch (e) {
+      F.failAt = Date.now(); F.offline = !!(e.offline || e.timeout);
+      F.err = F.offline ? (F.list ? 'You\'re offline, so this is your ladder from the last time you were online.' : 'You\'re offline. Your friends and the ladder load when you\'re back online.') : 'Could not load friends: ' + e.message;
+    } finally { F.loading = false; }
+    if (UI.view === 'friends' && modal.hidden && !(hadErr && F.err === hadErr)) softRender(render);
     renderMe();
     ggCheckEvents().catch(() => {});
   }
+  window.addEventListener('online', () => { F.failAt = 0; loadFriends(true); loadNotes(); loadWorkouts(); });
   function myPoints() { return social.pointsFor(S); }
   function rankingRows() {
     const me = window.MH_ME || {};
@@ -2089,6 +2356,7 @@
     const needGoal = !pr.goalStart || (pr.goal !== 'maintain' && pr.goalWeightKg == null);
     main.innerHTML = `<div class="page">
       <div class="page-head"><div><h1>Ranked</h1><p class="sub">${ME().username ? `<b>@${esc(ME().username)}</b> ${flagOf(ME().country)} · friends find you by your username` : '<button class="link-btn" data-action="u-change">Choose your username</button> so friends can find you.'}</p></div></div>
+      ${F.offline ? `<div class="nudge offline-top"><span>📡 <b>You're offline.</b> ${F.list ? 'Showing your ladder from the last time you were online. Your own points are up to date.' : 'Your friends and the ladder load when you\'re back online. Your own points are below.'}</span><button class="btn" data-action="f-retry" ${F.loading ? 'disabled' : ''}>${F.loading ? 'Trying…' : 'Try again'}</button></div>` : ''}
       ${needGoal ? `<div class="nudge"><span><b>Set your goal to join the ranking.</b> Choose lose, gain or maintain and a goal weight in Settings. Your points start from your weight on that day.</span><button class="btn primary" data-action="go-settings">Set goal</button></div>` : ''}
       <div class="grid-2">
         ${ggLadderPanel()}
@@ -2098,7 +2366,7 @@
           ${outgoing.length ? `<div class="panel"><h2>Waiting for them to accept</h2>${outgoing.map(f => `<div class="frow"><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)} ${flagOf(f.profile.country)}${f.profile.username ? `<small class="faint">@${esc(f.profile.username)}</small>` : ''}</span><button class="btn ghost" data-action="f-remove" data-id="${esc(f.id)}">Cancel</button></div>`).join('')}</div>` : ''}
           ${friends.length ? `<div class="panel"><h2>Your friends</h2><p class="muted small" style="margin-top:-6px">Friends can see your ranking points, what you eat each day and your weight history, and get told in the app when you log food. To stop sharing with someone, remove them as a friend.</p>
             ${friends.map(f => `<div class="frow"><span class="avatar" style="background:${esc(f.profile.color || '#888')}">${esc((f.profile.name || '?').charAt(0))}</span><span class="fname">${esc(f.profile.name)} ${flagOf(f.profile.country)}${f.profile.username ? `<small class="faint">@${esc(f.profile.username)}</small>` : ''}</span><button class="btn" data-action="f-view" data-id="${esc(f.id)}">View</button></div>`).join('')}</div>` : ''}
-          ${F.err ? `<div class="panel flat"><span class="err">${esc(F.err)}</span></div>` : ''}
+          ${F.err ? `<div class="panel flat offline-note"><span class="${F.offline ? 'muted' : 'err'}">${F.offline ? '📡 ' : ''}${esc(F.err)}${F.offline && F.cachedAt ? ` <span class="faint">(${esc(new Date(F.cachedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))})</span>` : ''}</span><button class="btn" data-action="f-retry" ${F.loading ? 'disabled' : ''}>${F.loading ? 'Trying…' : 'Try again'}</button></div>` : ''}
         </div>
       </div>
     </div>`;
@@ -2173,8 +2441,9 @@
       if (fresh.length) {
         // Something new arrived while the app is open: show it straight away.
         const n = fresh[0];
-        toast(n.kind === 'food' ? n.title + ' · ' + n.body : (n.body || n.title), 'View', () => { if (/friend/.test(n.kind)) nav('friends'); else openNotes(); });
+        toast(n.kind === 'food' ? n.title + ' · ' + n.body : (n.body || n.title), 'View', () => { if (/friend/.test(n.kind)) nav('friends'); else if (n.kind === 'workout-invite') { UI.date = todayKey(); nav('today'); } else openNotes(); });
         if (fresh.some(x => /friend/.test(x.kind))) loadFriends(true);
+        if (fresh.some(x => /^workout/.test(x.kind))) loadWorkouts();
       }
     } catch (_) {}
   }
@@ -2182,11 +2451,14 @@
   if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'mh-push') { loadNotes(); loadFriends(true); } });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { loadNotes(); if (UI.view === 'friends') loadFriends(true); } });
   function openNotes() {
-    card.className = 'modal-card narrow';
+    card.className = 'modal-card narrow notes-card';
+    const inv = WK.list.filter(w => w.incoming).slice(0, 6);
+    const invHtml = inv.length ? `<div class="ex-sec" style="margin-top:0">Workout invites</div>${inv.map(w => w.status === 'pending' ? wkInviteCard(w) : `<div class="note-row"><b>${esc(w.other_name)}'s workout · ${esc(wkDayLabel(w.day))}</b><span>${(w.plan || []).length} exercises · <span class="wk-st wk-${w.status}">${w.status === 'accepted' ? 'accepted ✓' : WK_STATUS[w.status] || w.status}</span></span></div>`).join('')}<div class="ex-sec">Everything else</div>` : '';
     card.innerHTML = `<div class="modal-head"><h2>Notifications</h2><button class="btn ghost" data-f="close">Close</button></div>
-      <div class="modal-body">${NOTES.list.length ? NOTES.list.map(n => `<div class="note-row ${n.read ? '' : 'unread'}"><b>${esc(n.title)}</b><span>${esc(n.body)}</span><small class="faint">${esc(new Date(n.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</small></div>`).join('') : '<p class="muted">Nothing yet. When friends log food (and allow it) or send you a friend request, it shows here.</p>'}</div>`;
+      <div class="modal-body">${invHtml}${NOTES.list.length ? NOTES.list.map(n => `<div class="note-row ${n.read ? '' : 'unread'}"><b>${esc(n.title)}</b><span>${esc(n.body)}</span><small class="faint">${esc(new Date(n.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</small></div>`).join('') : '<p class="muted">Nothing yet. When friends log food (and allow it) or send you a friend request, it shows here.</p>'}</div>`;
     modal.hidden = false;
-    card.onclick = e => { if (e.target.closest('[data-f="close"]')) closeModal(); };
+    card.onclick = e => { if (e.target.closest('[data-f="close"]')) closeModal(); const b = e.target.closest('[data-action=wk-inv]'); if (b) wkRespond(b.dataset.id, b.dataset.v === 'yes', b); };
+    if (!WK.loading && Date.now() - (WK.notesAt || 0) > 5000) { WK.notesAt = Date.now(); loadWorkouts().then(() => { if (!modal.hidden && card.classList.contains('notes-card') && WK.list.some(w => w.incoming)) { const was = card.querySelector('.wk-inv, .ex-sec'); if (!was) openNotes(); } }); }
     if (NOTES.unread) { social.markRead().catch(() => {}); NOTES.list.forEach(n => n.read = true); ggNotes().forEach(n => n.read = true); save(); NOTES.unread = 0; renderMe(); }
   }
 
@@ -2683,6 +2955,7 @@
       const box = $('#uResults'); if (box) box.innerHTML = searchResults(id => SR.sent.has(id) ? 'sent' : '');
       return;
     }
+    else if (act === 'f-retry') { F.failAt = 0; a.disabled = true; a.textContent = 'Trying…'; await loadFriends(true); if (UI.view === 'friends') render(); if (F.offline) toast('Still offline. It will load by itself when you\'re back online.'); }
     else if (act === 'f-accept') { try { await social.accept(a.dataset.id); toast('Friend added. Choose what they can see below.'); } catch (e) { toast(e.message); } await loadFriends(true); }
     else if (act === 'f-remove') {
       const f = (F.list || []).find(x => x.id === a.dataset.id);
@@ -2825,7 +3098,8 @@
 
   function foodForm(f, opts) {
     opts = opts || {};
-    const n = (f && f.n) || {};
+    const pre = !f && opts.prefill ? opts.prefill : null;
+    const n = (f && f.n) || (pre && pre.n) || {};
     const fields = [['kcal', 'Calories', 'kcal'], ['p', 'Protein', 'g'], ['c', 'Carbohydrate', 'g'], ['f', 'Fat', 'g'], ['fib', 'Fibre', 'g'], ['sug', 'of which sugars', 'g'], ['sat', 'of which saturates', 'g'], ['salt', 'Salt', 'g']];
     const extra = ['k', 'ca', 'fe', 'mg', 'zn', 'ph', 'se', 'io', 'cu', 'va', 'vc', 'vd', 've', 'vk', 'b1', 'b2', 'b3', 'b6', 'b12', 'fol', 'ch', 'epa', 'ala', 'la'];
     const val = k => k === 'salt' ? (n.na == null ? '' : +(n.na * 2.5 / 1000).toFixed(2)) : (n[k] ?? '');
@@ -2833,12 +3107,12 @@
     card.style.width = 'min(760px,100%)';
     card.innerHTML = `<div class="modal-head"><h2>${f ? 'Edit food' : 'Create a food'}</h2><button class="btn ghost" data-f="close">Close</button></div>
       <div class="modal-body">
-        <p class="muted" style="margin-top:0">Copy the "per 100 g" column from the label (drinks: "per 100 ml"). Only name and calories are required.</p>
-        <label class="check" style="margin-bottom:12px"><input type="checkbox" id="ff-liquid" ${f && unitOf(f) === 'ml' ? 'checked' : ''}> This is a drink or other liquid (measured in ml)</label>
+        <p class="muted" style="margin-top:0">Copy the "per 100 g" column from the label (drinks: "per 100 ml"). Only name and calories are required.${opts.barcode ? ` <b>Saved with barcode ${esc(opts.barcode)}</b>, so scanning it again finds this product.` : ''}</p>
+        <label class="check" style="margin-bottom:12px"><input type="checkbox" id="ff-liquid" ${(f && unitOf(f) === 'ml') || (pre && pre.unit === 'ml') ? 'checked' : ''}> This is a drink or other liquid (measured in ml)</label>
         <div class="form-grid" style="grid-template-columns:2fr 1fr 1fr">
-          <label class="field"><span>Name</span><input type="text" id="ff-name" value="${esc(f ? f.name : '')}"></label>
-          <label class="field"><span>Portion size (g or ml, optional)</span><input type="number" id="ff-portion" value="${f && f.portion ? f.portion : ''}"></label>
-          <label class="field"><span>Portion name (optional)</span><input type="text" id="ff-plabel" value="${esc(f && f.portionLabel ? f.portionLabel : '')}" placeholder="e.g. 1 bar"></label>
+          <label class="field"><span>Name</span><input type="text" id="ff-name" value="${esc(f ? f.name : pre ? pre.name : '')}"></label>
+          <label class="field"><span>Portion size (g or ml, optional)</span><input type="number" id="ff-portion" value="${f && f.portion ? f.portion : pre && pre.portion ? pre.portion : ''}"></label>
+          <label class="field"><span>Portion name (optional)</span><input type="text" id="ff-plabel" value="${esc(f && f.portionLabel ? f.portionLabel : pre && pre.portionLabel ? pre.portionLabel : '')}" placeholder="e.g. 1 bar"></label>
         </div>
         <h3 style="margin-top:18px">Per 100 g or 100 ml</h3>
         <div class="form-grid">${fields.map(([k, l, u]) => `<label class="field"><span>${l} (${u})</span><input type="number" step="any" min="0" data-k="${k}" value="${val(k)}"></label>`).join('')}</div>
@@ -2863,7 +3137,9 @@
       ['p', 'c', 'f'].forEach(k => { if (nn[k] == null) nn[k] = 0; });
       const portion = Number($('#ff-portion').value) || null;
       const food = { id: f ? f.id : (opts.barcode ? 'bc:' + opts.barcode : 'my:' + uid()), barcode: opts.barcode || (f && f.barcode) || null, name, cat: 'My foods', source: 'Mine', unit: $('#ff-liquid').checked ? 'ml' : 'g', portion, portionLabel: $('#ff-plabel').value.trim() || (portion ? 'portion' : null), n: nn };
-      if (f) S.customFoods = S.customFoods.map(c => c.id === f.id ? food : c); else S.customFoods.unshift(food);
+      if (f) S.customFoods = S.customFoods.map(c => c.id === f.id ? food : c);
+      else { S.customFoods = S.customFoods.filter(c => c.id !== food.id && !(opts.barcode && sameCode(c.barcode, opts.barcode))); S.customFoods.unshift(food); }
+      if (opts.barcode) { const lk = P().profile.barcodeLinks; if (lk) for (const c of Object.keys(lk)) if (sameCode(c, opts.barcode)) delete lk[c]; }
       save(); card.style.width = ''; closeModal();
       if (opts.then) { opts.then(food); return; }
       UI.foodCat = 'My foods'; render(); toast(`Saved ${name}.`);
@@ -3834,7 +4110,7 @@
   setTimeout(async () => { for (const pid of connectedPids()) await quietSync(pid, 3); }, 1500);
   setInterval(async () => { for (const pid of connectedPids()) await quietSync(pid, 2); }, 3 * 3600 * 1000);
 
-  loadFriends(); loadNotes();
+  loadFriends(); loadNotes(); loadWorkouts();
   // Live updates arrive from the server instantly; a slow check is kept as a safety net.
   let liveT = null;
   window.addEventListener('mh-live', e => {
@@ -3842,6 +4118,7 @@
     liveT = setTimeout(() => { // a burst of changes = one refresh
       const t = e.detail.table;
       if (t === 'notifications' || t === 'friendships') loadNotes();
+      if (t === 'notifications') loadWorkouts();
       if (t === 'friendships' || (t === 'profiles' && UI.view === 'friends')) loadFriends(true);
     }, 400);
   });

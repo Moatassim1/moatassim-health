@@ -917,6 +917,8 @@
     ['Ready meal, macaroni cheese', 'E', 400, '1 pack', [160, 6.5, 16, 8, 1, 2, 4.5, 0.7], '400/pack', 'microwave'],
     ['Super noodles (made up)', 'E', 170, '1 pack', [170, 4, 24, 6.5, 1.5, 1, 3, 1.2], '170/pack', 'instant noodles'],
   ];
+  // Named products (a maker's own recipe) are marked as brands; everything else is a generic food.
+  const BRANDS = /\b(Cadbury|Dairy Milk|Galaxy|Milka|Toblerone|Lindt|Ferrero|Kinder|KitKat|Mars bar|Snickers|Twix|Bounty|Milky Way|Maltesers|M&M’s|Smarties|Reese’s|Hershey’s|Aero|Crunchie|Twirl|Wispa|Freddo|Creme Egg|Haribo|Skittles|Pringles|Doritos|Cheetos|Quavers|Wotsits|Monster Munch|Monster Energy|Monster Ultra|Twiglets|Mini cheddars|Ritz|Belvita|Nature Valley|Nakd|Kind bar|Clif bar|Quest|Grenade|Barebells|Fulfil|Oreo|Chips Ahoy|Lotus|Biscoff|Jaffa Cake|Hobnob|Jammie Dodger|Magnum|Cornetto|Ben & Jerry’s|Häagen-Dazs|Halo Top|Pepsi|Fanta|Sprite|Irn-Bru|Dr Pepper|Red Bull|Lucozade|Gatorade|Prime|Celsius|Huel|Marmite|Shreddies|Special K|Rice Krispies|Coco Pops|Frosties|Cheerios|Crunchy Nut|All-Bran|Shredded Wheat|Lucky Charms|Froot Loops|Cinnamon Toast Crunch|Babybel|Laughing Cow|Petits Filous|Guinness|Baileys|Super noodles|Belgian bun)\b/i;
   const out = rows.map(r => {
     const [name, c, portion, label, v, each, kw, unit] = r;
     const [kcal, p, cb, f, fib, sug, sat, salt] = v, n = {};
@@ -926,6 +928,7 @@
     const o = { id: 'wf' + i, name, cat: CAT[c], kw: kw || '', portion, portionLabel: label, n };
     if (each) { const [g, one] = each.split('/'); o.each = { g: +g, one, many: plural(one) }; }
     if (unit === 'ml') o.unit = 'ml';
+    const bm = name.match(BRANDS); if (bm && !/Belgian bun/i.test(bm[0])) { o.branded = true; o.brand = bm[0]; }
     return o;
   });
   window.BUILTIN_FOODS.push(...out);

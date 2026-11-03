@@ -59,7 +59,7 @@
     decodePhoto,
     scan() {
       return new Promise(resolve => {
-        let done = false, stream = null, timer = null, busy = false, lastSeen = null, seenCount = 0, flip = 0;
+        let done = false, stream = null, timer = null, busy = false, lastSeen = null, seenCount = 0, flip = 0, started = Date.now(), hinted = false;
         const box = document.createElement('div');
         box.className = 'scanner';
         box.innerHTML = `
@@ -86,7 +86,7 @@
           const a = b.dataset.sc;
           if (a === 'close') finish(null);
           if (a === 'type') { box.querySelector('#scType').hidden = false; box.querySelector('#scNum').focus(); }
-          if (a === 'go') { const v = box.querySelector('#scNum').value.replace(/\D/g, ''); if (v.length < 8) msg('Barcodes are 8 to 14 digits long.'); else finish(v); }
+          if (a === 'go') { const v = box.querySelector('#scNum').value.replace(/\D/g, ''); if (v.length < 8 || v.length > 14) msg('Barcodes are 8 to 14 digits long: type every number under the bars.'); else if (v.length >= 12 && !validEan(v)) msg('That number doesn\'t look right (the last digit doesn\'t match). Check it and try again.'); else finish(v); }
           if (a === 'torch' && stream) {
             const tr = stream.getVideoTracks()[0]; b.classList.toggle('on');
             tr.applyConstraints({ advanced: [{ torch: b.classList.contains('on') }] }).catch(() => {});
@@ -118,15 +118,22 @@
           if (!busy && video.readyState >= 2 && video.videoWidth) {
             busy = true;
             try {
-              flip = (flip + 1) % 3;
+              flip = (flip + 1) % 4;
               const [x, y, w, h] = cropRect();
-              // Mostly the box at good resolution; every third go, a wider view.
-              const c = flip === 2 ? canvasFrom(video, 0, video.videoHeight * 0.15, video.videoWidth, video.videoHeight * 0.7, 960, false) : canvasFrom(video, x, y, w, h, flip ? 1000 : 720, false);
+              // Mostly the box at good resolution; also a wider view, and the middle turned sideways
+              // for barcodes printed upright on the pack.
+              const vw = video.videoWidth, vh = video.videoHeight;
+              const c = flip === 2 ? canvasFrom(video, 0, vh * 0.15, vw, vh * 0.7, 960, false)
+                : flip === 3 ? canvasFrom(video, vw * 0.3, vh * 0.05, vw * 0.4, vh * 0.9, 900, true)
+                : canvasFrom(video, x, y, w, h, flip ? 1000 : 720, false);
               const code = await decodeCanvas(c);
               if (code && code.length >= 8) {
                 if (validEan(code)) return found(code);
                 if (code === lastSeen) { if (++seenCount >= 2) return found(code); } else { lastSeen = code; seenCount = 1; }
               }
+              // Still nothing after a while: the camera can't read it, so say what usually helps.
+              const secs = (Date.now() - started) / 1000;
+              if (secs > 9 && !hinted) { hinted = true; msg('Can\'t read it yet. Move the phone a little further away, keep the barcode flat and straight, ' + (box.querySelector('#scTorch').hidden ? 'and find more light' : 'or turn on the light') + '. You can also type the number under the barcode.'); box.classList.add('slow'); }
             } catch (_) {}
             busy = false;
           }
@@ -150,7 +157,7 @@
             } catch (_) {}
             if (!getDecoder()) { msg('The scanner is still loading. Try again in a moment, or type the number.'); return; }
             msg('Hold the barcode inside the box, about 10–15 cm away, until it buzzes.');
-            tick();
+            started = Date.now(); tick();
           })
           .catch(err => {
             const t = String((err && err.name) || err || '');

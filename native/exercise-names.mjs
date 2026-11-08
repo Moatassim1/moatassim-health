@@ -52,8 +52,12 @@ const NAMES = {
   'Pullups': ['Pull-ups', 'pullups', 'chin ups'],
   'Chin-Up': ['Chin-ups', 'chinups'],
   'Band_Assisted_Pull-Up': ['Assisted Pull-ups (Band)', 'assisted pullup'],
-  'Wide-Grip_Lat_Pulldown': ['Lat Pulldown', 'pulldown', 'lat pull down'],
-  'Close-Grip_Front_Lat_Pulldown': ['Close-Grip Lat Pulldown', 'pulldown'],
+  'Wide-Grip_Lat_Pulldown': ['Lat Pulldown', 'pulldown', 'lat pull down', 'lat machine', 'wide grip pulldown', 'bar pulldown', 'pull down machine'],
+  'Close-Grip_Front_Lat_Pulldown': ['Close-Grip Lat Pulldown', 'pulldown', 'lat machine', 'narrow grip pulldown'],
+  'One_Arm_Lat_Pulldown': ['Single-Arm Lat Pulldown', 'one arm pulldown', 'single arm pulldown', 'lat machine', 'd handle', 'stirrup handle', 'single handle pulldown'],
+  'V-Bar_Pulldown': ['V-Bar Pulldown', 'close grip pulldown', 'neutral grip pulldown', 'triangle handle', 'lat machine'],
+  'Underhand_Cable_Pulldowns': ['Reverse-Grip Lat Pulldown', 'underhand pulldown', 'supinated pulldown', 'lat machine'],
+  'Kneeling_Single-Arm_High_Pulley_Row': ['Kneeling Single-Arm Pulldown', 'kneeling pulldown', 'd handle', 'lat machine', 'high pulley row'],
   'Bent_Over_Barbell_Row': ['Barbell Row', 'bent over row'],
   'One-Arm_Dumbbell_Row': ['Single-Arm Dumbbell Row', 'one arm row', 'db row'],
   'Seated_Cable_Rows': ['Seated Cable Row', 'cable row', 'low row'],
@@ -128,6 +132,7 @@ const ADD = [
   ['gg_chest_supported_row', 'Chest-Supported Dumbbell Row', 'Back', 'c', 'dumbbell', ['middle back'], ['lats', 'biceps'], ['incline row', 'seal row'], ['Lie face down on an incline bench holding dumbbells.', 'Row the dumbbells up to your sides, then lower.']],
   ['gg_lat_pulldown_machine', 'Lat Pulldown Machine (Plate Loaded)', 'Back', 'c', 'machine', ['lats'], ['biceps', 'middle back'], ['pulldown'], ['Sit with your thighs under the pads.', 'Pull the handles down to your upper chest, then let them rise slowly.']],
   ['gg_assisted_pullup_machine', 'Assisted Pull-up Machine', 'Back', 'c', 'machine', ['lats'], ['biceps', 'middle back'], ['assisted pullup', 'gravitron'], ['Kneel or stand on the platform and choose the assistance weight.', 'Pull yourself up until your chin is over the bar, then lower slowly.']],
+  ['gg_dual_handle_pulldown', 'Lat Pulldown (Two D-Handles)', 'Back', 'c', 'cable', ['lats'], ['biceps', 'middle back'], ['d handle pulldown', 'stirrup handles', 'double handle pulldown', 'neutral grip pulldown', 'parallel grip', 'lat machine', 'pulldown'], ['Clip two D-handles (stirrup handles) to the high pulley of the lat machine and sit with your thighs under the pads.', 'Hold one handle in each hand, palms facing each other, arms straight above you.', 'Pull your elbows down and back until your hands reach your upper chest, squeezing your lats.', 'Let the handles rise slowly until your arms are straight again.'], 'V-Bar_Pulldown'],
   ['gg_straight_arm_pulldown', 'Straight-Arm Pulldown', 'Back', 'i', 'cable', ['lats'], [], ['lat prayer', 'pullover'], ['Hold a bar or rope at a high cable with straight arms.', 'Sweep it down to your thighs keeping your arms straight, then return.']],
   ['gg_dead_hang', 'Dead Hang', 'Back', 'i', 'body only', ['forearms'], ['lats'], ['hang', 'grip'], ['Hang from a pull-up bar with straight arms and hold for time.']],
   ['gg_back_ext_machine', 'Back Extension Machine', 'Back', 'i', 'machine', ['lower back'], ['glutes', 'hamstrings'], ['lower back machine'], ['Sit with the pad against your upper back.', 'Extend backwards until your body is straight, then return slowly.']],
@@ -171,9 +176,10 @@ for (const x of L) {
   if (n !== orig) { x.o = orig; x.n = n; x.a = [orig.toLowerCase()]; }
 }
 let added = 0;
-for (const [id, n, g, m, e, p, s, a, i] of ADD) {
+for (const [id, n, g, m, e, p, s, a, i, imFrom] of ADD) {
   if (byId.has(id)) continue;
-  L.push({ id, n, g, m, e, p, s, l: 'beginner', c: g === 'Cardio' ? 'cardio' : 'strength', i, a, pop: 400 + added }); added++;
+  const im = imFrom && byId.get(imFrom) ? byId.get(imFrom).im : undefined;
+  L.push({ id, n, g, m, e, p, s, l: 'beginner', c: g === 'Cardio' ? 'cardio' : 'strength', i, a, pop: 400 + added, ...(im ? { im } : {}) }); added++;
 }
 L.sort((x, y) => ((x.pop ?? 1e9) - (y.pop ?? 1e9)) || x.n.localeCompare(y.n));
 const head = '// Exercise library: free-exercise-db by yuhonas (public domain, The Unlicense), renamed to everyday gym names\n// with extra machine exercises added by GG Gains (native/exercise-names.mjs). Demo photos load from the same project.\n';

@@ -627,6 +627,7 @@
         <button class="lift-x" data-action="lift-del" data-id="${esc(l.id)}" aria-label="Remove exercise">✕</button>
       </div>
       ${l.from ? `<div class="lift-from">👥 From ${esc(l.from.name)}'s workout · your sets are your own</div>` : ''}
+      ${l.rt && !l.from && !done(l.sets).length ? `<div class="lift-from">📋 From your ${esc(l.rt)} · type today's kg and reps</div>` : ''}
       <div class="lset-head"><span>Set</span><span>kg</span><span>Reps</span><span></span></div>
       ${l.sets.map((s, i) => `<div class="lset${s.reps > 0 ? ' done' : ''}" data-i="${i}"><span class="lset-n">${i + 1}</span><input class="lset-kg" type="number" inputmode="decimal" step="0.5" min="0" max="999" value="${s.kg > 0 || s.reps > 0 ? (s.kg || 0) : ''}" placeholder="${ph ? fmtKg(ph.kg) : 'kg'}" aria-label="Set ${i + 1} kg"><input class="lset-reps" type="number" inputmode="numeric" min="1" max="100" value="${s.reps > 0 ? s.reps : ''}" placeholder="${ph ? ph.reps : 'reps'}" aria-label="Set ${i + 1} reps"><button class="lset-ok" data-action="lset-ok" data-id="${esc(l.id)}" data-i="${i}" aria-label="Set ${i + 1} done">✓</button></div>`).join('')}
       <div class="lift-btns"><button class="btn ghost" data-action="lset-add" data-id="${esc(l.id)}">＋ Add set</button>${l.sets.length > 1 ? `<button class="btn ghost" data-action="lset-pop" data-id="${esc(l.id)}">− Remove set</button>` : ''}</div>
@@ -643,12 +644,15 @@
       ${gd && gd.steps != null ? (() => { const w = walkKcal(gd); return `<div class="steps-row"><span>👟 <b class="num">${fmt(gd.steps)}</b> steps <span class="faint">· ${fmt(w.km, 1)} km</span></span><span class="walk-kcal" title="Calories burned walking, on top of what your body burns at rest."><b class="num">${fmt(w.kcal)}</b> kcal</span></div>${gd.stepGoal ? `<div class="water-bar steps-bar"><i style="width:${Math.min(100, gd.steps / gd.stepGoal * 100)}%"></i></div><div class="faint small" style="margin-top:4px">Goal ${fmt(gd.stepGoal)} steps</div>` : ''}`; })() : healthOffer()}
       ${lifts.length ? `<div class="tc-sec"><span>🏋️ Gym</span>${lifts.length ? `<span class="tc-sec-r">${lifts.filter(l => l.locked).length ? `${lifts.filter(l => l.locked).length}/${lifts.length} done` : ''}</span>` : ''}</div>${wkInvSent(k)}` : ''}
       ${lifts.map(l => liftBlock(l, k)).join('')}
-      ${lifts.length ? `<button class="btn ghost wide wk-share-btn" data-action="wk-share">👥 Share this workout with a friend</button>` : ''}
+      ${lifts.length ? `<div class="tc-rt"><button class="btn ghost" data-action="rt-save">💾 Save as workout day</button><button class="btn ghost" data-action="wk-share">👥 Share with a friend</button></div>` : ''}
       ${ex.length || (gd && (gd.activities || []).length) ? '<div class="tc-sec"><span>🏊 Activities & sports</span></div>' : ''}
       ${ex.length ? `<ul class="ex-list act-list">${ex.map(x => { const a = exById(x.exId); return `<li><span>${a && a.ic ? a.ic + ' ' : ''}<b>${esc(x.name)}</b> <span class="faint">${fmt(x.min)} min</span></span><span class="num">${fmt(x.kcal)} kcal</span><button class="btn ghost j-x" data-action="ex-del" data-id="${esc(x.id)}" aria-label="Remove">✕</button></li>`; }).join('')}</ul><p class="small muted" style="margin:4px 0 0">${fmt(exK)} kcal from activities${gd && gd.kcalTotal != null ? ' · already part of your watch total, so it isn\'t added again' : ''}.</p>` : ''}
       ${gd && (gd.activities || []).length ? `<div class="faint small" style="margin:${ex.length ? 10 : 2}px 0 2px">From your watch</div><ul class="ex-list g-acts">${gd.activities.map(x => `<li><span>${actIcon(x.type)} <b>${esc(x.name)}</b> <span class="faint">${[x.start, x.min != null ? fmt(x.min) + ' min' : '', x.km ? fmt(x.km, x.km < 2 ? 2 : 1) + ' km' : ''].filter(Boolean).join(' · ')}</span></span><span class="num">${x.kcal != null ? fmt(x.kcal) + ' kcal' : ''}</span></li>`).join('')}</ul>` : ''}
       ${!lifts.length && !ex.length && !(gd && (gd.activities || []).length) ? '<p class="muted small" style="margin:8px 0 0">Log your lifts to track progressive overload (weight, reps and sets over time, with a 🏆 for every personal record), or log a swim, sauna, run or match.</p>' : ''}
       <div class="tc-add"><button class="btn primary lift-add" data-action="lift-pick" data-tab="gym">🏋️ ＋ Gym exercise</button><button class="btn lift-add act-add" data-action="lift-pick" data-tab="act">🏊 ＋ Activity</button></div>
+      ${(() => { const R = routines(); if (!R.length) return `<button class="btn ghost wide rt-open" data-action="rt-open">📋 Saved workouts <small class="faint">Back day, Leg day…</small></button>`;
+        const quick = !lifts.length ? [...R].sort((a, b) => (b.used || b.at || 0) - (a.used || a.at || 0)).slice(0, 4) : [];
+        return `${quick.length ? `<div class="rt-quick"><span class="faint small">Start from a saved workout</span><div class="chips">${quick.map(r => `<button class="chip" data-action="rt-use" data-id="${esc(r.id)}">${rtIcon(r)} ${esc(r.name)}</button>`).join('')}</div></div>` : ''}<button class="btn ghost wide rt-open" data-action="rt-open">📋 Saved workouts (${R.length})</button>`; })()}
     </div>`;
   }
   const findLift = id => { const m = P().dayMeta[UI.date] || {}; return (m.lifts || []).find(l => l.id === id); };
@@ -690,6 +694,9 @@
     if (act === 'lift-pick') return openExercisePicker(k, a.dataset.tab);
     if (act === 'lift-info') return openExercise(a.dataset.ex, a.dataset.k || k);
     if (act === 'wk-share') return openWorkoutShare(k);
+    if (act === 'rt-open') return openRoutines(k, false);
+    if (act === 'rt-save') return openRoutines(k, true);
+    if (act === 'rt-use') return rtUse(a.dataset.id, k);
     if (act === 'wk-inv') return wkRespond(a.dataset.id, a.dataset.v === 'yes', a);
     const l = findLift(a.dataset.id);
     if (act === 'lift-del') {
@@ -823,6 +830,112 @@
     };
   }
 
+  // ---- Saved workout days ("Back day", "Leg day"…). Only the exercise list and how many sets are kept;
+  // using one on another day adds those exercises with empty sets, so you type that day's weights and reps.
+  const RT_NAMES = ['Back day', 'Chest day', 'Leg day', 'Shoulder day', 'Arm day', 'Push day', 'Pull day', 'Upper body', 'Lower body', 'Full body'];
+  const RT_GROUP = { Back: 'Back day', Chest: 'Chest day', Legs: 'Leg day', Shoulders: 'Shoulder day', Arms: 'Arm day', Core: 'Core day' };
+  const RT_IC = { Back: '🚣', Chest: '🏋️', Legs: '🦵', Shoulders: '🤸', Arms: '💪', Core: '🔥' };
+  const routines = () => P().profile.routines || (P().profile.routines = []);
+  const rtFind = name => routines().find(r => r.name.trim().toLowerCase() === String(name || '').trim().toLowerCase());
+  const rtTop = items => { const c = {}; for (const x of items) if (x.g) c[x.g] = (c[x.g] || 0) + 1; return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || ''; };
+  const rtIcon = r => RT_IC[rtTop(r.items)] || '📋';
+  function rtGuess(items) {
+    const t = rtTop(items), n = RT_GROUP[t] || 'My workout';
+    return n;
+  }
+  function rtSave(k, name) {
+    const items = wkPlanOf(k).filter(x => x.ex && !isCardio(exById(x.ex))).map(x => ({ ex: x.ex, name: x.name, g: x.g, sets: x.sets }));
+    if (!items.length) return null;
+    name = String(name || '').trim().slice(0, 40) || rtGuess(items);
+    let r = rtFind(name), updated = !!r;
+    if (r) { r.items = items; r.name = name; r.at = Date.now(); }
+    else { r = { id: uid(), name, items, at: Date.now(), used: 0, uses: 0 }; routines().unshift(r); if (routines().length > 40) routines().length = 40; }
+    save();
+    return { r, updated };
+  }
+  function rtUse(id, k) {
+    const r = routines().find(x => x.id === id); if (!r) return toast('That saved workout no longer exists.');
+    const m = P().dayMeta[k] || (P().dayMeta[k] = {}), lifts = m.lifts || (m.lifts = []);
+    const ids = []; let skipped = 0;
+    for (const x of r.items) {
+      if (lifts.some(l => l.ex === x.ex)) { skipped++; continue; }
+      const lib = exById(x.ex), last = liftHistory(x.ex, k).pop();
+      const n = Math.max(1, Math.min(10, x.sets || (last ? last.sets.length : 3)));
+      const l = { id: uid(), ex: x.ex, name: lib ? lib.n : x.name, g: lib ? lib.g : x.g, mp: lib ? lib.p : [], ms: lib ? lib.s : [], sets: Array.from({ length: n }, () => ({ kg: 0, reps: 0 })), at: Date.now(), rt: r.name };
+      lifts.push(l); ids.push(l.id);
+    }
+    r.used = Date.now(); r.uses = (r.uses || 0) + 1;
+    save();
+    if (!modal.hidden) closeModal();
+    if (UI.view !== 'today') { UI.date = k; nav('today'); } else render();
+    const msg = ids.length ? `📋 ${r.name}: added ${ids.length} exercise${ids.length === 1 ? '' : 's'}${skipped ? ` (${skipped} already there)` : ''}. Fill in today's kg and reps.` : `Everything in ${r.name} is already in this day.`;
+    toast(msg, ids.length ? 'Undo' : undefined, ids.length ? () => { m.lifts = (m.lifts || []).filter(l => !ids.includes(l.id) || done(l.sets).length); save(); render(); } : undefined);
+    setTimeout(() => { const el = ids.length && document.querySelector(`.lift[data-lid="${ids[0]}"]`); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 80);
+  }
+  async function openRoutines(k, saving) {
+    if (!window.GG_EXERCISES) { try { await loadExercises(); } catch (_) {} }
+    const S = { saving: !!saving && wkPlanOf(k).length > 0, name: '', edit: null, editName: '' };
+    S.name = rtGuess(wkPlanOf(k));
+    card.onclick = null; card.oninput = null; card.className = 'modal-card narrow sheet-card rt-card';
+    const dayL = k === todayKey() ? 'today' : shortDate(k);
+    const draw = () => {
+      const R = routines(), plan = wkPlanOf(k).filter(x => !isCardio(exById(x.ex)));
+      const ex = rtFind(S.name);
+      const saveBox = plan.length ? (S.saving ? `<div class="rt-save">
+          <div class="ex-sec" style="margin-top:0">Save ${esc(dayL)}'s ${plan.length} exercise${plan.length === 1 ? '' : 's'}</div>
+          <div class="wk-plan">${plan.map(x => `<span>${esc(exParts(x.name)[0])} <i>${x.sets}×</i></span>`).join('')}</div>
+          <label class="field"><span>Name</span><input type="text" id="rtName" maxlength="40" value="${esc(S.name)}" placeholder="e.g. Back day" autocomplete="off"></label>
+          <div class="chips rt-chips">${RT_NAMES.map(n => `<button class="chip${S.name === n ? ' on' : ''}" data-r="name" data-v="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+          <p class="faint small" style="margin:6px 0 0">Only the exercises and number of sets are saved, not the weights or reps.${ex ? ` This replaces the exercises in your saved <b>${esc(ex.name)}</b>.` : ''}</p>
+          <div class="ex-btns"><button class="btn ghost" data-r="cancel">Cancel</button><button class="btn primary" data-r="save" id="rtSaveBtn">${ex ? 'Update ' + esc(ex.name) : 'Save workout day'}</button></div>
+        </div>` : `<button class="btn wide rt-new" data-r="start">💾 Save ${esc(dayL)}'s exercises as a workout day</button>`) : '';
+      const list = R.length ? R.map(r => S.edit === r.id ? `<div class="rt-item"><div class="rt-edit"><input type="text" id="rtEdit" maxlength="40" value="${esc(S.editName)}"><button class="btn primary" data-r="ren-ok" data-id="${esc(r.id)}">Save</button><button class="btn ghost" data-r="ren-x">Cancel</button></div></div>`
+        : `<div class="rt-item">
+          <div class="rt-h"><span class="rt-ic">${rtIcon(r)}</span><div class="rt-t"><b>${esc(r.name)}</b><small>${r.items.length} exercise${r.items.length === 1 ? '' : 's'}${r.used ? ` · last used ${esc(shortDate(new Date(r.used).toISOString().slice(0, 10)))}` : ''}</small></div>
+            <button class="btn ghost sm" data-r="ren" data-id="${esc(r.id)}" aria-label="Rename ${esc(r.name)}">Rename</button><button class="btn ghost sm danger" data-r="del" data-id="${esc(r.id)}" aria-label="Delete ${esc(r.name)}">✕</button></div>
+          <div class="wk-plan">${r.items.map(x => `<span>${esc(exParts((exById(x.ex) || x).n || x.name)[0])} <i>${x.sets}×</i></span>`).join('')}</div>
+          <button class="btn primary wide" data-r="use" data-id="${esc(r.id)}">Use for ${esc(dayL)}</button>
+        </div>`).join('') : `<div class="rt-empty"><b>No saved workout days yet</b><p class="muted small">Log a workout once (for example your back exercises), then tap <b>💾 Save as workout day</b>. Next time, open this list and tap <b>Use</b>: the same exercises appear with empty sets, ready for that day's weights and reps.</p></div>`;
+      card.innerHTML = `<div class="modal-head"><h2>Saved workouts</h2><button class="btn ghost" data-r="close">Close</button></div>
+        <div class="modal-body">${saveBox}${R.length ? `<div class="ex-sec">${S.saving ? 'Your saved workout days' : 'Pick one to add to ' + esc(dayL)}</div>` : ''}<div class="rt-list">${list}</div></div>`;
+      const ni = card.querySelector('#rtName'); if (ni && S.focus) { ni.focus(); try { ni.setSelectionRange(ni.value.length, ni.value.length); } catch (_) {} S.focus = false; }
+      const ei = card.querySelector('#rtEdit'); if (ei) { ei.focus(); ei.select(); }
+    };
+    draw(); modal.hidden = false;
+    card.oninput = e => {
+      if (e.target.id === 'rtName') { S.name = e.target.value; const ex = rtFind(S.name), b = card.querySelector('#rtSaveBtn'); if (b) b.textContent = ex ? 'Update ' + ex.name : 'Save workout day'; card.querySelectorAll('[data-r=name]').forEach(c => c.classList.toggle('on', c.dataset.v === S.name)); }
+      if (e.target.id === 'rtEdit') S.editName = e.target.value;
+    };
+    card.onkeydown = e => { if (e.key !== 'Enter') return; if (e.target.id === 'rtName') card.querySelector('[data-r=save]').click(); if (e.target.id === 'rtEdit') card.querySelector('[data-r=ren-ok]').click(); };
+    card.onclick = e => {
+      const b = e.target.closest('[data-r]'); if (!b) return;
+      const a = b.dataset.r, id = b.dataset.id;
+      if (a === 'close') { card.oninput = null; card.onkeydown = null; return closeModal(); }
+      if (a === 'start') { S.saving = true; S.focus = true; return draw(); }
+      if (a === 'cancel') { if (saving) { card.oninput = null; card.onkeydown = null; return closeModal(); } S.saving = false; return draw(); }
+      if (a === 'name') { S.name = b.dataset.v; return draw(); }
+      if (a === 'save') {
+        const res = rtSave(k, S.name); if (!res) return toast('Add some gym exercises first.');
+        S.saving = false; draw(); render();
+        return toast(res.updated ? `📋 Updated ${res.r.name}.` : `📋 Saved ${res.r.name}. Use it on any day from 📋 Saved workouts.`);
+      }
+      if (a === 'use') { card.oninput = null; card.onkeydown = null; return rtUse(id, k); }
+      if (a === 'ren') { const r = routines().find(x => x.id === id); S.edit = id; S.editName = r ? r.name : ''; return draw(); }
+      if (a === 'ren-x') { S.edit = null; return draw(); }
+      if (a === 'ren-ok') {
+        const r = routines().find(x => x.id === id), nm = S.editName.trim().slice(0, 40); if (!r) return;
+        if (!nm) return toast('Type a name.');
+        const clash = rtFind(nm); if (clash && clash.id !== id) return toast(`You already have a workout called ${clash.name}.`);
+        r.name = nm; S.edit = null; save(); return draw();
+      }
+      if (a === 'del') {
+        const R = routines(), i = R.findIndex(x => x.id === id); if (i < 0) return;
+        const [r] = R.splice(i, 1); save(); draw();
+        return toast(`Deleted ${r.name}.`, 'Undo', () => { routines().splice(i, 0, r); save(); if (card.classList.contains('rt-card') && !modal.hidden) draw(); });
+      }
+    };
+  }
+
   // ---- exercise picker: two tabs, Gym (sets and reps) and Activities & sports (minutes).
   const XP = { q: '', g: '', m: '', show: 40, tab: 'gym' };
   const GYM_GROUPS = EX_GROUPS.filter(g => g !== 'Cardio');
@@ -852,7 +965,8 @@
         if (!inG.length && (XP.g || XP.m) && XP.g !== 'fav') { list = match(tabAll); XP.wide = list.length > 0; } else list = inG;
         if (list.length < 4) other = match(all.filter(x => !inTab(x, T))).slice(0, 5);
       }
-      if (q) list.sort((a, b) => ((a.pop != null ? 0 : 1) - (b.pop != null ? 0 : 1)) || (b.n.toLowerCase().startsWith(q) - a.n.toLowerCase().startsWith(q)) || ((a.pop ?? 999) - (b.pop ?? 999)) || (a.n.length - b.n.length));
+      const phr = x => words.length > 1 && (x.n + ' ' + (x.a || []).join(' ')).toLowerCase().includes(q) ? 0 : 1;
+      if (q) list.sort((a, b) => (phr(a) - phr(b)) || ((a.pop != null ? 0 : 1) - (b.pop != null ? 0 : 1)) || (b.n.toLowerCase().startsWith(q) - a.n.toLowerCase().startsWith(q)) || ((a.pop ?? 999) - (b.pop ?? 999)) || (a.n.length - b.n.length));
       const plain = !q && !XP.g && !XP.m;
       const favL = plain ? favs.map(exById).filter(x => x && inTab(x, T)) : [];
       const recent = plain ? recentIds.filter(id => !favs.includes(id)).map(exById).filter(x => x && inTab(x, T)).slice(0, 6) : [];
@@ -1233,7 +1347,7 @@
     else if (act === 'focus-weight') { const i = $('#wIn') || $('#wEdit'); if (i) { i.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => i.focus ? i.focus() : i.click(), 350); } }
     else if (act === 'go-friends-add') openPeopleSearch();
     else if (act === 'fold') { const box = a.closest('[data-fold]'); const f = !box.classList.contains('folded'); box.classList.toggle('folded', f); a.setAttribute('aria-expanded', String(!f)); try { localStorage.setItem('gg.fold.' + a.dataset.id, f ? '1' : '0'); } catch (_) {} }
-    else if (['lift-pick', 'lift-info', 'lift-del', 'lset-ok', 'lset-add', 'lset-pop', 'lift-lock', 'lift-unlock', 'wk-share', 'wk-inv'].includes(act)) liftAction(act, a);
+    else if (['lift-pick', 'lift-info', 'lift-del', 'lset-ok', 'lset-add', 'lset-pop', 'lift-lock', 'lift-unlock', 'wk-share', 'wk-inv', 'rt-open', 'rt-save', 'rt-use'].includes(act)) liftAction(act, a);
     else if (act === 'cal-open') openCalendar();
     else if (act === 'pf-tab') { PF.tab = a.dataset.t; render(); main.scrollTop = 0; window.scrollTo(0, 0); }
     else if (act === 'pf-mus') { PF.sel = a.dataset.m; renderTrends(); const el = $('#pfMus'); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }

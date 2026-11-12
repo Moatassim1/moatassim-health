@@ -55,6 +55,7 @@ const NAMES = {
   'Band_Assisted_Pull-Up': ['Assisted Pull-ups (Band)', 'assisted pullup'],
   'Wide-Grip_Lat_Pulldown': ['Lat Pulldown', 'pulldown', 'lat pull down', 'lat machine', 'wide grip pulldown', 'bar pulldown', 'pull down machine'],
   'Close-Grip_Front_Lat_Pulldown': ['Close-Grip Lat Pulldown', 'pulldown', 'lat machine', 'narrow grip pulldown'],
+  'Kneeling_High_Pulley_Row': ['Kneeling Cable Pulldown (Two Handles)', 'half kneeling pulldown', 'half-kneeling lat pulldown', 'kneeling lat pulldown', 'dual cable pulldown', 'functional trainer pulldown', 'kneeling high pulley row', 'lat machine'],
   'One-Arm_Long_Bar_Row': ['Meadows Row', 'one-arm long bar row', 'landmine row', 'one arm t-bar row'],
   'Seated_One-arm_Cable_Pulley_Rows': ['Single-Arm Cable Row', 'one arm cable row', 'unilateral cable row', 'seated one-arm cable row'],
   'Smith_Single-Leg_Split_Squat': ['Smith Machine Split Squat', 'smith split squat', 'smith bulgarian split squat'],

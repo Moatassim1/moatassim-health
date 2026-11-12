@@ -27,6 +27,14 @@ if b and b.get('data'):
     say(ba.get('usesNonExemptEncryption') is False, f"export compliance (usesNonExemptEncryption) = {ba.get('usesNonExemptEncryption')}")
     bd = tryget(f"/v1/builds/{b['data']['id']}/buildBetaDetail")
 else: say(False, 'no build attached')
+# latest uploads (TestFlight)
+lb = tryget(f'/v1/builds?filter[app]={APP}&sort=-uploadedDate&limit=3&include=buildBetaDetail')
+if lb:
+    det = {d['id']: d['attributes'] for d in lb.get('included', []) if d['type'] == 'buildBetaDetails'}
+    for x in lb['data']:
+        a = x['attributes']; rel = (x.get('relationships', {}).get('buildBetaDetail', {}) or {}).get('data') or {}
+        bdA = det.get(rel.get('id'), {})
+        say(True, f"testflight build {a.get('version')} uploaded {(a.get('uploadedDate') or '')[:16]} · processing {a.get('processingState')} · internal {bdA.get('internalBuildState')} · external {bdA.get('externalBuildState')}")
 # listing text + screenshots
 for l in get(f'/v1/appStoreVersions/{VER}/appStoreVersionLocalizations')['data']:
     a = l['attributes']

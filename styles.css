@@ -1455,3 +1455,30 @@ button.pf-tile:active { transform: scale(.97); }
 .rt-edit input{flex:1;min-width:0}
 .rt-empty{text-align:center;padding:14px 6px}
 .rt-empty p{margin:6px 0 0}
+/* exercise picker: one solid sticky header (tabs, search, muscle chips), nothing shows through above it */
+.ex-pick .modal-body{padding-top:0}
+.ex-pick-top{top:0;margin-top:0;padding:12px 0 10px;box-shadow:0 10px 12px -12px rgba(0,0,0,.55)}
+.ex-pick-top::before{content:"";position:absolute;left:-20px;right:-20px;top:0;bottom:0;background:var(--surface);z-index:-1}
+.ex-pick-top .ex-chips{margin:0 -2px}
+.ex-row.in{opacity:1}
+.ex-row.in .ex-row-t b{color:var(--ok)}
+.ex-add{font-style:normal;font-size:18px;font-weight:700;color:var(--muted);width:28px;text-align:center}
+.ex-days{display:flex;flex-direction:column;gap:8px}
+.ex-rt-chips{flex-wrap:wrap}
+.ex-rt-chips .chip small{opacity:.6;margin-left:3px}
+.chip.ghost{border-style:dashed;background:transparent}
+.sm-btn{font-size:13.5px}
+.rt-rep{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:var(--surface-2);color:inherit;font:inherit;cursor:pointer}
+.rt-rep .rt-t small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt-go{font-size:13px;font-weight:700;color:var(--accent,#e8473c);flex:none}
+.ex-build-name{display:flex;flex-direction:column;gap:8px}
+.ex-build-name input{width:100%;font-size:16px;padding:11px 12px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface-2);color:var(--ink)}
+.ex-build-name .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.ex-build-name .chips::-webkit-scrollbar{display:none}
+.ex-build-name .chip{flex:none}
+.ex-build-bar{display:flex;align-items:center;gap:10px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--surface);flex:none}
+.ex-bb-list{flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.ex-bb-list::-webkit-scrollbar{display:none}
+.ex-bb-list span{flex:none;font-size:12px;padding:4px 8px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line)}
+.ex-bb-list span.faint{border:0;background:none}
+.ex-pick.building .modal-body{padding-bottom:12px}

@@ -499,8 +499,8 @@
   const actIcon = t => /swim/.test(t) ? '🏊' : /run/.test(t) ? '🏃' : /cycl|bik|ride/.test(t) ? '🚴' : /walk|hik/.test(t) ? '🚶' : /strength|weight|gym|hiit|cardio/.test(t) ? '🏋️' : /yoga|pilates|breath/.test(t) ? '🧘' : '⚡';
   // ---------------------------------------------------------------- TRAINING: exercise library, sets, progressive overload
   // Library: free-exercise-db (public domain), loaded only when needed. Muscle diagrams: bodymap.js.
-  const EX_GROUPS = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio'];
-  const EX_ICON = { Chest: '🏋️', Back: '🚣', Legs: '🦵', Shoulders: '🤸', Arms: '💪', Core: '🔥', Cardio: '🏃' };
+  const EX_GROUPS = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Stretching', 'Cardio'];
+  const EX_ICON = { Chest: '🏋️', Back: '🚣', Legs: '🦵', Shoulders: '🤸', Arms: '💪', Core: '🔥', Stretching: '🧘', Cardio: '🏃' };
   const MUS_RED = '#E8473C', MUS_PINK = '#F4A3A0';
   // Activities and sports, logged in minutes. Calories from MET × body weight × hours.
   const ACTIVITIES = [['swim', 'Swimming', 7, '🏊'], ['sauna', 'Sauna', 1.5, '🧖'], ['run', 'Running', 9.8, '🏃'], ['walk', 'Walking', 3.5, '🚶'], ['cycle', 'Cycling', 7.5, '🚴'],
@@ -697,6 +697,7 @@
     if (act === 'rt-open') return openRoutines(k, false);
     if (act === 'rt-save') return openRoutines(k, true);
     if (act === 'rt-use') return rtUse(a.dataset.id, k);
+    if (act === 'rt-repeat') return rtRepeat(a.dataset.d, k);
     if (act === 'wk-inv') return wkRespond(a.dataset.id, a.dataset.v === 'yes', a);
     const l = findLift(a.dataset.id);
     if (act === 'lift-del') {
@@ -855,6 +856,28 @@
   }
   function rtUse(id, k) {
     const r = routines().find(x => x.id === id); if (!r) return toast('That saved workout no longer exists.');
+    r.used = Date.now(); r.uses = (r.uses || 0) + 1;
+    rtApply(r.items, r.name, k);
+  }
+  // Recent past days with gym exercises, newest first: { d, items, label }.
+  function rtRecentDays(k, max) {
+    const out = [];
+    for (const d of Object.keys(P().dayMeta || {}).filter(d => d < k).sort().reverse()) {
+      const items = wkPlanOf(d).filter(x => x.ex && !isCardio(exById(x.ex)));
+      if (!items.length) continue;
+      const c = {}; for (const x of items) if (x.g) c[x.g] = (c[x.g] || 0) + 1;
+      const top = Object.keys(c).sort((a, b) => c[b] - c[a]).slice(0, 2);
+      out.push({ d, items, label: (top.length ? top.join(' & ') : 'Workout') + ' day', ic: RT_IC[top[0]] || '📋' });
+      if (out.length >= (max || 5)) break;
+    }
+    return out;
+  }
+  function rtRepeat(d, k) {
+    const r = rtRecentDays(k, 60).find(x => x.d === d); if (!r) return toast('Nothing to repeat from that day.');
+    rtApply(r.items.map(x => ({ ex: x.ex, name: x.name, g: x.g, sets: x.sets })), `${r.label} (${shortDate(d)})`, k);
+  }
+  function rtApply(items, label, k) {
+    const r = { name: label, items };
     const m = P().dayMeta[k] || (P().dayMeta[k] = {}), lifts = m.lifts || (m.lifts = []);
     const ids = []; let skipped = 0;
     for (const x of r.items) {
@@ -864,7 +887,6 @@
       const l = { id: uid(), ex: x.ex, name: lib ? lib.n : x.name, g: lib ? lib.g : x.g, mp: lib ? lib.p : [], ms: lib ? lib.s : [], sets: Array.from({ length: n }, () => ({ kg: 0, reps: 0 })), at: Date.now(), rt: r.name };
       lifts.push(l); ids.push(l.id);
     }
-    r.used = Date.now(); r.uses = (r.uses || 0) + 1;
     save();
     if (!modal.hidden) closeModal();
     if (UI.view !== 'today') { UI.date = k; nav('today'); } else render();
@@ -892,12 +914,14 @@
       const list = R.length ? R.map(r => S.edit === r.id ? `<div class="rt-item"><div class="rt-edit"><input type="text" id="rtEdit" maxlength="40" value="${esc(S.editName)}"><button class="btn primary" data-r="ren-ok" data-id="${esc(r.id)}">Save</button><button class="btn ghost" data-r="ren-x">Cancel</button></div></div>`
         : `<div class="rt-item">
           <div class="rt-h"><span class="rt-ic">${rtIcon(r)}</span><div class="rt-t"><b>${esc(r.name)}</b><small>${r.items.length} exercise${r.items.length === 1 ? '' : 's'}${r.used ? ` · last used ${esc(shortDate(new Date(r.used).toISOString().slice(0, 10)))}` : ''}</small></div>
-            <button class="btn ghost sm" data-r="ren" data-id="${esc(r.id)}" aria-label="Rename ${esc(r.name)}">Rename</button><button class="btn ghost sm danger" data-r="del" data-id="${esc(r.id)}" aria-label="Delete ${esc(r.name)}">✕</button></div>
+            <button class="btn ghost sm" data-r="editex" data-id="${esc(r.id)}" aria-label="Change the exercises in ${esc(r.name)}">Edit</button><button class="btn ghost sm" data-r="ren" data-id="${esc(r.id)}" aria-label="Rename ${esc(r.name)}">Rename</button><button class="btn ghost sm danger" data-r="del" data-id="${esc(r.id)}" aria-label="Delete ${esc(r.name)}">✕</button></div>
           <div class="wk-plan">${r.items.map(x => `<span>${esc(exParts((exById(x.ex) || x).n || x.name)[0])} <i>${x.sets}×</i></span>`).join('')}</div>
           <button class="btn primary wide" data-r="use" data-id="${esc(r.id)}">Use for ${esc(dayL)}</button>
         </div>`).join('') : `<div class="rt-empty"><b>No saved workout days yet</b><p class="muted small">Log a workout once (for example your back exercises), then tap <b>💾 Save as workout day</b>. Next time, open this list and tap <b>Use</b>: the same exercises appear with empty sets, ready for that day's weights and reps.</p></div>`;
+      const recentD = rtRecentDays(k, 4);
+      const recentHtml = recentD.length ? `<div class="ex-sec">🔁 Repeat a recent day</div><div class="rt-list">${recentD.map(x => `<button class="rt-rep" data-r="rep" data-d="${x.d}"><span class="rt-ic">${x.ic}</span><span class="rt-t"><b>${esc(x.label)}</b><small>${esc(shortDate(x.d))} · ${x.items.slice(0, 3).map(i => esc(exParts((exById(i.ex) || i).n || i.name)[0])).join(', ')}${x.items.length > 3 ? ` +${x.items.length - 3}` : ''}</small></span><span class="rt-go">Repeat</span></button>`).join('')}</div>` : '';
       card.innerHTML = `<div class="modal-head"><h2>Saved workouts</h2><button class="btn ghost" data-r="close">Close</button></div>
-        <div class="modal-body">${saveBox}${R.length ? `<div class="ex-sec">${S.saving ? 'Your saved workout days' : 'Pick one to add to ' + esc(dayL)}</div>` : ''}<div class="rt-list">${list}</div></div>`;
+        <div class="modal-body">${saveBox}<button class="btn ghost wide rt-new" data-r="create">＋ Create a workout day from scratch</button>${R.length ? `<div class="ex-sec">${S.saving ? 'Your saved workout days' : 'Pick one to add to ' + esc(dayL)}</div>` : ''}<div class="rt-list">${list}</div>${recentHtml}</div>`;
       const ni = card.querySelector('#rtName'); if (ni && S.focus) { ni.focus(); try { ni.setSelectionRange(ni.value.length, ni.value.length); } catch (_) {} S.focus = false; }
       const ei = card.querySelector('#rtEdit'); if (ei) { ei.focus(); ei.select(); }
     };
@@ -920,6 +944,12 @@
         return toast(res.updated ? `📋 Updated ${res.r.name}.` : `📋 Saved ${res.r.name}. Use it on any day from 📋 Saved workouts.`);
       }
       if (a === 'use') { card.oninput = null; card.onkeydown = null; return rtUse(id, k); }
+      if (a === 'rep') { card.oninput = null; card.onkeydown = null; return rtRepeat(b.dataset.d, k); }
+      if (a === 'create' || a === 'editex') {
+        const r = a === 'editex' && routines().find(x => x.id === id);
+        card.oninput = null; card.onkeydown = null;
+        return openExercisePicker(k, 'gym', { build: r ? { id: r.id, name: r.name, items: r.items.map(x => ({ ...x })) } : { name: '', items: [] } });
+      }
       if (a === 'ren') { const r = routines().find(x => x.id === id); S.edit = id; S.editName = r ? r.name : ''; return draw(); }
       if (a === 'ren-x') { S.edit = null; return draw(); }
       if (a === 'ren-ok') {
@@ -939,13 +969,14 @@
   // ---- exercise picker: two tabs, Gym (sets and reps) and Activities & sports (minutes).
   const XP = { q: '', g: '', m: '', show: 40, tab: 'gym' };
   const GYM_GROUPS = EX_GROUPS.filter(g => g !== 'Cardio');
-  async function openExercisePicker(k, tab) {
-    card.onclick = null;
-    card.className = 'modal-card ex-pick';
-    card.innerHTML = `<div class="modal-head"><h2>Log exercise</h2><button class="btn ghost" data-x="close">Close</button></div><div class="modal-body"><p class="muted">Loading exercises…</p></div>`;
+  async function openExercisePicker(k, tab, opts) {
+    const B = opts && opts.build || null; // building a saved workout day instead of logging
+    card.onclick = null; card.oninput = null; card.onkeydown = null;
+    card.className = 'modal-card ex-pick' + (B ? ' building' : '');
+    card.innerHTML = `<div class="modal-head"><h2>${B ? (B.id ? 'Edit ' + esc(B.name) : 'New workout day') : 'Log exercise'}</h2><button class="btn ghost" data-x="close">${B ? 'Cancel' : 'Close'}</button></div><div class="modal-body"><p class="muted">Loading exercises…</p></div>${B ? '<div class="ex-build-bar" id="exBuildBar"></div>' : ''}`;
     modal.hidden = false;
     try { await loadExercises(); } catch (e) { card.querySelector('.modal-body').innerHTML = `<p class="err">${esc(e.message)}</p>`; card.onclick = ev => { if (ev.target.closest('[data-x=close]')) closeModal(); }; return; }
-    XP.show = 40; XP.q = ''; XP.tab = tab === 'act' ? 'act' : tab === 'gym' ? 'gym' : (XP.tab || 'gym'); if (XP.tab === 'act') { XP.g = ''; XP.m = ''; } else if (XP.g === 'Cardio') XP.g = '';
+    XP.show = 40; XP.q = ''; XP.tab = B ? 'gym' : tab === 'act' ? 'act' : tab === 'gym' ? 'gym' : (XP.tab || 'gym'); if (XP.tab === 'act') { XP.g = ''; XP.m = ''; } else if (XP.g === 'Cardio') XP.g = '';
     const recentIds = [...new Set(Object.keys(P().dayMeta || {}).sort().reverse().flatMap(d => [...liftsOn(d).map(l => l.ex), ...((P().dayMeta[d] || {}).ex || []).map(e => e.exId).filter(Boolean)]))];
     const inToday = new Set([...liftsOn(k).map(l => l.ex), ...((P().dayMeta[k] || {}).ex || []).map(e => e.exId)]);
     const ALIAS = { lower: ['lower', 'decline'], upper: ['upper', 'incline'], pec: ['pec', 'chest'], pecs: ['chest'], abs: ['abdominal', 'crunch', 'plank'], quads: ['quadriceps'], hammies: ['hamstring'], delts: ['shoulder', 'delt'], lat: ['lat'], legs: ['leg', 'squat', 'quadriceps', 'hamstring'], bicep: ['bicep', 'curl'], tricep: ['tricep'], swimming: ['swim'], jog: ['run'], jogging: ['run'], bike: ['cycl', 'bike'], spinning: ['cycl', 'bike'], soccer: ['football'], tennis: ['tennis', 'padel'], steam: ['sauna'] };
@@ -956,7 +987,7 @@
       const all = window.GG_EXERCISES, q = XP.q.trim().toLowerCase(), favs = favEx(), T = XP.tab;
       const words = q.split(/\s+/).filter(Boolean);
       const match = L => L.filter(x => { const h = hay(x); return words.every(w => (ALIAS[w] || [w]).some(a => h.includes(a))); });
-      const tabAll = all.filter(x => inTab(x, T));
+      const tabAll = all.filter(x => inTab(x, T) && (!x.hid || words.length));
       let list = XP.g === 'fav' ? favs.map(exById).filter(x => x && inTab(x, T)) : tabAll.filter(x => (!XP.g || x.g === XP.g) && (!XP.m || x.m === XP.m));
       let other = [];
       XP.wide = false;
@@ -966,19 +997,26 @@
         if (list.length < 4) other = match(all.filter(x => !inTab(x, T))).slice(0, 5);
       }
       const phr = x => words.length > 1 && (x.n + ' ' + (x.a || []).join(' ')).toLowerCase().includes(q) ? 0 : 1;
-      if (q) list.sort((a, b) => (phr(a) - phr(b)) || ((a.pop != null ? 0 : 1) - (b.pop != null ? 0 : 1)) || (b.n.toLowerCase().startsWith(q) - a.n.toLowerCase().startsWith(q)) || ((a.pop ?? 999) - (b.pop ?? 999)) || (a.n.length - b.n.length));
+      if (q) list.sort((a, b) => (phr(a) - phr(b)) || ((a.hid ? 1 : 0) - (b.hid ? 1 : 0)) || ((a.pop != null ? 0 : 1) - (b.pop != null ? 0 : 1)) || (b.n.toLowerCase().startsWith(q) - a.n.toLowerCase().startsWith(q)) || ((a.pop ?? 999) - (b.pop ?? 999)) || (a.n.length - b.n.length));
       const plain = !q && !XP.g && !XP.m;
       const favL = plain ? favs.map(exById).filter(x => x && inTab(x, T)) : [];
       const recent = plain ? recentIds.filter(id => !favs.includes(id)).map(exById).filter(x => x && inTab(x, T)).slice(0, 6) : [];
       const star = x => `<button class="ex-star${favs.includes(x.id) ? ' on' : ''}" data-x="fav" data-id="${esc(x.id)}" aria-label="${favs.includes(x.id) ? 'Remove from' : 'Add to'} favourites">${favs.includes(x.id) ? '★' : '☆'}</button>`;
-      const row = x => `<div class="ex-row${inToday.has(x.id) ? ' in' : ''}" data-x="ex" data-id="${esc(x.id)}" role="button" tabindex="0">${thumb(x)}<span class="ex-row-t"><b>${exTitle(x.n)}</b><small>${isCardio(x) ? `Logged in minutes${x.met || x.act ? ' · about ' + kcal30(x) + ' kcal / 30 min' : ''}` : esc(cap(x.p[0] || x.g)) + (x.e ? ' · ' + esc(cap(x.e)) : '')}</small></span>${inToday.has(x.id) ? '<i class="ex-in">Added</i>' : x.m && !isCardio(x) ? `<i class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</i>` : ''}${star(x)}</div>`;
+      const inPlan = x => B && B.items.some(i => i.ex === x.id);
+      const row = x => `<div class="ex-row${(B ? inPlan(x) : inToday.has(x.id)) ? ' in' : ''}" data-x="ex" data-id="${esc(x.id)}" role="button" tabindex="0">${thumb(x)}<span class="ex-row-t"><b>${exTitle(x.n)}</b><small>${isCardio(x) ? `Logged in minutes${x.met || x.act ? ' · about ' + kcal30(x) + ' kcal / 30 min' : ''}` : esc(cap(x.p[0] || x.g)) + (x.e ? ' · ' + esc(cap(x.e)) : '')}</small></span>${B ? (inPlan(x) ? '<i class="ex-in">✓ In plan</i>' : '<i class="ex-add">＋</i>') : inToday.has(x.id) ? '<i class="ex-in">Added</i>' : x.m && !isCardio(x) ? `<i class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</i>` : ''}${star(x)}</div>`;
       const tile = x => `<div class="act-tile${inToday.has(x.id) ? ' in' : ''}" data-x="ex" data-id="${esc(x.id)}" role="button" tabindex="0"><span class="at-ic">${x.ic}</span><b>${esc(x.n)}</b><small>${inToday.has(x.id) ? '✓ Logged today' : `~${kcal30(x)} kcal / 30 min`}</small>${star(x)}</div>`;
-      const tabs = `<div class="seg ex-tabs" role="tablist"><button role="tab" class="${T === 'gym' ? 'on' : ''}" data-x="tab" data-v="gym" aria-selected="${T === 'gym'}">🏋️ Gym <small>sets & reps</small></button><button role="tab" class="${T === 'act' ? 'on' : ''}" data-x="tab" data-v="act" aria-selected="${T === 'act'}">🏊 Activities & sports <small>minutes</small></button></div>`;
+      const tabs = B ? `<div class="ex-build-name"><input type="text" id="exBName" maxlength="40" placeholder="Name it, e.g. Back day" value="${esc(B.name)}" autocomplete="off"><div class="chips rt-chips">${RT_NAMES.slice(0, 7).map(n => `<button class="chip${B.name === n ? ' on' : ''}" data-x="bname" data-v="${esc(n)}">${esc(n)}</button>`).join('')}</div></div>` : `<div class="seg ex-tabs" role="tablist"><button role="tab" class="${T === 'gym' ? 'on' : ''}" data-x="tab" data-v="gym" aria-selected="${T === 'gym'}">🏋️ Gym <small>sets & reps</small></button><button role="tab" class="${T === 'act' ? 'on' : ''}" data-x="tab" data-v="act" aria-selected="${T === 'act'}">🏊 Activities & sports <small>minutes</small></button></div>`;
       const search = `<div class="search-row"><span class="s-ic">🔍</span><input type="search" id="exQ" placeholder="${T === 'gym' ? 'Search, e.g. bench press, squat, curl' : 'Search, e.g. swimming, sauna, football'}" value="${esc(XP.q)}" autocomplete="off"></div>`;
       const otherHtml = other.length ? `<div class="ex-sec">In ${T === 'gym' ? 'Activities & sports' : 'Gym'}</div>${other.map(row).join('')}` : '';
       let body;
       if (T === 'gym') {
-        body = `<div class="chips ex-chips"><button class="chip ${XP.g === '' ? 'on' : ''}" data-x="g" data-v="">All</button><button class="chip ${XP.g === 'fav' ? 'on' : ''}" data-x="g" data-v="fav">★ Favourites</button>${GYM_GROUPS.map(g => `<button class="chip ${XP.g === g ? 'on' : ''}" data-x="g" data-v="${g}">${EX_ICON[g]} ${g}</button>`).join('')}</div>
+        const R = routines(), recentD = !B && plain ? rtRecentDays(k, 3) : [];
+        const days = !B && plain && (R.length || recentD.length) ? `<div class="ex-days">
+          ${R.length ? `<div class="ex-sec" style="margin-top:0">📋 Your workout days</div><div class="chips ex-rt-chips">${[...R].sort((a, b) => (b.used || b.at || 0) - (a.used || a.at || 0)).map(r => `<button class="chip" data-x="rt" data-id="${esc(r.id)}">${rtIcon(r)} ${esc(r.name)} <small>${r.items.length}</small></button>`).join('')}<button class="chip ghost" data-x="newrt">＋ New</button></div>` : ''}
+          ${recentD.length ? `<div class="ex-sec">🔁 Repeat a recent day</div>${recentD.map(x => `<button class="rt-rep" data-x="rep" data-d="${x.d}"><span class="rt-ic">${x.ic}</span><span class="rt-t"><b>${esc(x.label)}</b><small>${esc(shortDate(x.d))} · ${x.items.slice(0, 3).map(i => esc(exParts((exById(i.ex) || i).n || i.name)[0])).join(', ')}${x.items.length > 3 ? ` +${x.items.length - 3}` : ''}</small></span><span class="rt-go">Repeat</span></button>`).join('')}` : ''}
+          ${!R.length ? '<button class="btn ghost wide sm-btn" data-x="newrt">＋ Create a workout day (Back day, Leg day…)</button>' : ''}
+        </div>` : !B && plain ? '<button class="btn ghost wide sm-btn" data-x="newrt">📋 Create a workout day you can reuse (Back day, Leg day…)</button>' : '';
+        body = `${days}
         ${XP.g !== 'fav' ? `<div class="seg ex-mech">${[['', 'Any'], ['c', 'Compound'], ['i', 'Isolation']].map(([v, l]) => `<button class="${XP.m === v ? 'on' : ''}" data-x="m" data-v="${v}">${l}</button>`).join('')}</div>` : ''}
         ${favL.length ? `<div class="ex-sec">★ Favourites</div>${favL.map(row).join('')}` : ''}
         ${recent.length ? `<div class="ex-sec">Recent</div>${recent.map(row).join('')}` : ''}
@@ -995,7 +1033,12 @@
       }
       const bodyEl = card.querySelector('.modal-body');
       const st = bodyEl.scrollTop;
-      bodyEl.innerHTML = `<div class="ex-pick-top">${tabs}${search}</div><div class="ex-pick-list">${body}</div>`;
+      const chips = T === 'gym' ? `<div class="chips ex-chips"><button class="chip ${XP.g === '' ? 'on' : ''}" data-x="g" data-v="">All</button><button class="chip ${XP.g === 'fav' ? 'on' : ''}" data-x="g" data-v="fav">★ Favourites</button>${GYM_GROUPS.map(g => `<button class="chip ${XP.g === g ? 'on' : ''}" data-x="g" data-v="${g}">${EX_ICON[g]} ${g}</button>`).join('')}</div>` : '';
+      const chipScroll = (card.querySelector('.ex-chips') || {}).scrollLeft || 0;
+      bodyEl.innerHTML = `<div class="ex-pick-top">${tabs}${search}${chips}</div><div class="ex-pick-list">${body}</div>`;
+      const ch = card.querySelector('.ex-chips'); if (ch) ch.scrollLeft = chipScroll;
+      if (B) { const bar = card.querySelector('#exBuildBar'); if (bar) bar.innerHTML = `<div class="ex-bb-list">${B.items.length ? B.items.map(i => `<span>${esc(exParts((exById(i.ex) || i).n || i.name)[0])}</span>`).join('') : '<span class="faint">Tap exercises to add them</span>'}</div><button class="btn primary" data-x="bsave"${B.items.length ? '' : ' disabled'}>Save${B.items.length ? ' · ' + B.items.length : ''}</button>`; }
+      const bn = $('#exBName'); if (bn) bn.addEventListener('input', () => { B.name = bn.value; card.querySelectorAll('[data-x=bname]').forEach(c => c.classList.toggle('on', c.dataset.v === B.name)); });
       bodyEl.scrollTop = XP.keepScroll ? st : 0; XP.keepScroll = false;
       const qi = $('#exQ'); qi.addEventListener('input', () => { XP.q = qi.value; XP.show = 40; const pos = qi.selectionStart; draw(); const n = $('#exQ'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (_) {} });
     };
@@ -1003,13 +1046,30 @@
     card.onclick = e => {
       const b = e.target.closest('[data-x]'); if (!b) return;
       const x = b.dataset.x;
-      if (x === 'close') return closeModal();
+      if (x === 'close') return B ? openRoutines(k) : closeModal();
+      if (x === 'rt') return rtUse(b.dataset.id, k);
+      if (x === 'rep') return rtRepeat(b.dataset.d, k);
+      if (x === 'newrt') return openExercisePicker(k, 'gym', { build: { name: '', items: [] } });
+      if (x === 'bname') { B.name = b.dataset.v; XP.keepScroll = true; return draw(); }
+      if (x === 'bsave') {
+        const nm = String(B.name || '').trim().slice(0, 40);
+        if (!nm) { toast('Give it a name first, e.g. Back day.'); const n = $('#exBName'); if (n) n.focus(); return; }
+        const clash = rtFind(nm); if (clash && clash.id !== B.id) return toast(`You already have a workout called ${clash.name}. Pick another name, or edit that one.`);
+        const ex = B.id && routines().find(r => r.id === B.id);
+        if (ex) { ex.name = nm; ex.items = B.items; ex.at = Date.now(); } else routines().unshift({ id: uid(), name: nm, items: B.items, at: Date.now(), used: 0, uses: 0 });
+        save(); render(); toast(`📋 Saved ${nm}: ${B.items.length} exercise${B.items.length === 1 ? '' : 's'}. Use it on any day from Log exercise.`);
+        return openRoutines(k);
+      }
       if (x === 'fav') { e.stopPropagation(); const on = toggleFav(b.dataset.id); toast(on ? 'Added to favourites ★' : 'Removed from favourites'); XP.keepScroll = true; return draw(); }
       if (x === 'tab') { if (XP.tab === b.dataset.v) return; XP.tab = b.dataset.v; XP.g = ''; XP.m = ''; XP.show = 40; draw(); return; }
       if (x === 'g') { XP.g = b.dataset.v; XP.m = ''; XP.show = 40; draw(); }
       if (x === 'm') { XP.m = b.dataset.v; XP.show = 40; draw(); }
       if (x === 'more') { XP.show += 60; XP.keepScroll = true; draw(); }
-      if (x === 'ex') { const ex = exById(b.dataset.id); if (isCardio(ex)) openExercise(ex.id, k); else addLift(ex.id, k); }
+      if (x === 'ex') {
+        const ex = exById(b.dataset.id);
+        if (B) { const i = B.items.findIndex(it => it.ex === ex.id); if (i >= 0) B.items.splice(i, 1); else { const last = liftHistory(ex.id, k).pop(); B.items.push({ ex: ex.id, name: ex.n, g: ex.g, sets: last ? Math.min(10, last.sets.length) : 3 }); } XP.keepScroll = true; return draw(); }
+        if (isCardio(ex)) openExercise(ex.id, k); else addLift(ex.id, k);
+      }
     };
   }
   // ---- one exercise: muscles, how-to, history. Cardio/activities: log minutes here.
@@ -1347,7 +1407,7 @@
     else if (act === 'focus-weight') { const i = $('#wIn') || $('#wEdit'); if (i) { i.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => i.focus ? i.focus() : i.click(), 350); } }
     else if (act === 'go-friends-add') openPeopleSearch();
     else if (act === 'fold') { const box = a.closest('[data-fold]'); const f = !box.classList.contains('folded'); box.classList.toggle('folded', f); a.setAttribute('aria-expanded', String(!f)); try { localStorage.setItem('gg.fold.' + a.dataset.id, f ? '1' : '0'); } catch (_) {} }
-    else if (['lift-pick', 'lift-info', 'lift-del', 'lset-ok', 'lset-add', 'lset-pop', 'lift-lock', 'lift-unlock', 'wk-share', 'wk-inv', 'rt-open', 'rt-save', 'rt-use'].includes(act)) liftAction(act, a);
+    else if (['lift-pick', 'lift-info', 'lift-del', 'lset-ok', 'lset-add', 'lset-pop', 'lift-lock', 'lift-unlock', 'wk-share', 'wk-inv', 'rt-open', 'rt-save', 'rt-use', 'rt-repeat'].includes(act)) liftAction(act, a);
     else if (act === 'cal-open') openCalendar();
     else if (act === 'pf-tab') { PF.tab = a.dataset.t; render(); main.scrollTop = 0; window.scrollTo(0, 0); }
     else if (act === 'pf-mus') { PF.sel = a.dataset.m; renderTrends(); const el = $('#pfMus'); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }

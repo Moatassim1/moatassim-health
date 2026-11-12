@@ -4,7 +4,8 @@ import fs from 'node:fs';
 const FILE = new URL('../exercises.js', import.meta.url);
 const src = fs.readFileSync(FILE, 'utf8');
 const w = {}; new Function('window', src)(w);
-let L = w.GG_EXERCISES.filter(x => !x.id.startsWith('gg_'));
+let L = w.GG_EXERCISES.filter(x => !x.id.startsWith('gg_') && x.c !== 'stretching');
+for (const x of L) { delete x.hid; delete x.dupOf; }
 
 // id → [everyday name, ...extra search words]
 const NAMES = {
@@ -159,6 +160,8 @@ const ADD = [
   ['gg_jumping_jacks', 'Jumping Jacks', 'Cardio', 'c', 'body only', ['calves'], ['shoulders'], ['star jumps'], ['Jump your feet out while raising your arms overhead, then back in.']],
   ['gg_battle_ropes', 'Battle Ropes', 'Cardio', 'c', 'other', ['shoulders'], ['forearms', 'abdominals'], ['ropes'], ['Hold a rope end in each hand and make fast waves for time.']],
   ['gg_kb_swing_2h', 'Kettlebell Swing', 'Legs', 'c', 'kettlebells', ['glutes', 'hamstrings'], ['lower back', 'shoulders'], ['kb swing', 'russian swing'], ['Hinge at your hips and swing the kettlebell between your legs.', 'Snap your hips forward to swing it to chest height, then let it fall back.']],
+  ['gg_pendlay_row', 'Pendlay Row', 'Back', 'c', 'barbell', ['middle back'], ['lats', 'biceps', 'lower back'], ['barbell row from floor', 'strict row'], ['Set a barbell on the floor and hinge over it with your back flat and almost parallel to the floor.', 'Pull the bar explosively to your lower chest.', 'Lower it all the way back to the floor and reset before every rep.'], 'Bent_Over_Barbell_Row'],
+  ['gg_incline_db_curl', 'Incline Dumbbell Curl', 'Arms', 'i', 'dumbbell', ['biceps'], ['forearms'], ['incline curl', 'incline bicep curl'], ['Sit back on a bench set to about 45 degrees with a dumbbell in each hand, arms hanging straight down.', 'Curl both dumbbells up without moving your upper arms.', 'Lower slowly until your arms are fully straight.'], 'Alternate_Incline_Dumbbell_Curl'],
   ['gg_sled_pull', 'Sled Pull', 'Legs', 'c', 'other', ['hamstrings', 'quadriceps'], ['glutes', 'calves'], ['sled drag'], ['Attach a rope or harness to the sled and pull it hand over hand or walk backwards.']],
 ];
 const byId = new Map(L.map(x => [x.id, x]));
@@ -175,13 +178,34 @@ for (const x of L) {
   n = n.replace(/ - Medium Grip$/i, '').replace(/\bPushups?\b/i, m => /s$/.test(m) ? 'Push-ups' : 'Push-up').replace(/\bFlyes\b/g, 'Flies').replace(/\bFlye\b/g, 'Fly');
   if (n !== orig) { x.o = orig; x.n = n; x.a = [orig.toLowerCase()]; }
 }
-let added = 0;
-for (const [id, n, g, m, e, p, s, a, i, imFrom] of ADD) {
-  if (byId.has(id)) continue;
-  const im = imFrom && byId.get(imFrom) ? byId.get(imFrom).im : undefined;
-  L.push({ id, n, g, m, e, p, s, l: 'beginner', c: g === 'Cardio' ? 'cardio' : 'strength', i, a, pop: 400 + added, ...(im ? { im } : {}) }); added++;
+// Stretching & mobility from the same library (only exercises with demo photos).
+const SMR = n => /-SMR$/.test(n) ? n.replace(/-SMR$/, '') + ' (foam roller)' : n;
+let stretches = 0;
+for (const x of JSON.parse(fs.readFileSync(new URL('./fedb-stretching.json', import.meta.url), 'utf8'))) {
+  if (byId.has(x.id) || !x.images || !x.images.length) continue;
+  const n = SMR(x.name.replace(/_/g, ' '));
+  const o = { id: x.id, n, g: 'Stretching', m: 'i', e: x.equipment || 'body only', p: x.primaryMuscles, s: x.secondaryMuscles, l: x.level, c: 'stretching', i: x.instructions, im: x.images, a: ['stretch', 'mobility', ...(n !== x.name ? [x.name.toLowerCase()] : []), ...(/SMR/.test(x.name) ? ['foam roll', 'smr'] : [])] };
+  L.push(o); byId.set(o.id, o); stretches++;
 }
+// Exercises added by GG Gains: show a demo of the same movement from the library. If the library already
+// has the exercise (DUP), keep the library one (with this name as a search word) and hide ours; with no
+// matching demo at all, ours stays searchable but is left out of the browse lists.
+const IMG = { gg_hack_squat_machine: 'Hack_Squat', gg_pendulum_squat: 'Hack_Squat', gg_smith_squat: 'Smith_Machine_Squat', gg_hip_thrust_machine: 'Barbell_Hip_Thrust', gg_reverse_lunge: 'Dumbbell_Rear_Lunge', gg_curtsy_lunge: 'Crossover_Reverse_Lunge', gg_seated_row_machine: 'Leverage_Iso_Row', gg_lat_pulldown_machine: 'Full_Range-Of-Motion_Lat_Pulldown', gg_assisted_pullup_machine: 'Band_Assisted_Pull-Up', gg_dead_hang: 'One_Handed_Hang', gg_cable_lateral_raise: 'Cable_Seated_Lateral_Raise', gg_single_arm_pushdown: 'Reverse_Grip_Triceps_Pushdown', gg_bicycle_crunch: 'Cross-Body_Crunch', gg_captains_chair: 'Hanging_Leg_Raise', gg_kb_swing_2h: 'One-Arm_Kettlebell_Swings', gg_sled_pull: 'Sled_Drag_-_Harness' };
+const DUP = { gg_straight_arm_pulldown: 'Straight-Arm_Pulldown', gg_reverse_pec_deck: 'Reverse_Machine_Flyes', gg_smith_shoulder_press: 'Smith_Machine_Overhead_Shoulder_Press', gg_pec_fly_cable_low: 'Low_Cable_Crossover', gg_incline_smith_press: 'Smith_Machine_Incline_Bench_Press', gg_decline_dumbbell_press: 'Decline_Dumbbell_Bench_Press', gg_bicep_curl_machine: 'Machine_Bicep_Curl', gg_cable_hammer_curl: 'Cable_Hammer_Curls_-_Rope_Attachment', gg_tricep_ext_machine: 'Machine_Triceps_Extension', gg_chest_supported_row: 'Dumbbell_Incline_Row', gg_back_ext_machine: 'Hyperextensions_Back_Extensions', gg_side_plank: 'Side_Bridge', gg_v_up: 'Jackknife_Sit-Up', gg_leg_raise_lying: 'Flat_Bench_Lying_Leg_Raise', gg_wrist_curl: 'Palms-Up_Dumbbell_Wrist_Curl_Over_A_Bench', gg_nordic_curl: 'Natural_Glute_Ham_Raise', gg_box_jump: 'Front_Box_Jump' };
+let added = 0, hidden = 0;
+for (const [id, n, g, m, e, p, s, a, i, imFrom0] of ADD) {
+  if (byId.has(id)) continue;
+  const imFrom = imFrom0 || IMG[id] || DUP[id];
+  const im = imFrom && byId.get(imFrom) && byId.get(imFrom).im && byId.get(imFrom).im.length ? byId.get(imFrom).im : undefined;
+  const dup = DUP[id] && byId.get(DUP[id]);
+  if (dup) { if (!dup.o) dup.o = dup.n; dup.a = [...new Set([...(dup.a || []), dup.o.toLowerCase(), ...(a || [])])]; dup.n = n; if (dup.pop == null) dup.pop = 400 + added; }
+  const hid = !!dup || (!im && g !== 'Cardio');
+  if (hid) hidden++;
+  L.push({ id, n, g, m, e, p, s, l: 'beginner', c: g === 'Cardio' ? 'cardio' : 'strength', i, a, pop: 400 + added, ...(im ? { im } : {}), ...(hid ? { hid: true } : {}), ...(dup ? { dupOf: dup.id } : {}) }); added++;
+}
+// Library exercises with no demo photos: searchable only.
+for (const x of L) if (!x.id.startsWith('gg_') && x.c !== 'cardio' && x.g !== 'Cardio' && !(x.im && x.im.length)) { x.hid = true; hidden++; }
 L.sort((x, y) => ((x.pop ?? 1e9) - (y.pop ?? 1e9)) || x.n.localeCompare(y.n));
 const head = '// Exercise library: free-exercise-db by yuhonas (public domain, The Unlicense), renamed to everyday gym names\n// with extra machine exercises added by GG Gains (native/exercise-names.mjs). Demo photos load from the same project.\n';
 fs.writeFileSync(FILE, head + 'window.GG_EXERCISES = ' + JSON.stringify(L) + ';\n');
-console.log('renamed', renamed, 'added', added, 'total', L.length);
+console.log('renamed', renamed, 'added', added, 'stretches', stretches, 'hidden', hidden, 'total', L.length);

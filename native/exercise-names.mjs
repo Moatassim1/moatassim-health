@@ -216,9 +216,11 @@ let added = 0, hidden = 0;
 for (const [id, n, g, m, e, p, s, a, i, imFrom0] of ADD) {
   if (byId.has(id)) continue;
   const imFrom = imFrom0 || IMG[id] || DUP[id];
-  const im = imFrom && byId.get(imFrom) && byId.get(imFrom).im && byId.get(imFrom).im.length ? byId.get(imFrom).im : undefined;
+  let im = imFrom && byId.get(imFrom) && byId.get(imFrom).im && byId.get(imFrom).im.length ? byId.get(imFrom).im : undefined;
   const dup = DUP[id] && byId.get(DUP[id]);
   if (dup) { if (!dup.o) dup.o = dup.n; dup.a = [...new Set([...(dup.a || []), dup.o.toLowerCase(), ...(a || [])])]; dup.n = n; if (dup.pop == null) dup.pop = 400 + added; }
+  const OWN = { gg_kneel_dual_pulldown: ['demo/kneel-dual-pulldown-0.svg', 'demo/kneel-dual-pulldown-1.svg'] };
+  if (OWN[id]) im = OWN[id];
   const hid = !!dup || (!im && g !== 'Cardio');
   if (hid) hidden++;
   L.push({ id, n, g, m, e, p, s, l: 'beginner', c: g === 'Cardio' ? 'cardio' : 'strength', i, a, pop: 400 + added, ...(im ? { im } : {}), ...(hid ? { hid: true } : {}), ...(dup ? { dupOf: dup.id } : {}) }); added++;

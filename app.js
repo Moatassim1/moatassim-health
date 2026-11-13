@@ -588,8 +588,9 @@
   }
   const folded = id => { try { const v = localStorage.getItem('gg.fold.' + id); if (v != null) return v === '1'; } catch (_) {} return id === 'vit' && window.innerWidth < 700; };
   const EX_IMG = 'https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/';
+  const exImg = im => /^demo\//.test(im) ? im : EX_IMG + im; // demo/… = GG Gains' own drawings
   // Exercise picture: the real demo photo when the library has one, otherwise the muscle diagram.
-  const thumb = (x, cls) => x && x.act ? `<span class="ex-act-ic ${cls || ''}">${x.ic}</span>` : x && x.im && x.im[0] ? `<img class="ex-ph ${cls || ''}" loading="lazy" src="${EX_IMG}${esc(x.im[0])}" alt="" onerror="this.style.visibility='hidden'">` : window.GGBody ? GGBody.svg({ view: GGBody.viewFor(x ? x.p : []), body: bodyOpts(), fill: muscleFill(x && x.p, x && x.s), cls: 'bm-thumb ' + (cls || '') }) : '';
+  const thumb = (x, cls) => x && x.act ? `<span class="ex-act-ic ${cls || ''}">${x.ic}</span>` : x && x.im && x.im[0] ? `<img class="ex-ph ${cls || ''}" loading="lazy" src="${esc(exImg(x.im[0]))}" alt="" onerror="this.style.visibility='hidden'">` : window.GGBody ? GGBody.svg({ view: GGBody.viewFor(x ? x.p : []), body: bodyOpts(), fill: muscleFill(x && x.p, x && x.s), cls: 'bm-thumb ' + (cls || '') }) : '';
   // "Barbell Bench Press - Medium Grip" → main "Barbell Bench Press", variant "Medium grip".
   const exParts = n => { const i = String(n || '').indexOf(' - '); return i < 0 ? [String(n || ''), ''] : [n.slice(0, i), cap(n.slice(i + 3).toLowerCase())]; };
   const exTitle = n => { const [a, b] = exParts(n); return b ? `${esc(a)} <span class="ex-var">${esc(b)}</span>` : esc(a); };
@@ -1087,7 +1088,7 @@
       const fav = favEx().includes(exId);
       card.innerHTML = `<div class="modal-head"><h2>${exTitle(x.n)}</h2><button class="ex-star big${fav ? ' on' : ''}" data-x="fav" aria-label="${fav ? 'Remove from' : 'Add to'} favourites">${fav ? '★' : '☆'}</button><button class="btn ghost" data-x="close">Close</button></div>
       <div class="modal-body">
-        ${x.act ? `<div class="ex-act-hero">${x.ic}</div>` : `${x.im && x.im.length ? `<div class="ex-video" role="img" aria-label="${esc(x.n)} demonstration">${x.im.map((im, i) => `<img src="${EX_IMG}${esc(im)}" alt="" class="${i ? 'f2' : 'f1'}">`).join('')}</div>` : ''}
+        ${x.act ? `<div class="ex-act-hero">${x.ic}</div>` : `${x.im && x.im.length ? `<div class="ex-video" role="img" aria-label="${esc(x.n)} demonstration">${x.im.map((im, i) => `<img src="${esc(exImg(im))}" alt="" class="${i ? 'f2' : 'f1'}">`).join('')}</div>` : ''}
         <div class="ex-mus-row"><div class="ex-mus-map">${GGBody.svg({ view: 'both', body: bodyOpts(), fill: muscleFill(x.p, x.s), cls: 'bm-mid' })}</div><div class="bm-legend"><span><i style="background:${MUS_RED}"></i>Main muscle${x.p.length > 1 ? 's' : ''}: ${x.p.map(p => esc(GGBody.NAMES[p] || cap(p))).join(', ')}</span>${x.s.length ? `<span><i style="background:${MUS_PINK}"></i>Also works: ${x.s.map(p => esc(GGBody.NAMES[p] || cap(p))).join(', ')}</span>` : ''}</div></div>
         <div class="chips ex-musc">${x.m ? `<span class="mech mech-${x.m}">${x.m === 'c' ? 'Compound' : 'Isolation'}</span>` : ''}${x.e ? `<span class="chip">${esc(cap(x.e))}</span>` : ''}${x.l ? `<span class="chip">${esc(cap(x.l))}</span>` : ''}</div>`}
         ${x.i && x.i.length ? `<details class="ex-how"><summary>How to do it</summary><ol>${x.i.map(t => `<li>${esc(t)}</li>`).join('')}</ol></details>` : ''}

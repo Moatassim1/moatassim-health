@@ -1402,6 +1402,8 @@
     else if (act === 'ck-yes') { const T = P().targets, sg = T.suggestion; if (sg && sg.to) { Object.assign(T, { kcal: sg.to.train.kcal, p: sg.to.train.p, c: sg.to.train.c, f: sg.to.train.f }); if (sg.to.rest) T.rest = sg.to.rest; (T.history = T.history || []).push({ at: todayKey(), delta: sg.delta }); } T.suggestion = null; save(); render(); toast('Targets updated.'); }
     else if (act === 'g-renew') { G.connected = false; G.expired = true; G.checked = true; UI.device = 'garmin'; nav('garmin'); }
     else if (act === 'go-forecast') nav('forecast');
+    else if (act === 'met-pick') { if (a.dataset.k) { MET.sel = a.dataset.k; const y = window.scrollY, mt = main.scrollTop; render(); window.scrollTo(0, y); main.scrollTop = mt; } }
+    else if (act === 'met-range') { MET.range = +a.dataset.n; MET.sel = null; const y = window.scrollY, mt = main.scrollTop; render(); window.scrollTo(0, y); main.scrollTop = mt; }
     else if (act === 'add') { openAdd({ meal: a.dataset.meal, date: UI.date }); if (a.dataset.fav) setTab('fav'); else if (a.dataset.meal === 'Supplements') setTab('sup'); }
     else if (act === 'quick-add') quickAdd(a.dataset.meal, UI.date);
     else if (act === 'start-hide') { try { localStorage.setItem('gg.start.done', '1'); } catch (_) {} render(); }
@@ -2368,6 +2370,7 @@
       </div>` : ''}
       <div class="pf-sec-head"><h2>Metabolism</h2></div>
       <div class="stats">${metabolismTile()}${maintenanceTile()}</div>
+      ${metabolismGraph()}
       ${perfRecovery(C)}`;
   }
   function perfRecovery(C) {
@@ -2657,8 +2660,8 @@
   // Metabolism: what the body actually burns, worked out from food eaten and how
   // weight moved (eaten - kg change x 7,700 kcal), compared with what's expected
   // for this age, height, weight and activity (or Garmin's estimate).
-  function metabolismModel() {
-    const pr = P().profile, today = todayKey();
+  function metabolismModel(asOf) {
+    const pr = P().profile, today = asOf || todayKey();
     const win = rangeKeys(today, 28);
     const days = countedDays(win);
     const pts = weightKeys().filter(k => k >= win[0] && k <= today).map(k => [(dateOf(k) - dateOf(today)) / 864e5, P().weights[k]]);
@@ -2866,6 +2869,97 @@
     return `<div class="stat" title="From the last 4 weeks: eaten ${fmt(met.intake)} kcal/day on average while weight changed ${met.kgPerWeek >= 0 ? '+' : ''}${fmt(met.kgPerWeek, 2)} kg/week, so the body burned about ${fmt(met.measured)} kcal/day. Expected for ${esc(P().name)}: ${fmt(met.expected)} (${met.expectedSource === 'garmin' ? 'Garmin' : 'age, height, weight, activity'}). Confidence: ${met.confidence}.">
       <div class="k">Metabolism</div><div class="v" style="font-size:24px;margin-top:6px;color:${col}">${esc(met.label)}</div>
       <div class="d">Burns ~${fmt(met.measured)} kcal/day · ${met.pct >= 0 ? '+' : ''}${fmt(met.pct)}% vs expected${met.confidence === 'early' ? ' · early estimate' : ''}</div></div>`;
+  }
+
+  // Metabolism over time: the same 4-week reading worked out for every past day, so you can see
+  // when it sped up or slowed down, and what changed around then.
+  const MET = { range: 60, sel: null };
+  function metabolismHistory(n) {
+    const out = [];
+    for (const k of rangeKeys(todayKey(), n)) { const m = metabolismModel(k); out.push(m.ready ? { k, ...m } : { k, ready: false }); }
+    return out;
+  }
+  // What the 4 weeks before `k` looked like, for explaining a reading.
+  function metWindowFacts(k) {
+    const win = rangeKeys(k, 28), half = win.slice(14), days = countedDays(win);
+    const avg = (keys, f) => { const v = keys.map(f).filter(x => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+    const tot = keys => keys.map(d => totalsOf(dayEntries(d)));
+    const T = tot(days);
+    const mean = key => T.length ? T.reduce((a, t) => a + (t[key] || 0), 0) / T.length : null;
+    const trainDays = keys => keys.filter(d => { const m = P().dayMeta[d] || {}; return (m.lifts && m.lifts.length) || (m.ex && m.ex.length) || (m.cardio && m.cardio.length); }).length;
+    // The last weigh-in in the window, and how salty / carb-heavy the 2 days before it were (water weight).
+    const wk = weightKeys().filter(d => d >= win[0] && d <= k).pop();
+    let water = null;
+    if (wk) {
+      const pre = [addDays(wk, -1), addDays(wk, -2)].filter(d => dayEntries(d).length);
+      if (pre.length) {
+        const pt = tot(pre), na = pt.reduce((a, t) => a + (t.na || 0), 0) / pt.length, c = pt.reduce((a, t) => a + (t.c || 0), 0) / pt.length;
+        water = { wk, na, c, naAvg: mean('na'), cAvg: mean('c') };
+      }
+    }
+    return {
+      logged: days.length, kcal: mean('kcal'), protein: mean('p'), train: trainDays(win), train14: trainDays(half),
+      steps: avg(win, d => (P().garmin.days[d] || {}).steps), water,
+      partial: days.filter(d => totalsOf(dayEntries(d)).kcal < 0.6 * MET.goal).length
+    };
+  }
+  function metDrivers(cur, prev) {
+    const a = metWindowFacts(cur.k), b = prev ? metWindowFacts(prev.k) : null, out = [];
+    const up = '⬆️', dn = '⬇️', why = (icon, text, effect) => out.push({ icon, text, effect });
+    if (b) {
+      const dk = a.kcal - b.kcal;
+      if (Math.abs(dk) >= 100) why(dk > 0 ? '🍽️' : '🥗', `Ate ${fmt(Math.abs(dk))} kcal/day ${dk > 0 ? 'more' : 'less'} on average (${fmt(a.kcal)} vs ${fmt(b.kcal)}).`, dk > 0 ? (cur.kgPerWeek - prev.kgPerWeek < 0.1 ? 'faster: more food without the weight going up' : 'mostly shows up as weight') : (cur.kgPerWeek - prev.kgPerWeek > -0.1 ? 'slower: less food but the weight didn\'t drop to match' : 'mostly shows up as weight lost'));
+      const dw = cur.kgPerWeek - prev.kgPerWeek;
+      if (Math.abs(dw) >= 0.1) why(dw > 0 ? up : dn, `Weight trend ${dw > 0 ? 'rose' : 'fell'}: ${cur.kgPerWeek >= 0 ? '+' : ''}${fmt(cur.kgPerWeek, 2)} kg/week now, was ${prev.kgPerWeek >= 0 ? '+' : ''}${fmt(prev.kgPerWeek, 2)}.`, dw > 0 ? 'slower reading' : 'faster reading');
+      const dt = a.train - b.train;
+      if (Math.abs(dt) >= 2) why('🏋️', `${Math.abs(dt)} ${dt > 0 ? 'more' : 'fewer'} training days in the 4 weeks (${a.train} vs ${b.train}).`, dt > 0 ? 'faster: training burns energy' : 'slower: less training');
+      if (a.steps != null && b.steps != null && Math.abs(a.steps - b.steps) >= 1500) why('👟', `${fmt(Math.abs(a.steps - b.steps))} ${a.steps > b.steps ? 'more' : 'fewer'} steps a day (${fmt(a.steps)} vs ${fmt(b.steps)}).`, a.steps > b.steps ? 'faster' : 'slower');
+      const dl = a.logged - b.logged;
+      if (dl <= -4) why('📝', `Fewer days logged (${a.logged} of 28, was ${b.logged}).`, 'less certain: skipped days often hide extra food');
+    }
+    if (a.partial >= 3) why('📝', `${a.partial} logged day${a.partial === 1 ? '' : 's'} look half-logged (under 60% of your calorie goal).`, 'can make it look slower than it is: missing food means the app thinks you burned less');
+    if (a.logged < 18) why('📝', `Only ${a.logged} of the 28 days are logged.`, 'reading is rough until more days are logged');
+    if (a.water && a.water.naAvg) {
+      const w = a.water;
+      if (w.na > w.naAvg * 1.3 || w.c > w.cAvg * 1.3) why('💧', `The 2 days before your ${shortDate(w.wk)} weigh-in were ${w.na > w.naAvg * 1.3 ? 'salty' : ''}${w.na > w.naAvg * 1.3 && w.c > w.cAvg * 1.3 ? ' and ' : ''}${w.c > w.cAvg * 1.3 ? 'carb-heavy' : ''}.`, 'water weight: the scale reads high, so it looks slower for a few days');
+      else if (w.na < w.naAvg * 0.7 && w.c < w.cAvg * 0.7) why('💧', `Light, low-salt eating before your ${shortDate(w.wk)} weigh-in.`, 'less water weight: can look a little faster for a few days');
+    }
+    if (cur.confidence === 'early') why('🧪', 'Early estimate: few weigh-ins or logged days yet.', 'expect it to move around until there are 3 weeks of data');
+    return { out, facts: a };
+  }
+  function metabolismGraph() {
+    MET.goal = targets().kcal || 2000;
+    const H = metabolismHistory(MET.range);
+    const ready = H.filter(h => h.ready);
+    if (ready.length < 2) return '';
+    const sel = H.find(h => h.k === MET.sel && h.ready) || ready[ready.length - 1];
+    const idx = H.indexOf(sel);
+    const prev = H.slice(0, idx).reverse().find(h => h.ready && h.k <= addDays(sel.k, -7)) || null;
+    const vals = H.map(h => h.ready ? Math.round(h.pct * 10) / 10 : null);
+    const mx = Math.ceil((Math.max(20, ...ready.map(h => Math.abs(h.pct))) + 2) / 10) * 10, lo = -mx, hi = mx;
+    const chart = lineChart({
+      labels: H.map(h => shortDate(h.k)), tipLabels: H.map(h => h.ready ? `${longDate(h.k)} · ${h.label}` : longDate(h.k)),
+      series: [{ label: 'vs expected', color: 'var(--ink)', values: vals, connect: true, dots: false, width: 2.5 }],
+      height: 190, yMin: lo, yMax: hi, target: 0,
+      bands: [{ from: 5, to: hi + 10, color: 'var(--pro)', label: 'Fast' }, { from: -5, to: 5, color: 'var(--ok)', label: 'Normal' }, { from: lo - 10, to: -5, color: 'var(--low)', label: 'Slow' }],
+      pick: { action: 'met-pick', keys: H.map(h => h.ready ? h.k : ''), sel: idx },
+      tipFmt: v => `${v >= 0 ? '+' : ''}${fmt(v)}%`, yFmt: v => `${v > 0 ? '+' : ''}${fmt(v)}%`, labelEvery: Math.ceil(H.length / 6)
+    });
+    const D = metDrivers(sel, prev);
+    const col = sel.pct <= -5 ? 'var(--low)' : sel.pct >= 5 ? 'var(--pro)' : 'var(--ok)';
+    const moved = prev ? sel.pct - prev.pct : null;
+    return `<div class="pf-card met-card">
+      <div class="met-head"><h2>Metabolism over time</h2><div class="seg sm">${[30, 60, 90].map(n => `<button class="${MET.range === n ? 'on' : ''}" data-action="met-range" data-n="${n}">${n}d</button>`).join('')}</div></div>
+      <p class="muted small" style="margin:2px 0 6px">Each point is the 4 weeks up to that day: how much you burned compared with what's expected for you. Tap a day to see what changed.</p>
+      ${chart}
+      <div class="met-sel">
+        <div class="met-sel-h"><b style="color:${col}">${esc(sel.label)}</b> <span class="faint">on ${esc(longDate(sel.k))}</span>
+          <span class="met-num">${sel.pct >= 0 ? '+' : ''}${fmt(sel.pct)}% · burns ~${fmt(sel.measured)} kcal/day</span></div>
+        ${prev ? `<p class="small" style="margin:6px 0">${moved >= 2 ? '⬆️ Faster than' : moved <= -2 ? '⬇️ Slower than' : '➡️ About the same as'} on ${esc(shortDate(prev.k))} (${prev.pct >= 0 ? '+' : ''}${fmt(prev.pct)}%, ${esc(prev.label.toLowerCase())}).${D.out.length ? ' What changed:' : ''}</p>` : '<p class="small muted" style="margin:6px 0">This is the earliest reading, nothing to compare with yet.</p>'}
+        ${D.out.length ? `<ul class="met-why">${D.out.map(d => `<li><span class="mw-ic">${d.icon}</span><span>${esc(d.text)}<small>${esc(d.effect)}</small></span></li>`).join('')}</ul>` : prev ? '<p class="small muted">Nothing big changed in food, weight trend, training or logging: the difference is normal day-to-day noise.</p>' : ''}
+        <div class="met-facts faint small">4 weeks to ${esc(shortDate(sel.k))}: ate ${fmt(D.facts.kcal)} kcal/day · weight ${sel.kgPerWeek >= 0 ? '+' : ''}${fmt(sel.kgPerWeek, 2)} kg/week · ${D.facts.train} training days · ${D.facts.logged}/28 days logged${D.facts.steps != null ? ` · ${fmt(D.facts.steps)} steps/day` : ''}</div>
+      </div>
+    </div>`;
   }
 
   // ---------------------------------------------------------------- GARMIN

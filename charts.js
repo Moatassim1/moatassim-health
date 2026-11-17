@@ -110,6 +110,10 @@
     const x = i => n === 1 ? (pad.l + W - pad.r) / 2 : pad.l + (W - pad.l - pad.r) * i / (n - 1);
     const y = v => H - pad.b - (H - pad.t - pad.b) * (v - lo) / (hi - lo);
     let s = frame(W, H, pad, hi, lo, fmt);
+    (o.bands || []).forEach(b => {
+      const y1 = y(Math.min(hi, b.to)), y2 = y(Math.max(lo, b.from));
+      if (y2 > y1) s += `<rect x="${pad.l}" y="${y1}" width="${W - pad.l - pad.r}" height="${y2 - y1}" fill="${b.color}" opacity=".09"/>${b.label ? `<text class="tick" x="${W - pad.r - 4}" y="${y1 + 12}" text-anchor="end" fill="${b.color}" style="fill:${b.color};opacity:.9">${esc(b.label)}</text>` : ''}`;
+    });
     o.series.forEach(se => {
       let d = '', pen = false;
       se.values.forEach((v, i) => { if (v == null) { if (!se.connect) pen = false; return; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1) + ' '; pen = true; });
@@ -125,7 +129,9 @@
     const step = n > 1 ? (W - pad.l - pad.r) / (n - 1) : W;
     o.labels.forEach((lab, i) => {
       const tip = [o.tipLabels ? o.tipLabels[i] : lab, ...o.series.map(se => `${se.label ? se.label + ': ' : ''}${se.values[i] == null ? '–' : (o.tipFmt || fmt)(se.values[i])}`)];
-      s += `<rect x="${x(i) - step / 2}" y="${pad.t}" width="${step}" height="${H - pad.t - pad.b}" fill="transparent" data-tip="${esc(tip.join('\n'))}"/>`;
+      const pk = o.pick && o.pick.keys[i];
+      if (o.pick && o.pick.sel === i && o.series[0].values[i] != null) s += `<line x1="${x(i)}" x2="${x(i)}" y1="${pad.t}" y2="${H - pad.b}" stroke="var(--ink)" stroke-opacity=".35" stroke-dasharray="3 3"/><circle cx="${x(i)}" cy="${y(o.series[0].values[i])}" r="5.5" fill="var(--surface)" stroke="var(--ink)" stroke-width="2.5"/>`;
+      s += `<rect x="${x(i) - step / 2}" y="${pad.t}" width="${step}" height="${H - pad.t - pad.b}" fill="transparent" data-tip="${esc(tip.join('\n'))}"${pk ? ` data-action="${o.pick.action}" data-k="${esc(pk)}" style="cursor:pointer"` : ''}/>`;
     });
     s += xLabels(o.labels, x, H, pad, o.labelEvery || Math.max(1, Math.ceil(n / 12)));
     return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.title || 'chart')}">${s}</svg></div>`;
